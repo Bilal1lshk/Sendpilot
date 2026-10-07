@@ -2,17 +2,17 @@
 
 import { motion } from "motion/react";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight } from "lucide-react";
-import { ProductPreview } from "./ProductPreview";
 import { PRODUCT_NAME } from "@/lib/tokens";
 
 export function HeroSection() {
   return (
     <section className="relative overflow-hidden pt-8 pb-16 sm:pt-14 sm:pb-24">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 items-start">
-          {/* Left Column (about 45% -> 5 cols on lg) */}
-          <div className="lg:col-span-5 space-y-6 lg:pt-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 items-center">
+          {/* Left Column (headline, copy, CTAs, reassurance) */}
+          <div className="lg:col-span-6 space-y-6 lg:py-4">
             {/* Small plain label */}
             <motion.div
               initial={{ opacity: 0, y: 8 }}
@@ -24,12 +24,12 @@ export function HeroSection() {
               </span>
             </motion.div>
 
-            {/* Headline: 56-64px desktop, tight, sentence case, dark ink */}
+            {/* Headline */}
             <motion.h1
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.25, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}
-              className="text-4xl sm:text-5xl lg:text-[56px] leading-[1.08] font-semibold text-[#16191A] dark:text-[#F2F2F0] tracking-[-0.03em]"
+              className="text-4xl sm:text-5xl lg:text-[54px] leading-[1.08] font-semibold text-[#16191A] dark:text-[#F2F2F0] tracking-[-0.03em]"
             >
               Find the right people. Say something{" "}
               <span className="text-[#1F7A52] dark:text-[#52C58F]">
@@ -37,17 +37,17 @@ export function HeroSection() {
               </span>
             </motion.h1>
 
-            {/* Two sentences of support text */}
+            {/* Support text */}
             <motion.p
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.25, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
-              className="text-[15px] sm:text-[16px] leading-[1.55] text-[#626669] dark:text-[#9BA0A4] max-w-md font-normal"
+              className="text-[15px] sm:text-[16px] leading-[1.55] text-[#626669] dark:text-[#9BA0A4] max-w-lg font-normal"
             >
               {PRODUCT_NAME} helps you pick good leads, draft a personal first message, and keep every reply in one inbox. You approve every message before it goes out.
             </motion.p>
 
-            {/* Primary button and quiet text link */}
+            {/* Buttons */}
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -81,10 +81,24 @@ export function HeroSection() {
             </motion.p>
           </div>
 
-          {/* Right Column (about 55% -> 7 cols on lg, slightly cropped/extended) */}
-          <div className="lg:col-span-7 lg:-mr-6 xl:-mr-10 pt-2 lg:pt-0">
-            <ProductPreview />
-          </div>
+          {/* Right Column: Clean image only */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="lg:col-span-6 flex items-center justify-center lg:justify-end"
+          >
+            <div className="relative w-full max-w-xl aspect-16/10">
+              <Image
+                src="/hero-clock.png"
+                alt="SendPilot outreach schedule"
+                fill
+                priority
+                className="object-contain"
+                sizes="(max-width: 768px) 100vw, 560px"
+              />
+            </div>
+          </motion.div>
         </div>
       </div>
     </section>
