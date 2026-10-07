@@ -31,20 +31,20 @@ export function ProblemSection() {
   ];
 
   return (
-    <section className="py-20 md:py-28 bg-neutral-50/70 dark:bg-neutral-950/60 relative">
+    <section className="py-20 md:py-28 bg-white border-b border-neutral-200 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-14">
         {/* Section Header */}
         <div className="max-w-3xl mx-auto text-center space-y-4">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 px-3 py-1 text-xs font-semibold text-red-700 dark:text-red-400">
-            <AlertCircle className="h-3.5 w-3.5" />
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-800">
+            <AlertCircle className="h-3.5 w-3.5 text-neutral-600" />
             <span>The Traditional Outbound Problem</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-white leading-tight">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-black leading-tight">
             Your sales team shouldn&apos;t spend hours researching every lead.
           </h2>
 
-          <p className="text-base text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto">
+          <p className="text-base text-neutral-600 max-w-2xl mx-auto">
             Traditional sales prospecting is broken. Reps are bogged down by administrative busywork, leaving high-value deals on the table.
           </p>
         </div>
@@ -56,7 +56,7 @@ export function ProblemSection() {
             return (
               <div
                 key={prob.title}
-                className="group relative rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-8 shadow-xs hover:shadow-md transition-all duration-300 hover:border-neutral-300 dark:hover:border-neutral-700 flex flex-col justify-between"
+                className="group relative rounded-3xl border border-neutral-200 bg-white p-8 shadow-xs hover:shadow-md transition-all duration-300 hover:border-neutral-300 flex flex-col justify-between"
               >
                 <div className="space-y-5">
                   <div className="flex items-center justify-between">

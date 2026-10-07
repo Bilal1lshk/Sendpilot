@@ -35,19 +35,19 @@ export function HowItWorksSection() {
   ];
 
   return (
-    <section id="how-it-works" className="py-20 md:py-32 bg-neutral-50/70 dark:bg-neutral-950/60 relative">
+    <section id="how-it-works" className="py-20 md:py-32 bg-white border-b border-neutral-200 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
         {/* Title */}
         <div className="max-w-3xl mx-auto text-center space-y-4">
-          <div className="inline-flex items-center gap-2 rounded-full border border-palm-leaf-200 dark:border-palm-leaf-800 bg-white dark:bg-neutral-900 px-3.5 py-1 text-xs font-semibold text-palm-leaf-800 dark:text-palm-leaf-300 shadow-2xs">
+          <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-100 px-3.5 py-1 text-xs font-semibold text-neutral-800">
             <span>Simple 4-Step Process</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-white leading-tight">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-black leading-tight">
             How SendPilot turns raw prospects into closed revenue.
           </h2>
 
-          <p className="text-base sm:text-lg text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg text-neutral-600 max-w-2xl mx-auto">
             A battle-tested methodology built to scale outbound without adding headcount.
           </p>
         </div>

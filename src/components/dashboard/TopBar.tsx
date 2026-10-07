@@ -259,6 +259,20 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                     <span className="block text-[10px] text-neutral-400 font-normal">Single manual prospect</span>
                   </div>
                 </Link>
+
+                <Link
+                  href="/dashboard/accounts"
+                  onClick={() => setNewDropdownOpen(false)}
+                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-palm-leaf-50 dark:hover:bg-palm-leaf-950/40 hover:text-palm-leaf-900 transition-colors"
+                >
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#0a66c2]/10 text-[#0a66c2] dark:bg-[#0a66c2]/20">
+                    <span className="font-bold text-[10px]">in</span>
+                  </div>
+                  <div>
+                    <span className="block font-semibold">Connect LinkedIn</span>
+                    <span className="block text-[10px] text-neutral-400 font-normal">Link sender profile</span>
+                  </div>
+                </Link>
               </div>
             )}
           </div>

@@ -10,14 +10,14 @@ export function SocialProofSection() {
   ];
 
   return (
-    <section className="py-14 sm:py-20 border-y border-neutral-200/70 dark:border-neutral-800/70 bg-white/60 dark:bg-neutral-900/40">
+    <section className="py-14 sm:py-20 border-y border-neutral-200 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         {/* Title */}
         <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-widest font-bold text-palm-leaf-700 dark:text-palm-leaf-400">
+          <p className="text-xs uppercase tracking-widest font-bold text-neutral-500">
             Trusted By Modern GTM Teams
           </p>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-black">
             Built for teams that want more conversations, not more busywork.
           </h2>
         </div>

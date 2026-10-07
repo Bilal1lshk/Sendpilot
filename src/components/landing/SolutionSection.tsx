@@ -71,8 +71,8 @@ export function SolutionSection() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
         {/* Header */}
         <div className="max-w-3xl mx-auto text-center space-y-4">
-          <div className="inline-flex items-center gap-2 rounded-full border border-palm-leaf-200 dark:border-palm-leaf-800 bg-palm-leaf-50/70 dark:bg-palm-leaf-950/40 px-3.5 py-1 text-xs font-semibold text-palm-leaf-800 dark:text-palm-leaf-300">
-            <Sparkles className="h-3.5 w-3.5 text-palm-leaf-600" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-100 px-3.5 py-1 text-xs font-semibold text-neutral-800">
+            <Sparkles className="h-3.5 w-3.5 text-neutral-600" />
             <span>The Unified Outbound Engine</span>
           </div>
 

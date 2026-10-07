@@ -30,17 +30,17 @@ export function FaqSection() {
   ];
 
   return (
-    <section className="py-20 md:py-28 bg-white dark:bg-neutral-900 border-b border-neutral-200/80 dark:border-neutral-800">
+    <section className="py-20 md:py-28 bg-white border-b border-neutral-200">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-palm-leaf-200 dark:border-palm-leaf-800 bg-palm-leaf-50/70 dark:bg-palm-leaf-950/40 px-3.5 py-1 text-xs font-semibold text-palm-leaf-800 dark:text-palm-leaf-300">
-            <HelpCircle className="h-3.5 w-3.5 text-palm-leaf-600" />
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-100 px-3.5 py-1 text-xs font-semibold text-neutral-800">
+            <HelpCircle className="h-3.5 w-3.5 text-neutral-600" />
             <span>Got Questions?</span>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
+          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-black">
             Frequently Asked Questions
           </h2>
-          <p className="text-sm text-neutral-500 max-w-xl mx-auto">
+          <p className="text-sm text-neutral-600 max-w-xl mx-auto">
             Everything you need to know about outbound deliverability, AI scoring, and team setups.
           </p>
         </div>
@@ -51,23 +51,23 @@ export function FaqSection() {
             return (
               <div
                 key={faq.q}
-                className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/40 overflow-hidden transition-colors"
+                className="rounded-2xl border border-neutral-200 bg-white overflow-hidden transition-colors"
               >
                 <button
                   type="button"
                   onClick={() => setOpenIndex(isOpen ? null : idx)}
-                  className="w-full p-5 text-left flex items-center justify-between gap-4 font-semibold text-sm text-neutral-900 dark:text-white cursor-pointer"
+                  className="w-full p-5 text-left flex items-center justify-between gap-4 font-semibold text-sm text-black cursor-pointer"
                 >
                   <span>{faq.q}</span>
                   <ChevronDown
                     className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform duration-200 ${
-                      isOpen ? "rotate-180 text-palm-leaf-600" : ""
+                      isOpen ? "rotate-180 text-black" : ""
                     }`}
                   />
                 </button>
 
                 {isOpen && (
-                  <div className="px-5 pb-5 text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed border-t border-neutral-100 dark:border-neutral-800/80 pt-3">
+                  <div className="px-5 pb-5 text-xs text-neutral-600 leading-relaxed border-t border-neutral-100 pt-3">
                     {faq.a}
                   </div>
                 )}

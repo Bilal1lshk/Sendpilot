@@ -18,9 +18,11 @@ import {
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants, drawerVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
+import { ConnectLinkedInModal, ConnectedAccountData } from "@/components/dashboard/ConnectLinkedInModal";
 
 export default function LinkedInAccountsPage() {
   const [securityPanelOpen, setSecurityPanelOpen] = useState(false);
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
 
   // [PLACEHOLDER DATA] Accounts state
   const [accounts, setAccounts] = useState([
@@ -116,8 +118,8 @@ export default function LinkedInAccountsPage() {
 
           <button
             type="button"
-            onClick={() => alert("Redirecting to LinkedIn official sign-in...")}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 active:scale-[0.99] text-white px-3.5 py-1.5 text-xs font-medium shadow-xs transition-all"
+            onClick={() => setConnectModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 active:scale-[0.99] text-white px-3.5 py-1.5 text-xs font-medium shadow-xs transition-all cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
             <span>Connect account</span>
@@ -400,6 +402,16 @@ export default function LinkedInAccountsPage() {
           </>
         )}
       </AnimatePresence>
+
+      {/* Connect LinkedIn Account Interactive Flow Modal */}
+      <ConnectLinkedInModal
+        isOpen={connectModalOpen}
+        onClose={() => setConnectModalOpen(false)}
+        onConnected={(newAcc) => {
+          setAccounts((prev) => [newAcc, ...prev]);
+        }}
+        defaultUserName="Alex Rivera"
+      />
     </motion.div>
   );
 }

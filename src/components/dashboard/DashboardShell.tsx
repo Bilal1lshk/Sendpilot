@@ -37,7 +37,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-neutral-50/60 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex flex-col antialiased">
+    <div className="min-h-screen bg-black text-neutral-100 flex flex-col antialiased">
       {/* Fixed Left Sidebar */}
       <Sidebar
         mobileOpen={mobileOpen}
