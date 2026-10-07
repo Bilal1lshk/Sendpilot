@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { UserPlus, Loader2, Mail, Lock, User } from "lucide-react";
+import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -41,7 +42,7 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4 bg-neutral-50 dark:bg-neutral-950">
-      <div className="w-full max-w-md space-y-8 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-8 shadow-sm">
+      <div className="w-full max-w-md space-y-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-8 shadow-sm">
         <div className="text-center space-y-2">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
             <UserPlus className="h-6 w-6" />
@@ -123,7 +124,9 @@ export default function RegisterPage() {
           </button>
         </form>
 
-        <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">
+        <SocialAuthButtons disabled={isLoading} />
+
+        <p className="text-center text-xs text-neutral-500 dark:text-neutral-400 pt-2">
           Already have an account?{" "}
           <Link
             href="/login"

@@ -1,5 +1,31 @@
 @import "tailwindcss";
 
+@theme {
+  --color-palm-leaf-50: #f6faeb;
+  --color-palm-leaf-100: #edf5d6;
+  --color-palm-leaf-200: #daeaae;
+  --color-palm-leaf-300: #c8e085;
+  --color-palm-leaf-400: #b5d55d;
+  --color-palm-leaf-500: #a3cb34;
+  --color-palm-leaf-600: #82a22a;
+  --color-palm-leaf-700: #627a1f;
+  --color-palm-leaf-800: #415115;
+  --color-palm-leaf-900: #21290a;
+  --color-palm-leaf-950: #171c07;
+
+  --color-primary-50: var(--color-palm-leaf-50);
+  --color-primary-100: var(--color-palm-leaf-100);
+  --color-primary-200: var(--color-palm-leaf-200);
+  --color-primary-300: var(--color-palm-leaf-300);
+  --color-primary-400: var(--color-palm-leaf-400);
+  --color-primary-500: var(--color-palm-leaf-500);
+  --color-primary-600: var(--color-palm-leaf-600);
+  --color-primary-700: var(--color-palm-leaf-700);
+  --color-primary-800: var(--color-palm-leaf-800);
+  --color-primary-900: var(--color-palm-leaf-900);
+  --color-primary-950: var(--color-palm-leaf-950);
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

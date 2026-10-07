@@ -1,11 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { LogIn, Loader2, Mail, Lock } from "lucide-react";
+import { LogIn, Loader2, Mail, Lock, AlertCircle } from "lucide-react";
+import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
+
+function AuthErrorMessage() {
+  const searchParams = useSearchParams();
+  const error = searchParams.get("error");
+
+  if (!error) return null;
+
+  let message = "An error occurred during authentication. Please try again.";
+  if (error === "OAuthSignin" || error === "OAuthCallbackError") {
+    message = "Could not sign in with provider. Please ensure provider credentials are configured.";
+  } else if (error === "OAuthAccountNotLinked") {
+    message = "An account already exists with this email address using another sign-in method.";
+  } else if (error === "AccessDenied") {
+    message = "Access was denied by the provider.";
+  }
+
+  return (
+    <div className="flex items-center gap-2 p-3 text-xs rounded-xl border border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400">
+      <AlertCircle className="h-4 w-4 shrink-0" />
+      <span>{message}</span>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -40,7 +64,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4 bg-neutral-50 dark:bg-neutral-950">
-      <div className="w-full max-w-md space-y-8 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-8 shadow-sm">
+      <div className="w-full max-w-md space-y-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-8 shadow-sm">
         <div className="text-center space-y-2">
           <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
             <LogIn className="h-6 w-6" />
@@ -52,6 +76,10 @@ export default function LoginPage() {
             Enter your credentials to access your account
           </p>
         </div>
+
+        <Suspense fallback={null}>
+          <AuthErrorMessage />
+        </Suspense>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
@@ -104,7 +132,9 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">
+        <SocialAuthButtons disabled={isLoading} />
+
+        <p className="text-center text-xs text-neutral-500 dark:text-neutral-400 pt-2">
           Don&apos;t have an account?{" "}
           <Link
             href="/register"
