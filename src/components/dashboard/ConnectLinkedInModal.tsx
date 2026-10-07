@@ -22,7 +22,7 @@ export interface ConnectedAccountData {
   name: string;
   headline: string;
   type: string;
-  photo?: string;
+  photo: string;
   status: "Active" | "Paused" | "Disconnected";
   connectedDate: string;
   usedToday: number;
