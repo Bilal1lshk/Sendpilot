@@ -13,11 +13,11 @@ import { Footer } from "@/components/landing/Footer";
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen flex flex-col bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-50 selection:bg-indigo-500 selection:text-white">
-      {/* Sticky Glass Navbar */}
+    <div className="min-h-screen flex flex-col bg-white text-black selection:bg-neutral-900 selection:text-white">
+      {/* Navbar */}
       <Navbar />
 
-      <main className="flex-1">
+      <main className="flex-1 bg-white text-black">
         {/* Hero Section */}
         <HeroSection />
 
@@ -27,7 +27,7 @@ export default function HomePage() {
         {/* Problem Section */}
         <ProblemSection />
 
-        {/* Solution Section (1 Workspace Workflow) */}
+        {/* Solution Section */}
         <SolutionSection />
 
         {/* Features Bento Grid */}
@@ -49,7 +49,7 @@ export default function HomePage() {
         <FaqSection />
       </main>
 
-      {/* Modern SaaS Footer */}
+      {/* Footer */}
       <Footer />
     </div>
   );

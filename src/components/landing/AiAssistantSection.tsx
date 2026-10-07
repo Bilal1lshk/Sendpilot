@@ -39,8 +39,8 @@ export function AiAssistantSection() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
         {/* Title */}
         <div className="max-w-3xl mx-auto text-center space-y-4">
-          <div className="inline-flex items-center gap-2 rounded-full border border-palm-leaf-200 dark:border-palm-leaf-800 bg-palm-leaf-50/70 dark:bg-palm-leaf-950/40 px-3.5 py-1 text-xs font-semibold text-palm-leaf-800 dark:text-palm-leaf-300">
-            <Bot className="h-3.5 w-3.5 text-palm-leaf-600" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-neutral-100 px-3.5 py-1 text-xs font-semibold text-neutral-800">
+            <Bot className="h-3.5 w-3.5 text-neutral-600" />
             <span>Conversational Intelligence</span>
           </div>
 
@@ -54,25 +54,25 @@ export function AiAssistantSection() {
         </div>
 
         {/* Chat-Style Interface Mockup */}
-        <div className="max-w-3xl mx-auto rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 p-6 sm:p-8 shadow-xl space-y-6">
+        <div className="max-w-3xl mx-auto rounded-3xl border border-neutral-200 bg-white p-6 sm:p-8 shadow-xs space-y-6">
           {/* User Message Bubble */}
           <div className="flex items-start gap-3.5 justify-end">
-            <div className="max-w-lg rounded-2xl bg-neutral-900 dark:bg-neutral-800 text-white p-4 shadow-sm space-y-1">
-              <div className="text-[11px] font-bold text-palm-leaf-300 uppercase tracking-wider">
+            <div className="max-w-lg rounded-2xl bg-neutral-900 text-white p-4 shadow-xs space-y-1">
+              <div className="text-[11px] font-bold text-neutral-300 uppercase tracking-wider">
                 Sales Rep Query
               </div>
               <p className="text-sm font-medium">
                 &quot;Find my highest-quality SaaS leads that haven&apos;t been contacted yet.&quot;
               </p>
             </div>
-            <div className="h-9 w-9 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 flex items-center justify-center font-bold text-xs shrink-0">
+            <div className="h-9 w-9 rounded-xl bg-black text-white flex items-center justify-center font-bold text-xs shrink-0">
               <User className="h-4 w-4" />
             </div>
           </div>
 
           {/* AI Response Bubble */}
           <div className="flex items-start gap-3.5">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-palm-leaf-600 to-palm-leaf-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+            <div className="h-9 w-9 rounded-xl bg-black text-white flex items-center justify-center font-bold text-xs shrink-0">
               <Bot className="h-5 w-5" />
             </div>
 

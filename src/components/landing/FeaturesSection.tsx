@@ -81,16 +81,16 @@ export function FeaturesSection() {
   ];
 
   return (
-    <section id="features" className="py-20 md:py-32 bg-neutral-50/70 dark:bg-neutral-950/60">
+    <section id="features" className="py-20 md:py-32 bg-white border-b border-neutral-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
         {/* Section Header */}
         <div className="max-w-3xl mx-auto text-center space-y-4">
-          <div className="inline-flex items-center gap-1.5 rounded-full border border-palm-leaf-200 dark:border-palm-leaf-800 bg-white dark:bg-neutral-900 px-3.5 py-1 text-xs font-semibold text-palm-leaf-800 dark:text-palm-leaf-300 shadow-2xs">
-            <Sparkles className="h-3.5 w-3.5 text-palm-leaf-600" />
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-100 px-3.5 py-1 text-xs font-semibold text-neutral-800">
+            <Sparkles className="h-3.5 w-3.5 text-neutral-600" />
             <span>Enterprise-Grade Architecture</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-white leading-tight">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-black leading-tight">
             Everything your team needs to scale outbound.
           </h2>
 

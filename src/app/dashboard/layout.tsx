@@ -19,8 +19,10 @@ export default async function DashboardLayout({
   }
 
   return (
-    <DashboardShell user={session.user}>
-      {children}
-    </DashboardShell>
+    <div className="dark bg-black text-neutral-100 min-h-screen">
+      <DashboardShell user={session.user}>
+        {children}
+      </DashboardShell>
+    </div>
   );
 }
