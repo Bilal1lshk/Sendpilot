@@ -35,63 +35,79 @@ interface SidebarProps {
   };
 }
 
-const NAV_ITEMS = [
-  {
-    name: "Overview",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-    badge: null,
-  },
-  {
-    name: "LinkedIn Accounts",
-    href: "/dashboard/accounts",
-    icon: LinkedInIcon,
-    badge: "2 Active",
-  },
-  {
-    name: "Campaigns",
-    href: "/dashboard/campaigns",
-    icon: Send,
-    badge: "4 Active",
-  },
-  {
-    name: "Lead Extractor",
-    href: "/dashboard/extractor",
-    icon: Target,
-    badge: "New",
-  },
-  {
-    name: "Lead Database",
-    href: "/dashboard/leads",
-    icon: Database,
-    badge: null,
-  },
-  {
-    name: "AI Assistant",
-    href: "/dashboard/ai",
-    icon: Sparkles,
-    badge: "GPT-4o",
-  },
-  {
-    name: "Inbound Automation",
-    href: "/dashboard/inbound",
-    icon: Flame,
-    badge: null,
-  },
-];
-
 export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [currentWorkspace, setCurrentWorkspace] = useState("SendPilot HQ");
 
+  const [totalLeads, setTotalLeads] = useState<number>(0);
+  const [accountsCount, setAccountsCount] = useState<number>(0);
+  const [campaignsCount, setCampaignsCount] = useState<number>(0);
+
   useEffect(() => {
     const saved = localStorage.getItem("sendpilot_sidebar_collapsed");
     if (saved !== null) {
       setCollapsed(saved === "true");
     }
+
+    // Fetch dynamic live metrics
+    fetch("/api/dashboard/overview")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.metrics) {
+          setTotalLeads(data.metrics.totalLeads ?? 0);
+          setAccountsCount(data.metrics.connectedAccountsCount ?? 0);
+          setCampaignsCount(data.metrics.campaignsCount ?? 0);
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  const navItems = [
+    {
+      name: "Overview",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+      badge: null,
+    },
+    {
+      name: "LinkedIn Accounts",
+      href: "/dashboard/accounts",
+      icon: LinkedInIcon,
+      badge: accountsCount > 0 ? `${accountsCount} Active` : null,
+    },
+    {
+      name: "Campaigns",
+      href: "/dashboard/campaigns",
+      icon: Send,
+      badge: campaignsCount > 0 ? `${campaignsCount} Active` : null,
+    },
+    {
+      name: "Lead Extractor",
+      href: "/dashboard/extractor",
+      icon: Target,
+      badge: "Scraper",
+    },
+    {
+      name: "Lead Database",
+      href: "/dashboard/leads",
+      icon: Database,
+      badge: totalLeads > 0 ? `${totalLeads}` : null,
+    },
+    {
+      name: "AI Assistant",
+      href: "/dashboard/ai",
+      icon: Sparkles,
+      badge: "GPT-4o",
+    },
+    {
+      name: "Inbound Automation",
+      href: "/dashboard/inbound",
+      icon: Flame,
+      badge: null,
+    },
+  ];
 
   const toggleCollapsed = () => {
     const nextState = !collapsed;
@@ -104,8 +120,8 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
   }, [pathname, setMobileOpen]);
 
   const workspaces = [
-    { name: "SendPilot HQ", plan: "Growth Plan", leads: "2,480 leads" },
-    { name: "Personal Workspace", plan: "Free Trial", leads: "45 leads" },
+    { name: "SendPilot HQ", plan: "Active Workspace", leads: `${totalLeads} leads` },
+    { name: "Personal Workspace", plan: "Demo Mode", leads: "0 leads" },
   ];
 
   return (
@@ -234,7 +250,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
 
         {/* Middle: Navigation with Sliding Active Pill */}
         <div className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =
               item.href === "/dashboard"
@@ -295,33 +311,33 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
 
         {/* Bottom Section */}
         <div className="shrink-0 border-t border-neutral-200/60 dark:border-neutral-800 p-2.5 space-y-2">
-          {/* Usage Meter: [PLACEHOLDER DATA] */}
+          {/* Real CRM Storage Capacity Meter */}
           {!collapsed ? (
             <div className="rounded-xl border border-neutral-200/70 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 p-2.5">
               <div className="flex items-center justify-between text-[11px] mb-1.5">
                 <span className="text-neutral-500 dark:text-neutral-400">
-                  Credits used
+                  Leads in CRM
                 </span>
                 <span className="font-semibold text-neutral-800 dark:text-neutral-200">
-                  420 of 800
+                  {totalLeads} of 1,000
                 </span>
               </div>
               <div className="h-1.5 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
                 <motion.div
                   initial={{ width: 0 }}
-                  animate={{ width: "52.5%" }}
+                  animate={{ width: `${Math.min(100, Math.max(totalLeads > 0 ? 4 : 0, Math.round((totalLeads / 1000) * 100)))}%` }}
                   transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
                   className="h-full rounded-full bg-palm-leaf-500"
                 />
               </div>
               <p className="mt-1.5 text-[10px] text-neutral-400">
-                Resets in 14 days
+                Live MongoDB storage
               </p>
             </div>
           ) : (
             <div
               className="flex justify-center"
-              title="Credits used: 420 / 800 (52%)"
+              title={`Leads in CRM: ${totalLeads} / 1,000`}
             >
               <div className="h-7 w-7 rounded-lg bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-400">
                 <CreditCard className="h-3.5 w-3.5" />

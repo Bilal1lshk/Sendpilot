@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "motion/react";
@@ -15,67 +15,94 @@ import {
   Check,
   Sparkles,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { microcopy } from "@/lib/microcopy";
 import { pageVariants, cardVariants, listItemVariants } from "@/lib/motion";
 
+const SAMPLE_DEMO_TASKS = [
+  {
+    id: "sample_t1",
+    name: "Marcus Vance",
+    title: "VP of Product",
+    company: "Linear Dynamics",
+    photo: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces",
+    profileUrl: "https://linkedin.com",
+    message: "Hey Marcus, loved your recent thoughts on developer tooling. Would love to connect and share notes.",
+    done: false,
+  },
+  {
+    id: "sample_t2",
+    name: "Devon Reed",
+    title: "Head of Marketing",
+    company: "Retool Apps",
+    photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=faces",
+    profileUrl: "https://linkedin.com",
+    message: "Hi Devon, noticed Retool's new integrations update. We built an AI assistant that plugs right into internal outreach flows—curious if you've explored this?",
+    done: false,
+  },
+  {
+    id: "sample_t3",
+    name: "Sarah Lindqvist",
+    title: "Growth Lead",
+    company: "Nordic SaaS Labs",
+    photo: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=faces",
+    profileUrl: "https://linkedin.com",
+    message: "Hi Sarah, saw your post on lead qualification. We automated profile scoring with zero scraping risk. Happy to send a 2-min demo if useful!",
+    done: false,
+  },
+];
+
 export default function DashboardOverviewPage() {
   const { data: session } = useSession();
   const firstName = session?.user?.name ? session.user.name.split(" ")[0] : "there";
   const greeting = microcopy.greetings.getTimeAwareGreeting(firstName);
 
-  // [PLACEHOLDER DATA] Today's tasks state
-  const [tasks, setTasks] = useState([
-    {
-      id: "t1",
-      name: "Marcus Vance",
-      title: "VP of Product",
-      company: "Linear Dynamics",
-      photo: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces",
-      profileUrl: "https://linkedin.com",
-      message: "Hey Marcus, loved your recent thoughts on developer tooling. Would love to connect and share notes.",
-      done: true,
-    },
-    {
-      id: "t2",
-      name: "Devon Reed",
-      title: "Head of Marketing",
-      company: "Retool Apps",
-      photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=faces",
-      profileUrl: "https://linkedin.com",
-      message: "Hi Devon, noticed Retool's new integrations update. We built an AI assistant that plugs right into internal outreach flows—curious if you've explored this?",
-      done: true,
-    },
-    {
-      id: "t3",
-      name: "Sarah Lindqvist",
-      title: "Growth Lead",
-      company: "Nordic SaaS Labs",
-      photo: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=faces",
-      profileUrl: "https://linkedin.com",
-      message: "Hi Sarah, saw your post on lead qualification. We automated profile scoring with zero scraping risk. Happy to send a 2-min demo if useful!",
-      done: false,
-    },
-    {
-      id: "t4",
-      name: "Alexandre Moreau",
-      title: "Co-Founder & CEO",
-      company: "Synthetix AI",
-      photo: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=faces",
-      profileUrl: "https://linkedin.com",
-      message: "Alexandre, congrats on the Seed round! Are you looking to ramp outbound pipeline while keeping account safety top of mind?",
-      done: false,
-    },
-  ]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [metrics, setMetrics] = useState({
+    totalLeads: 0,
+    connectedAccountsCount: 0,
+    activeAccountsCount: 0,
+    campaignsCount: 0,
+    sentCount: 0,
+    acceptedCount: 0,
+    repliedCount: 0,
+    meetingsBooked: 0,
+    acceptRate: 0,
+    replyRate: 0,
+    dailyCap: 25,
+  });
+
+  // Real outreach tasks from database leads
+  const [tasks, setTasks] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadOverview() {
+      try {
+        setIsLoading(true);
+        const res = await fetch("/api/dashboard/overview");
+        const data = await res.json();
+        if (data.success) {
+          if (data.metrics) setMetrics(data.metrics);
+          if (Array.isArray(data.tasks)) setTasks(data.tasks);
+        }
+      } catch (err) {
+        console.warn("Could not fetch dashboard overview:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadOverview();
+  }, []);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const completedCount = tasks.filter((t) => t.done).length;
-  const totalCount = 15; // daily cap
-  const progressRatio = (completedCount + 6) / totalCount;
-  const allTasksDone = completedCount === tasks.length;
+  const totalCount = metrics.dailyCap || 25;
+  const progressRatio = totalCount > 0 ? (completedCount / totalCount) : 0;
+  const allTasksDone = tasks.length > 0 && completedCount === tasks.length;
 
   const toggleTask = (id: string) => {
     setTasks((prev) =>
@@ -87,6 +114,10 @@ export default function DashboardOverviewPage() {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
+  };
+
+  const handleLoadDemoTasks = () => {
+    setTasks(SAMPLE_DEMO_TASKS);
   };
 
   // SVG circular progress calculation
@@ -148,18 +179,18 @@ export default function DashboardOverviewPage() {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <AnimatedCounter
-              value={2480}
+              value={metrics.totalLeads}
               className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 font-sans"
             />
           </div>
           <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-            85 new leads added this week
+            {metrics.totalLeads === 1 ? "1 prospect in your database" : `${metrics.totalLeads} prospects in your database`}
           </p>
           {/* Subtle sparkline */}
           <div className="mt-3 h-1 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: "72%" }}
+              animate={{ width: metrics.totalLeads > 0 ? "100%" : "0%" }}
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="h-full bg-palm-leaf-500 rounded-full"
             />
@@ -181,18 +212,20 @@ export default function DashboardOverviewPage() {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <AnimatedCounter
-              value={4}
+              value={metrics.campaignsCount}
               className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50"
             />
-            <span className="text-xs text-neutral-400">of 6 total</span>
+            <span className="text-xs text-neutral-400">
+              {metrics.connectedAccountsCount} {metrics.connectedAccountsCount === 1 ? "sender" : "senders"}
+            </span>
           </div>
           <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-            All 4 sequences delivering on schedule
+            {metrics.connectedAccountsCount > 0 ? "Connected LinkedIn sender accounts active" : "Connect LinkedIn account to launch"}
           </p>
           <div className="mt-3 h-1 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: "66%" }}
+              animate={{ width: metrics.campaignsCount > 0 ? "80%" : "0%" }}
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="h-full bg-palm-leaf-500 rounded-full"
             />
@@ -214,18 +247,18 @@ export default function DashboardOverviewPage() {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <AnimatedCounter
-              value={46}
+              value={metrics.acceptRate}
               suffix="%"
               className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50"
             />
           </div>
           <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-            4% higher than last month
+            {metrics.acceptedCount > 0 ? `${metrics.acceptedCount} invitations accepted` : "Calculated from outreach response"}
           </p>
           <div className="mt-3 h-1 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: "46%" }}
+              animate={{ width: `${Math.min(metrics.acceptRate, 100)}%` }}
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="h-full bg-palm-leaf-500 rounded-full"
             />
@@ -239,7 +272,7 @@ export default function DashboardOverviewPage() {
         >
           <div className="flex items-center justify-between">
             <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              Replies this week
+              Replies
             </span>
             <div className="h-7 w-7 rounded-lg bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center text-neutral-500">
               <MessageSquare className="h-3.5 w-3.5" />
@@ -247,17 +280,17 @@ export default function DashboardOverviewPage() {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <AnimatedCounter
-              value={38}
+              value={metrics.repliedCount}
               className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50"
             />
           </div>
           <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-            12 new replies, 3 more than last week
+            {metrics.replyRate > 0 ? `${metrics.replyRate}% reply conversion rate` : "Live response tracking"}
           </p>
           <div className="mt-3 h-1 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
-              animate={{ width: "82%" }}
+              animate={{ width: metrics.repliedCount > 0 ? "82%" : "0%" }}
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
               className="h-full bg-palm-leaf-500 rounded-full"
             />
@@ -310,12 +343,12 @@ export default function DashboardOverviewPage() {
                     />
                   </svg>
                   <span className="absolute text-[11px] font-bold text-neutral-800 dark:text-neutral-200">
-                    {completedCount + 6}
+                    {completedCount}
                   </span>
                 </div>
                 <div className="text-left">
                   <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 block">
-                    {completedCount + 6} of {totalCount} done
+                    {completedCount} of {totalCount} done
                   </span>
                   <span className="text-[11px] text-neutral-400 block">
                     Daily cap
@@ -323,6 +356,42 @@ export default function DashboardOverviewPage() {
                 </div>
               </div>
             </div>
+
+            {/* Empty state when 0 tasks are queued */}
+            {tasks.length === 0 && !isLoading && (
+              <div className="my-8 p-8 rounded-2xl border border-dashed border-neutral-200 dark:border-neutral-800 text-center space-y-3">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-500">
+                  <Users className="h-6 w-6" />
+                </div>
+                <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                  Your Daily Outreach Queue is Ready
+                </h4>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-sm mx-auto leading-relaxed">
+                  No prospects queued yet. Import leads via CSV or scrape targeted LinkedIn profiles to populate today&apos;s outreach queue.
+                </p>
+                <div className="flex items-center justify-center gap-2 pt-2 flex-wrap">
+                  <Link
+                    href="/dashboard/extractor"
+                    className="px-3.5 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs shadow-xs transition-colors"
+                  >
+                    Extract from LinkedIn
+                  </Link>
+                  <Link
+                    href="/dashboard/extractor"
+                    className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-semibold text-xs transition-colors"
+                  >
+                    Upload CSV Leads
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleLoadDemoTasks}
+                    className="px-3 py-2 rounded-xl text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200 font-medium text-xs transition-colors cursor-pointer"
+                  >
+                    Preview Sample Tasks
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* When all tasks are completed */}
             {allTasksDone && (

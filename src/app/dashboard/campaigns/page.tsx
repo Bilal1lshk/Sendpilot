@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Send,
@@ -14,74 +14,151 @@ import {
   AlertTriangle,
   ArrowRight,
   TrendingUp,
+  Loader2,
+  Users,
 } from "lucide-react";
+import { toast } from "sonner";
 import { pageVariants, cardVariants, listItemVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
 
+export interface CampaignItem {
+  id: string;
+  name: string;
+  status: "Active" | "Paused" | "Draft";
+  sender: string;
+  leadsCount: number;
+  sentCount: number;
+  acceptRate: number;
+  replyRate: number;
+  variantA: number;
+  variantB: number;
+}
+
+const SAMPLE_DEMO_CAMPAIGNS: CampaignItem[] = [
+  {
+    id: "sample_c1",
+    name: "SaaS Founders Seed & Series A",
+    status: "Active",
+    sender: "Connected Account",
+    leadsCount: 248,
+    sentCount: 180,
+    acceptRate: 48,
+    replyRate: 34,
+    variantA: 44,
+    variantB: 52,
+  },
+  {
+    id: "sample_c2",
+    name: "VP Sales & RevOps Outreach",
+    status: "Active",
+    sender: "Connected Account",
+    leadsCount: 120,
+    sentCount: 95,
+    acceptRate: 42,
+    replyRate: 28,
+    variantA: 42,
+    variantB: 41,
+  },
+];
+
 export default function CampaignsPage() {
   const [activeTab, setActiveTab] = useState<"list" | "wizard" | "detail">("list");
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("c1");
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [availableLeadsCount, setAvailableLeadsCount] = useState(0);
+  const [availableAccountsCount, setAvailableAccountsCount] = useState(0);
 
-  // [PLACEHOLDER DATA] Campaigns
-  const [campaigns, setCampaigns] = useState([
-    {
-      id: "c1",
-      name: "SaaS Founders Seed & Series A",
-      status: "Active" as "Active" | "Paused" | "Draft",
-      sender: "Alex Rivera",
-      leadsCount: 248,
-      sentCount: 180,
-      acceptRate: 48,
-      replyRate: 34,
-      variantA: 44,
-      variantB: 52,
-    },
-    {
-      id: "c2",
-      name: "VP Sales & RevOps Q4 Outreach",
-      status: "Active" as "Active" | "Paused" | "Draft",
-      sender: "Elena Rostova",
-      leadsCount: 120,
-      sentCount: 95,
-      acceptRate: 42,
-      replyRate: 28,
-      variantA: 42,
-      variantB: 41,
-    },
-    {
-      id: "c3",
-      name: "Design Studio Agency Leads",
-      status: "Paused" as "Active" | "Paused" | "Draft",
-      sender: "Alex Rivera",
-      leadsCount: 84,
-      sentCount: 40,
-      acceptRate: 39,
-      replyRate: 22,
-      variantA: 38,
-      variantB: 40,
-    },
-  ]);
+  // Real campaigns from database
+  const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
-  const [campaignName, setCampaignName] = useState("Nordic Tech Founders");
-  const [targetAudience, setTargetAudience] = useState("B2B SaaS Founders in Stockholm & Oslo");
-  const [creditsRequired, setCreditsRequired] = useState(420);
+  const [campaignName, setCampaignName] = useState("Targeted Industry Sequence #1");
+  const [targetAudience, setTargetAudience] = useState("B2B SaaS Decision Makers");
+  const [creditsRequired, setCreditsRequired] = useState(120);
   const creditsRemaining = 300;
 
-  const toggleStatus = (id: string) => {
-    setCampaigns((prev) =>
-      prev.map((c) => {
-        if (c.id === id) {
-          const next = c.status === "Active" ? "Paused" : "Active";
-          return { ...c, status: next };
+  const fetchCampaigns = async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch("/api/campaigns");
+      const data = await res.json();
+      if (data.success && Array.isArray(data.campaigns)) {
+        setCampaigns(data.campaigns);
+        if (data.campaigns.length > 0 && !selectedCampaignId) {
+          setSelectedCampaignId(data.campaigns[0].id);
         }
-        return c;
-      })
-    );
+        if (typeof data.availableLeadsCount === "number") setAvailableLeadsCount(data.availableLeadsCount);
+        if (typeof data.availableAccountsCount === "number") setAvailableAccountsCount(data.availableAccountsCount);
+      }
+    } catch (err) {
+      console.warn("Could not fetch campaigns:", err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId) || campaigns[0];
+  useEffect(() => {
+    fetchCampaigns();
+  }, []);
+
+  const toggleStatus = async (id: string) => {
+    const target = campaigns.find((c) => c.id === id);
+    if (!target) return;
+    const nextStatus = target.status === "Active" ? "Paused" : "Active";
+
+    setCampaigns((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, status: nextStatus } : c))
+    );
+
+    try {
+      await fetch("/api/campaigns", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      toast.success(`Campaign marked as ${nextStatus}`);
+    } catch {
+      toast.error("Failed to update campaign status");
+    }
+  };
+
+  const handleLaunchCampaign = async () => {
+    setIsLaunching(true);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: campaignName,
+          targetLeadsCount: availableLeadsCount || 50,
+          niche: targetAudience,
+          status: "Active",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Campaign launched successfully!");
+        fetchCampaigns();
+        setActiveTab("list");
+      } else {
+        toast.error(data.error || "Failed to launch campaign");
+      }
+    } catch {
+      toast.error("Network error while launching campaign");
+    } finally {
+      setIsLaunching(false);
+    }
+  };
+
+  const handleLoadDemoCampaigns = () => {
+    setCampaigns(SAMPLE_DEMO_CAMPAIGNS);
+    setSelectedCampaignId(SAMPLE_DEMO_CAMPAIGNS[0].id);
+    toast.success("Loaded sample demo campaigns for preview");
+  };
+
+  const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId) || campaigns[0] || SAMPLE_DEMO_CAMPAIGNS[0];
 
   return (
     <motion.div
@@ -145,70 +222,116 @@ export default function CampaignsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {campaigns.map((camp) => (
-                  <tr
-                    key={camp.id}
-                    onClick={() => {
-                      setSelectedCampaignId(camp.id);
-                      setActiveTab("detail");
-                    }}
-                    className="group hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40 cursor-pointer transition-colors"
-                  >
-                    <td className="py-4 px-4 font-semibold text-neutral-900 dark:text-neutral-100">
-                      {camp.name}
-                    </td>
-                    <td className="py-4 px-4">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                          camp.status === "Active"
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                            : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
-                        }`}
-                      >
-                        {camp.status === "Active" && (
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        )}
-                        {camp.status}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-neutral-500 dark:text-neutral-400">
-                      {camp.sender}
-                    </td>
-                    <td className="py-4 px-4 font-medium text-neutral-800 dark:text-neutral-200">
-                      {camp.sentCount} / {camp.leadsCount}
-                    </td>
-                    <td className="py-4 px-4 font-semibold text-palm-leaf-700 dark:text-palm-leaf-400">
-                      {camp.acceptRate}%
-                    </td>
-                    <td className="py-4 px-4 font-semibold text-neutral-800 dark:text-neutral-200">
-                      {camp.replyRate}%
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      {/* Hover action reveal */}
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className="inline-flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleStatus(camp.id)}
-                          className="p-1 rounded-md text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
-                          title={camp.status === "Active" ? "Pause campaign" : "Resume campaign"}
-                        >
-                          {camp.status === "Active" ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => alert("Campaign duplicated as Draft")}
-                          className="p-1 rounded-md text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
-                          title="Duplicate campaign"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-neutral-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <Loader2 className="h-6 w-6 animate-spin text-palm-leaf-600" />
+                        <span className="text-xs font-medium">Loading campaigns...</span>
                       </div>
                     </td>
                   </tr>
-                ))}
+                ) : campaigns.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center">
+                      <div className="max-w-md mx-auto space-y-3 px-4">
+                        <div className="h-12 w-12 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-500 mx-auto flex items-center justify-center">
+                          <Send className="h-6 w-6" />
+                        </div>
+                        <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                          No Outreach Campaigns Yet
+                        </h3>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                          Launch your first automated sequence with your connected LinkedIn sender account and {availableLeadsCount} saved leads.
+                        </p>
+                        <div className="flex items-center justify-center gap-2.5 pt-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWizardStep(1);
+                              setActiveTab("wizard");
+                            }}
+                            className="px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                          >
+                            Create First Campaign
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleLoadDemoCampaigns}
+                            className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-semibold text-xs transition-colors cursor-pointer"
+                          >
+                            Load Demo Campaigns
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  campaigns.map((camp) => (
+                    <tr
+                      key={camp.id}
+                      onClick={() => {
+                        setSelectedCampaignId(camp.id);
+                        setActiveTab("detail");
+                      }}
+                      className="group hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40 cursor-pointer transition-colors"
+                    >
+                      <td className="py-4 px-4 font-semibold text-neutral-900 dark:text-neutral-100">
+                        {camp.name}
+                      </td>
+                      <td className="py-4 px-4">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                            camp.status === "Active"
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                              : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+                          }`}
+                        >
+                          {camp.status === "Active" && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          )}
+                          {camp.status}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-neutral-500 dark:text-neutral-400">
+                        {camp.sender}
+                      </td>
+                      <td className="py-4 px-4 font-medium text-neutral-800 dark:text-neutral-200">
+                        {camp.sentCount} / {camp.leadsCount}
+                      </td>
+                      <td className="py-4 px-4 font-semibold text-palm-leaf-700 dark:text-palm-leaf-400">
+                        {camp.acceptRate}%
+                      </td>
+                      <td className="py-4 px-4 font-semibold text-neutral-800 dark:text-neutral-200">
+                        {camp.replyRate}%
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        {/* Hover action reveal */}
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleStatus(camp.id)}
+                            className="p-1 rounded-md text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+                            title={camp.status === "Active" ? "Pause campaign" : "Resume campaign"}
+                          >
+                            {camp.status === "Active" ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => alert("Campaign duplicated as Draft")}
+                            className="p-1 rounded-md text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+                            title="Duplicate campaign"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -436,13 +559,18 @@ export default function CampaignsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    alert("Campaign launched.");
-                    setActiveTab("list");
-                  }}
-                  className="rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-4 py-2 text-xs font-semibold"
+                  disabled={isLaunching}
+                  onClick={handleLaunchCampaign}
+                  className="rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-4 py-2 text-xs font-semibold cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 transition-colors"
                 >
-                  Launch campaign
+                  {isLaunching ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Launching Campaign...</span>
+                    </>
+                  ) : (
+                    <span>Launch campaign</span>
+                  )}
                 </button>
               </div>
             </div>

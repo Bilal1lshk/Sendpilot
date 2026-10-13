@@ -17,117 +17,165 @@ import {
   Table as TableIcon,
   Kanban,
   Upload,
+  Users,
+  Loader2,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants, drawerVariants, floatingBarVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
+
+import { toast } from "sonner";
+
+export interface LeadItem {
+  id: string;
+  name: string;
+  title: string;
+  company: string;
+  email: string;
+  score: "High" | "Medium" | "Low";
+  icpScore: number;
+  icpReason: string;
+  pipeline: "New" | "Contacted" | "Accepted" | "Replied" | "Meeting";
+  campaign: string;
+  linkedinUrl?: string;
+  timeline: Array<{ time: string; event: string }>;
+}
+
+const SAMPLE_DEMO_LEADS: LeadItem[] = [
+  {
+    id: "sample_1",
+    name: "Marcus Vance",
+    title: "VP of Product",
+    company: "Linear Dynamics",
+    email: "marcus@lineardynamics.io",
+    score: "High",
+    icpScore: 92,
+    icpReason: "Matches Seed-stage B2B SaaS criteria with 15+ engineers.",
+    pipeline: "Accepted",
+    campaign: "SaaS Founders Seed & Series A",
+    timeline: [
+      { time: "Yesterday, 4:10 PM", event: "Connection request accepted by Marcus" },
+      { time: "2 days ago, 9:30 AM", event: "Sent personalized icebreaker step 1" },
+    ],
+  },
+  {
+    id: "sample_2",
+    name: "Sarah Chen",
+    title: "Head of Growth",
+    company: "Stripe",
+    email: "sarah.chen@stripe.com",
+    score: "High",
+    icpScore: 95,
+    icpReason: "Decision maker for outbound acquisition tooling.",
+    pipeline: "Replied",
+    campaign: "SaaS Founders Seed & Series A",
+    timeline: [
+      { time: "Today, 11:20 AM", event: "Replied: 'Would love to see a demo next week.'" },
+      { time: "Yesterday, 2:00 PM", event: "Connection accepted" },
+    ],
+  },
+  {
+    id: "sample_3",
+    name: "Devon Reed",
+    title: "Head of Marketing",
+    company: "Retool Apps",
+    email: "devon@retoolapps.com",
+    score: "Medium",
+    icpScore: 78,
+    icpReason: "Marketing leader, evaluating integration partners.",
+    pipeline: "Contacted",
+    campaign: "VP Sales & RevOps Q4",
+    timeline: [
+      { time: "Today, 10:32 AM", event: "Connection request sent via Elena's profile" },
+    ],
+  },
+  {
+    id: "sample_4",
+    name: "Elena Rostova",
+    title: "Director of RevOps",
+    company: "Scale HQ",
+    email: "elena@scalehq.io",
+    score: "Low",
+    icpScore: 64,
+    icpReason: "Smaller outbound team size than ideal ICP.",
+    pipeline: "New",
+    campaign: "VP Sales & RevOps Q4",
+    timeline: [
+      { time: "3 days ago", event: "Imported via CSV file" },
+    ],
+  },
+];
 
 export default function LeadDatabasePage() {
   const [viewMode, setViewMode] = useState<"table" | "pipeline">("table");
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isClearing, setIsClearing] = useState(false);
 
-  // [PLACEHOLDER DATA] Leads
-  const [leads, setLeads] = useState([
-    {
-      id: "l1",
-      name: "Marcus Vance",
-      title: "VP of Product",
-      company: "Linear Dynamics",
-      email: "marcus@lineardynamics.io",
-      score: "High" as "High" | "Medium" | "Low",
-      icpScore: 92,
-      icpReason: "Matches Seed-stage B2B SaaS criteria with 15+ engineers.",
-      pipeline: "Accepted" as "New" | "Contacted" | "Accepted" | "Replied" | "Meeting",
-      campaign: "SaaS Founders Seed & Series A",
-      timeline: [
-        { time: "Yesterday, 4:10 PM", event: "Connection request accepted by Marcus" },
-        { time: "2 days ago, 9:30 AM", event: "Sent personalized icebreaker step 1" },
-      ],
-    },
-    {
-      id: "l2",
-      name: "Sarah Chen",
-      title: "Head of Growth",
-      company: "Stripe",
-      email: "sarah.chen@stripe.com",
-      score: "High" as "High" | "Medium" | "Low",
-      icpScore: 95,
-      icpReason: "Decision maker for outbound acquisition tooling.",
-      pipeline: "Replied" as "New" | "Contacted" | "Accepted" | "Replied" | "Meeting",
-      campaign: "SaaS Founders Seed & Series A",
-      timeline: [
-        { time: "Today, 11:20 AM", event: "Replied: 'Would love to see a demo next week.'" },
-        { time: "Yesterday, 2:00 PM", event: "Connection accepted" },
-      ],
-    },
-    {
-      id: "l3",
-      name: "Devon Reed",
-      title: "Head of Marketing",
-      company: "Retool Apps",
-      email: "devon@retoolapps.com",
-      score: "Medium" as "High" | "Medium" | "Low",
-      icpScore: 78,
-      icpReason: "Marketing leader, evaluating integration partners.",
-      pipeline: "Contacted" as "New" | "Contacted" | "Accepted" | "Replied" | "Meeting",
-      campaign: "VP Sales & RevOps Q4",
-      timeline: [
-        { time: "Today, 10:32 AM", event: "Connection request sent via Elena's profile" },
-      ],
-    },
-    {
-      id: "l4",
-      name: "Elena Rostova",
-      title: "Director of RevOps",
-      company: "Scale HQ",
-      email: "elena@scalehq.io",
-      score: "Low" as "High" | "Medium" | "Low",
-      icpScore: 64,
-      icpReason: "Smaller outbound team size than ideal ICP.",
-      pipeline: "New" as "New" | "Contacted" | "Accepted" | "Replied" | "Meeting",
-      campaign: "VP Sales & RevOps Q4",
-      timeline: [
-        { time: "3 days ago", event: "Imported via CSV file" },
-      ],
-    },
-  ]);
+  // Real database leads
+  const [leads, setLeads] = useState<LeadItem[]>([]);
+
+  const fetchDatabaseLeads = async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch("/api/leads");
+      const data = await res.json();
+      if (data.success && Array.isArray(data.leads)) {
+        const freshLeads: LeadItem[] = data.leads.map((l: any) => ({
+          id: l.id,
+          name: `${l.firstName || ""} ${l.lastName || ""}`.trim() || l.name || "Prospect",
+          title: l.jobTitle || l.title || "Decision Maker",
+          company: l.company || "Enterprise",
+          email: l.email || "",
+          linkedinUrl: l.linkedinUrl || "",
+          score: (Number(l.icpScore) >= 90 ? "High" : Number(l.icpScore) >= 75 ? "Medium" : "Low") as "High" | "Medium" | "Low",
+          icpScore: Number(l.icpScore) || 85,
+          icpReason: l.source ? `Imported via ${l.source}` : "Matches pipeline ICP qualification criteria.",
+          pipeline: (l.status === "contacted" ? "Contacted" : l.status === "Accepted" ? "Accepted" : "New") as any,
+          campaign: l.campaign || "Direct Import / LinkedIn",
+          timeline: [
+            { time: "Recently", event: "Saved to database" },
+          ],
+        }));
+        setLeads(freshLeads);
+      }
+    } catch (err) {
+      console.warn("Could not fetch database leads:", err);
+      toast.error("Failed to load leads from database");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadDatabaseLeads() {
-      try {
-        const res = await fetch("/api/leads");
-        const data = await res.json();
-        if (data.success && Array.isArray(data.leads) && data.leads.length > 0) {
-          const freshLeads = data.leads.map((l: any) => ({
-            id: l.id,
-            name: `${l.firstName || ""} ${l.lastName || ""}`.trim() || l.name || "Prospect",
-            title: l.jobTitle || l.title || "Decision Maker",
-            company: l.company || "Enterprise",
-            email: l.email || "",
-            score: (l.icpScore >= 90 ? "High" : l.icpScore >= 75 ? "Medium" : "Low") as "High" | "Medium" | "Low",
-            icpScore: l.icpScore || 85,
-            icpReason: "Imported lead matching qualification criteria.",
-            pipeline: "New" as "New" | "Contacted" | "Accepted" | "Replied" | "Meeting",
-            campaign: "Direct CSV & LinkedIn Extractor",
-            timeline: [
-              { time: "Recently", event: "Imported into SendPilot database" },
-            ],
-          }));
-
-          setLeads((prev) => {
-            const existingIds = new Set(prev.map((i) => i.id));
-            const newOnly = freshLeads.filter((i: any) => !existingIds.has(i.id));
-            return [...newOnly, ...prev];
-          });
-        }
-      } catch (err) {
-        console.warn("Could not fetch database leads:", err);
-      }
-    }
-    loadDatabaseLeads();
+    fetchDatabaseLeads();
   }, []);
+
+  const handleClearAllLeads = async () => {
+    if (!confirm("Are you sure you want to clear all leads from your database?")) return;
+    setIsClearing(true);
+    try {
+      const res = await fetch("/api/leads", { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setLeads([]);
+        setSelectedIds([]);
+        setSelectedLead(null);
+        toast.success("All leads removed from database");
+      }
+    } catch {
+      toast.error("Failed to clear database leads");
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const handleLoadSampleLeads = () => {
+    setLeads(SAMPLE_DEMO_LEADS);
+    toast.success("Loaded sample demo leads for preview");
+  };
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -167,15 +215,35 @@ export default function LeadDatabasePage() {
           </p>
         </div>
 
-        {/* View mode toggle & Import CTA */}
-        <div className="flex items-center gap-2.5">
+        {/* View mode toggle & Action CTAs */}
+        <div className="flex items-center gap-2.5 flex-wrap">
           <Link
             href="/dashboard/extractor"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors shadow-2xs"
           >
             <Upload className="h-3.5 w-3.5 text-palm-leaf-600" />
-            <span>Import CSV</span>
+            <span>Import / Scrape Leads</span>
           </Link>
+
+          {leads.length > 0 ? (
+            <button
+              type="button"
+              disabled={isClearing}
+              onClick={handleClearAllLeads}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 text-xs font-semibold text-rose-700 dark:text-rose-400 hover:bg-rose-100/60 transition-colors cursor-pointer"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>{isClearing ? "Clearing..." : "Clear Database"}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleLoadSampleLeads}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors shadow-2xs cursor-pointer"
+            >
+              <span>Load Demo Leads</span>
+            </button>
+          )}
 
           <div className="flex rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-100/60 dark:bg-neutral-800/60 p-0.5">
             <button
@@ -219,7 +287,7 @@ export default function LeadDatabasePage() {
           />
         </div>
         <span className="text-xs text-neutral-400">
-          {filteredLeads.length} leads
+          {filteredLeads.length} {filteredLeads.length === 1 ? "lead" : "leads"}
         </span>
       </div>
 
@@ -252,60 +320,106 @@ export default function LeadDatabasePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                {filteredLeads.map((lead) => {
-                  const isChecked = selectedIds.includes(lead.id);
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-neutral-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <Loader2 className="h-6 w-6 animate-spin text-palm-leaf-600" />
+                        <span className="text-xs font-medium">Loading database leads...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredLeads.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center">
+                      <div className="max-w-md mx-auto space-y-3 px-4">
+                        <div className="h-12 w-12 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-500 mx-auto flex items-center justify-center">
+                          <Users className="h-6 w-6" />
+                        </div>
+                        <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                          {search ? `No leads matching "${search}"` : "No Leads in Database Yet"}
+                        </h3>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                          {search
+                            ? "Try checking your search terms or clearing the filter."
+                            : "Your lead pipeline is currently clean. Extract real profiles from LinkedIn or import a CSV file to process real prospects."}
+                        </p>
+                        {!search && (
+                          <div className="flex items-center justify-center gap-2.5 pt-2 flex-wrap">
+                            <Link
+                              href="/dashboard/extractor"
+                              className="px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs shadow-xs transition-colors"
+                            >
+                              Extract from LinkedIn
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={handleLoadSampleLeads}
+                              className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-semibold text-xs transition-colors cursor-pointer"
+                            >
+                              Load Demo Sample Leads
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLeads.map((lead) => {
+                    const isChecked = selectedIds.includes(lead.id);
 
-                  return (
-                    <tr
-                      key={lead.id}
-                      onClick={() => setSelectedLead(lead)}
-                      className={`hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40 cursor-pointer transition-colors ${
-                        isChecked ? "bg-palm-leaf-50/40 dark:bg-palm-leaf-950/20" : ""
-                      }`}
-                    >
-                      <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleSelect(lead.id)}
-                          className="rounded border-neutral-300"
-                        />
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="font-semibold text-neutral-900 dark:text-neutral-100 block">
-                          {lead.name}
-                        </span>
-                        <span className="text-[11px] text-neutral-400">
-                          {lead.title}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-neutral-700 dark:text-neutral-300">
-                        {lead.company}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                            lead.score === "High"
-                              ? "bg-palm-leaf-50 text-palm-leaf-800 dark:bg-palm-leaf-950 dark:text-palm-leaf-300"
-                              : lead.score === "Medium"
-                              ? "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
-                              : "bg-neutral-100 text-neutral-500"
-                          }`}
-                        >
-                          {lead.score} ({lead.icpScore})
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
-                          {lead.pipeline}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-neutral-500 dark:text-neutral-400">
-                        {lead.campaign}
-                      </td>
-                    </tr>
-                  );
-                })}
+                    return (
+                      <tr
+                        key={lead.id}
+                        onClick={() => setSelectedLead(lead)}
+                        className={`hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40 cursor-pointer transition-colors ${
+                          isChecked ? "bg-palm-leaf-50/40 dark:bg-palm-leaf-950/20" : ""
+                        }`}
+                      >
+                        <td className="py-3.5 px-4" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelect(lead.id)}
+                            className="rounded border-neutral-300"
+                          />
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="font-semibold text-neutral-900 dark:text-neutral-100 block">
+                            {lead.name}
+                          </span>
+                          <span className="text-[11px] text-neutral-400">
+                            {lead.title}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-neutral-700 dark:text-neutral-300">
+                          {lead.company}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                              lead.score === "High"
+                                ? "bg-palm-leaf-50 text-palm-leaf-800 dark:bg-palm-leaf-950 dark:text-palm-leaf-300"
+                                : lead.score === "Medium"
+                                ? "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300"
+                                : "bg-neutral-100 text-neutral-500"
+                            }`}
+                          >
+                            {lead.score} ({lead.icpScore})
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                            {lead.pipeline}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-neutral-500 dark:text-neutral-400">
+                          {lead.campaign}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -329,25 +443,31 @@ export default function LeadDatabasePage() {
                 </div>
 
                 <div className="space-y-2 flex-1">
-                  {stageLeads.map((lead) => (
-                    <motion.div
-                      key={lead.id}
-                      whileHover={{ y: -2 }}
-                      onClick={() => setSelectedLead(lead)}
-                      className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xs hover:border-palm-leaf-400 cursor-pointer transition-all"
-                    >
-                      <p className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
-                        {lead.name}
-                      </p>
+                  {stageLeads.length === 0 ? (
+                    <div className="h-24 flex items-center justify-center text-[11px] text-neutral-400 border border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl">
+                      No leads in {stage}
+                    </div>
+                  ) : (
+                    stageLeads.map((lead) => (
+                      <motion.div
+                        key={lead.id}
+                        whileHover={{ y: -2 }}
+                        onClick={() => setSelectedLead(lead)}
+                        className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xs hover:border-palm-leaf-400 cursor-pointer transition-all"
+                      >
+                        <p className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                          {lead.name}
+                        </p>
                       <p className="text-[11px] text-neutral-400 truncate">
                         {lead.title} • {lead.company}
                       </p>
-                      <div className="mt-2 flex items-center justify-between text-[10px]">
-                        <span className="text-palm-leaf-700 font-semibold">{lead.icpScore}% ICP</span>
-                        <span className="text-neutral-400">{lead.score}</span>
-                      </div>
-                    </motion.div>
-                  ))}
+                        <div className="mt-2 flex items-center justify-between text-[10px]">
+                          <span className="text-palm-leaf-700 font-semibold">{lead.icpScore}% ICP</span>
+                          <span className="text-neutral-400">{lead.score}</span>
+                        </div>
+                      </motion.div>
+                    ))
+                  )}
                 </div>
               </div>
             );

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { pageVariants, cardVariants, modalVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
+import { toast } from "sonner";
 
 export default function WorkspaceSettingsPage() {
   const [activeTab, setActiveTab] = useState<"general" | "team" | "danger">("general");
@@ -261,7 +262,7 @@ export default function WorkspaceSettingsPage() {
 
               {/* One sentence explaining exactly what will happen */}
               <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                This will permanently delete all 2,480 leads and their associated conversation history from your workspace.
+                This will permanently delete all leads and their associated campaign history from your workspace database.
               </p>
 
               <div className="pt-2 flex items-center justify-end gap-2 text-xs">
@@ -274,9 +275,18 @@ export default function WorkspaceSettingsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     setDangerModalOpen(false);
-                    alert("Lead database wiped.");
+                    try {
+                      const res = await fetch("/api/leads", { method: "DELETE" });
+                      if (res.ok) {
+                        toast.success("Lead database wiped successfully.");
+                      } else {
+                        toast.error("Failed to wipe leads.");
+                      }
+                    } catch {
+                      toast.error("Error connecting to server.");
+                    }
                   }}
                   className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-1.5 font-semibold"
                 >

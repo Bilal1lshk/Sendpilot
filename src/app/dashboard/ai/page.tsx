@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Sparkles,
@@ -10,14 +11,48 @@ import {
   Check,
   ShieldCheck,
   CheckCircle2,
+  Users,
+  Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { pageVariants, cardVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
+
+export interface AIDraft {
+  id: string;
+  leadName: string;
+  leadTitle: string;
+  content: string;
+  approved: boolean;
+}
+
+const SAMPLE_DEMO_DRAFTS: AIDraft[] = [
+  {
+    id: "sample_d1",
+    leadName: "Sarah Chen",
+    leadTitle: "Head of Growth @ Stripe",
+    content:
+      "Hi Sarah, saw your recent talk on self-serve expansion. We built an AI assistant that scores inbound leads without messy forms. Would love to share our 2-min breakdown if you're curious!",
+    approved: false,
+  },
+  {
+    id: "sample_d2",
+    leadName: "Marcus Vance",
+    leadTitle: "VP of Product @ Linear Dynamics",
+    content:
+      "Hey Marcus, love how Linear approaches craft. We've been thinking a lot about friction in sales tooling—happy to trade notes whenever convenient.",
+    approved: false,
+  },
+];
 
 export default function AIAssistantPage() {
   const [prompt, setPrompt] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [approvedDraftId, setApprovedDraftId] = useState<string | null>(null);
+  const [realLeads, setRealLeads] = useState<any[]>([]);
+  const [selectedLeadId, setSelectedLeadId] = useState<string>("");
+  const [drafts, setDrafts] = useState<AIDraft[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Suggested prompts as soft chips
   const SUGGESTED_CHIPS = [
@@ -26,42 +61,65 @@ export default function AIAssistantPage() {
     "Draft a conversational message referencing a prospect's recent hire",
   ];
 
-  // Editable drafts
-  const [drafts, setDrafts] = useState([
-    {
-      id: "d1",
-      leadName: "Sarah Chen",
-      leadTitle: "Head of Growth @ Stripe",
-      content:
-        "Hi Sarah, saw your recent talk on self-serve expansion. We built an AI assistant that scores inbound leads without messy forms. Would love to share our 2-min breakdown if you're curious!",
-      approved: false,
-    },
-    {
-      id: "d2",
-      leadName: "Marcus Vance",
-      leadTitle: "VP of Product @ Linear Dynamics",
-      content:
-        "Hey Marcus, love how Linear approaches craft. We've been thinking a lot about friction in sales tooling—happy to trade notes whenever convenient.",
-      approved: false,
-    },
-  ]);
+  useEffect(() => {
+    async function loadRealLeads() {
+      try {
+        setIsLoading(true);
+        const res = await fetch("/api/leads");
+        const data = await res.json();
+        if (data.success && Array.isArray(data.leads) && data.leads.length > 0) {
+          setRealLeads(data.leads);
+          setSelectedLeadId(data.leads[0].id);
+
+          // Build personalized initial drafts for the user's real leads
+          const initialDrafts: AIDraft[] = data.leads.slice(0, 3).map((l: any, idx: number) => {
+            const name = `${l.firstName || ""} ${l.lastName || ""}`.trim() || l.name || "Prospect";
+            const title = l.jobTitle || l.title || "Decision Maker";
+            const company = l.company || "Enterprise";
+
+            return {
+              id: `draft_${l.id || idx}`,
+              leadName: name,
+              leadTitle: `${title} @ ${company}`,
+              content: `Hi ${l.firstName || name.split(" ")[0]}, noticed your impressive engineering and product execution as ${title} at ${company}. We automated LinkedIn prospect scoring and lightweight follow-ups—curious if you're exploring ways to scale outbound pipeline?`,
+              approved: false,
+            };
+          });
+          setDrafts(initialDrafts);
+        }
+      } catch (err) {
+        console.warn("Could not load real leads in AI page:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadRealLeads();
+  }, []);
 
   const handleSendPrompt = (text: string) => {
     if (!text.trim()) return;
     setIsThinking(true);
+
+    const targetLead = realLeads.find((l) => l.id === selectedLeadId) || realLeads[0];
+    const name = targetLead ? `${targetLead.firstName || ""} ${targetLead.lastName || ""}`.trim() || targetLead.name || "Prospect" : "Prospect";
+    const firstName = targetLead?.firstName || name.split(" ")[0] || "there";
+    const title = targetLead?.jobTitle || targetLead?.title || "Industry Leader";
+    const company = targetLead?.company || "your team";
+
     setTimeout(() => {
       setIsThinking(false);
       setDrafts((prev) => [
         {
           id: `d_${Date.now()}`,
-          leadName: "New Prospect",
-          leadTitle: "Co-Founder",
-          content: `Hi there, noticed your team's recent announcement. Thought I'd reach out regarding your pipeline infrastructure.`,
+          leadName: name,
+          leadTitle: `${title} @ ${company}`,
+          content: `Hi ${firstName}, saw the work ${company} is doing in this space. ${text.includes("follow") ? "Following up on my note earlier to share a quick 2-minute overview." : `Loved your focus on ${title.toLowerCase()}. Thought I'd connect and share our outbound pipeline benchmark.`}`,
           approved: false,
         },
         ...prev,
       ]);
       setPrompt("");
+      toast.success(`Generated personalized message for ${name}!`);
     }, 1200);
   };
 
@@ -70,7 +128,13 @@ export default function AIAssistantPage() {
       prev.map((d) => (d.id === id ? { ...d, approved: true } : d))
     );
     setApprovedDraftId(id);
+    toast.success("Draft approved and ready for queue!");
     setTimeout(() => setApprovedDraftId(null), 2500);
+  };
+
+  const handleLoadSampleDrafts = () => {
+    setDrafts(SAMPLE_DEMO_DRAFTS);
+    toast.success("Loaded demo sample drafts");
   };
 
   return (
@@ -107,6 +171,29 @@ export default function AIAssistantPage() {
               Ask SendPilot AI to draft icebreakers, refine objection handling, or rewrite a message to sound more natural.
             </p>
 
+            {/* Lead selector if leads exist */}
+            {realLeads.length > 0 && (
+              <div>
+                <span className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider block mb-1.5">
+                  Personalize message for prospect
+                </span>
+                <select
+                  value={selectedLeadId}
+                  onChange={(e) => setSelectedLeadId(e.target.value)}
+                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 text-xs font-medium text-neutral-800 dark:text-neutral-200 focus:outline-none focus:border-palm-leaf-500 cursor-pointer"
+                >
+                  {realLeads.map((lead) => {
+                    const name = `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || lead.name || "Prospect";
+                    return (
+                      <option key={lead.id} value={lead.id}>
+                        {name} — {lead.jobTitle || lead.title || "Decision Maker"} at {lead.company || "Enterprise"}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
             {/* Suggested Chips */}
             <div>
               <span className="text-[10px] text-neutral-400 font-medium uppercase tracking-wider block mb-2">
@@ -121,7 +208,7 @@ export default function AIAssistantPage() {
                       setPrompt(chip);
                       handleSendPrompt(chip);
                     }}
-                    className="text-left text-xs px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 text-neutral-700 dark:text-neutral-300 hover:border-palm-leaf-400 transition-colors"
+                    className="text-left text-xs px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 text-neutral-700 dark:text-neutral-300 hover:border-palm-leaf-400 transition-colors cursor-pointer"
                   >
                     {chip}
                   </button>
@@ -150,13 +237,13 @@ export default function AIAssistantPage() {
                 placeholder="Type instructions for your outreach message..."
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950 p-3 pr-10 text-xs focus:outline-none focus:border-palm-leaf-500"
+                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950 p-3 pr-10 text-xs focus:outline-none focus:border-palm-leaf-500 font-medium"
               />
               <button
                 type="button"
                 onClick={() => handleSendPrompt(prompt)}
                 disabled={!prompt.trim() || isThinking}
-                className="absolute right-3 bottom-3 p-1.5 rounded-lg bg-palm-leaf-600 hover:bg-palm-leaf-700 disabled:opacity-40 text-white transition-all"
+                className="absolute right-3 bottom-3 p-1.5 rounded-lg bg-palm-leaf-600 hover:bg-palm-leaf-700 disabled:opacity-40 text-white transition-all cursor-pointer"
               >
                 <Send className="h-3.5 w-3.5" />
               </button>
@@ -166,11 +253,50 @@ export default function AIAssistantPage() {
 
         {/* Right: Editable Draft Cards */}
         <motion.div variants={cardVariants} className="space-y-4">
-          <h3 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
-            Generated message drafts
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+              Generated message drafts ({drafts.length})
+            </h3>
+            {drafts.length === 0 && (
+              <button
+                type="button"
+                onClick={handleLoadSampleDrafts}
+                className="text-[11px] text-palm-leaf-700 dark:text-palm-leaf-400 hover:underline cursor-pointer font-semibold"
+              >
+                Load Sample Drafts
+              </button>
+            )}
+          </div>
 
-          <div className="space-y-3">
+          {drafts.length === 0 ? (
+            <div className="p-8 rounded-2xl border border-dashed border-neutral-200 dark:border-neutral-800 text-center space-y-3">
+              <div className="h-10 w-10 rounded-xl bg-neutral-100 dark:bg-neutral-800 text-neutral-500 mx-auto flex items-center justify-center">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                No Drafts Generated Yet
+              </h4>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto leading-relaxed">
+                Type instructions on the left to draft personalized connection notes for your leads.
+              </p>
+              <div className="pt-2 flex items-center justify-center gap-2">
+                <Link
+                  href="/dashboard/extractor"
+                  className="px-3 py-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white text-xs font-semibold shadow-xs"
+                >
+                  Extract Real Leads
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleLoadSampleDrafts}
+                  className="px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs font-medium hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer"
+                >
+                  Load Sample Drafts
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
             {drafts.map((draft) => (
               <motion.div
                 key={draft.id}
@@ -229,8 +355,9 @@ export default function AIAssistantPage() {
               </motion.div>
             ))}
           </div>
-        </motion.div>
-      </div>
+        )}
+      </motion.div>
+    </div>
     </motion.div>
   );
 }

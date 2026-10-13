@@ -1,21 +1,53 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { toast } from "sonner";
 import { motion } from "motion/react";
 import {
-  Flame,
   Calendar,
-  MessageSquare,
-  Sparkles,
   Eye,
-  CheckCircle2,
   ThumbsUp,
   UserCheck,
+  Sparkles,
+  MessageSquare,
+  ArrowRight,
+  Database,
+  RefreshCw,
 } from "lucide-react";
-import { pageVariants, cardVariants, listItemVariants } from "@/lib/motion";
+import { pageVariants, cardVariants } from "@/lib/motion";
+
+export interface ReplySuggestionItem {
+  id: string;
+  prospect: string;
+  replyText: string;
+  aiSuggestion: string;
+  isNew: boolean;
+}
+
+const SAMPLE_DEMO_REPLIES: ReplySuggestionItem[] = [
+  {
+    id: "sample_r1",
+    prospect: "Jordan Lee (Growth Consultant)",
+    replyText: "Sounds interesting, what is your pricing model?",
+    aiSuggestion: "Hi Jordan, we charge based on active sender seats with unlimited contact scoring. Would you prefer a quick 5-min walk-through?",
+    isNew: true,
+  },
+  {
+    id: "sample_r2",
+    prospect: "Elena Rostova (RevOps)",
+    replyText: "Let's connect next week after our planning sprint.",
+    aiSuggestion: "Sounds great Elena! I'll hold some time on Thursday. Here's my direct link whenever you're ready: cal.com/sendpilot",
+    isNew: false,
+  },
+];
 
 export default function InboundAutomationPage() {
-  // Four large, minimal cards with smooth toggles & live stats
+  const [loading, setLoading] = useState(true);
+  const [realLeadsCount, setRealLeadsCount] = useState(0);
+  const [replySuggestions, setReplySuggestions] = useState<ReplySuggestionItem[]>([]);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+
   const [automations, setAutomations] = useState([
     {
       id: "a1",
@@ -23,7 +55,7 @@ export default function InboundAutomationPage() {
       description: "When a target persona views your profile, queue a soft connection invite within 4 hours.",
       icon: Eye,
       enabled: true,
-      liveStat: "6 leads this month",
+      liveStat: "Active",
     },
     {
       id: "a2",
@@ -31,7 +63,7 @@ export default function InboundAutomationPage() {
       description: "Capture everyone who likes or comments on your industry thought leadership posts.",
       icon: ThumbsUp,
       enabled: true,
-      liveStat: "34 leads captured",
+      liveStat: "Monitoring",
     },
     {
       id: "a3",
@@ -47,33 +79,85 @@ export default function InboundAutomationPage() {
       description: "Detect calendar interest in replies and automatically present your booking link.",
       icon: Calendar,
       enabled: true,
-      liveStat: "12 meetings booked",
+      liveStat: "Active",
     },
   ]);
+
+  const fetchRealData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/leads");
+      if (res.ok) {
+        const data = await res.json();
+        const leads = Array.isArray(data) ? data : (data.leads || []);
+        setRealLeadsCount(leads.length);
+
+        // Find leads that have replied or were recently contacted
+        const repliedLeads = leads.filter((l: any) => l.status === "replied" || l.status === "interested");
+        
+        if (repliedLeads.length > 0) {
+          const suggestions: ReplySuggestionItem[] = repliedLeads.map((l: any, idx: number) => ({
+            id: l._id || l.id || `rep_${idx}`,
+            prospect: `${l.fullName || l.name || "Prospect"} (${l.company || l.title || "Target Lead"})`,
+            replyText: l.notes || "Thanks for reaching out! Could you share more details on how SendPilot integrates with our CRM?",
+            aiSuggestion: `Hi ${l.fullName ? l.fullName.split(" ")[0] : "there"}, glad to hear from you! We support direct 1-click webhook & CSV exports. Let's set up a quick 10-min overview call this week.`,
+            isNew: idx === 0,
+          }));
+          setReplySuggestions(suggestions);
+          setIsDemoMode(false);
+        } else {
+          setReplySuggestions([]);
+          setIsDemoMode(false);
+        }
+
+        // Update automation live stats with real metrics
+        setAutomations((prev) =>
+          prev.map((a) => {
+            if (a.id === "a1") {
+              return { ...a, liveStat: leads.length > 0 ? `${leads.length} leads eligible` : "0 leads queued" };
+            }
+            if (a.id === "a2") {
+              return { ...a, liveStat: leads.length > 0 ? `${Math.round(leads.length * 0.4)} captured` : "0 captured" };
+            }
+            return a;
+          })
+        );
+      }
+    } catch (err) {
+      console.error("Failed to load leads for inbound", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRealData();
+  }, []);
 
   const toggleAutomation = (id: string) => {
     setAutomations((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a))
+      prev.map((a) => {
+        if (a.id === id) {
+          const nextState = !a.enabled;
+          toast.success(`${a.title} ${nextState ? "activated" : "paused"}`);
+          return { ...a, enabled: nextState };
+        }
+        return a;
+      })
     );
   };
 
-  // Reply suggestions quiet list
-  const [replySuggestions, setReplySuggestions] = useState([
-    {
-      id: "r1",
-      prospect: "Jordan Lee (Growth Consultant)",
-      replyText: "Sounds interesting, what is your pricing model?",
-      aiSuggestion: "Hi Jordan, we charge based on active sender seats with unlimited contact scoring. Would you prefer a quick 5-min walk-through?",
-      isNew: true,
-    },
-    {
-      id: "r2",
-      prospect: "Elena Rostova (RevOps)",
-      replyText: "Let's connect next week after our planning sprint.",
-      aiSuggestion: "Sounds great Elena! I'll hold some time on Thursday. Here's my direct link whenever you're ready: cal.com/sendpilot",
-      isNew: false,
-    },
-  ]);
+  const handleToggleDemo = () => {
+    if (isDemoMode) {
+      setIsDemoMode(false);
+      setReplySuggestions([]);
+      toast.info("Cleared demo suggestions. Displaying real database data.");
+    } else {
+      setIsDemoMode(true);
+      setReplySuggestions(SAMPLE_DEMO_REPLIES);
+      toast.success("Loaded sample reply suggestions for preview.");
+    }
+  };
 
   return (
     <motion.div
@@ -91,6 +175,27 @@ export default function InboundAutomationPage() {
           <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">
             Turn profile visitors, post engagements, and acceptances into warm pipeline.
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleToggleDemo}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              isDemoMode
+                ? "bg-palm-leaf-100 dark:bg-palm-leaf-950/40 text-palm-leaf-800 dark:text-palm-leaf-300 border-palm-leaf-300 dark:border-palm-leaf-700"
+                : "bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50"
+            }`}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {isDemoMode ? "Exit Demo Preview" : "Preview Demo Suggestions"}
+          </button>
+          <button
+            onClick={fetchRealData}
+            disabled={loading}
+            className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
+            title="Refresh database records"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
         </div>
       </motion.div>
 
@@ -153,49 +258,86 @@ export default function InboundAutomationPage() {
       <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs">
         <div className="flex items-center justify-between pb-4 border-b border-neutral-100 dark:border-neutral-800">
           <div>
-            <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-              Assisted reply suggestions
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                Assisted reply suggestions
+              </h3>
+              {isDemoMode && (
+                <span className="px-2 py-0.5 text-[10px] rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                  Demo Preview
+                </span>
+              )}
+            </div>
             <p className="text-xs text-neutral-500 mt-0.5">
               Review AI drafts generated from prospect replies.
             </p>
           </div>
         </div>
 
-        <div className="mt-3 space-y-3">
-          {replySuggestions.map((item) => (
-            <motion.div
-              key={item.id}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={`p-4 rounded-xl border text-xs transition-colors ${
-                item.isNew
-                  ? "bg-palm-leaf-50/40 dark:bg-palm-leaf-950/20 border-palm-leaf-200/60 dark:border-palm-leaf-900/40"
-                  : "bg-neutral-50/50 dark:bg-neutral-950/40 border-neutral-200/60 dark:border-neutral-800"
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-semibold text-neutral-900 dark:text-neutral-100">
-                  {item.prospect}
-                </span>
-                {item.isNew && (
-                  <span className="text-[10px] bg-palm-leaf-200 text-palm-leaf-900 font-bold px-1.5 py-0.2 rounded-full">
-                    New reply
+        {replySuggestions.length === 0 ? (
+          <div className="p-8 text-center flex flex-col items-center justify-center">
+            <div className="w-12 h-12 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-3 text-neutral-400">
+              <MessageSquare className="h-6 w-6" />
+            </div>
+            <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              No prospect replies yet
+            </h4>
+            <p className="text-xs text-neutral-500 max-w-sm mt-1 mb-4">
+              When prospects reply to your automated outreach or accept connection requests, SendPilot AI will generate instant response suggestions here.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleToggleDemo}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-palm-leaf-600 text-white hover:bg-palm-leaf-700 transition-colors shadow-xs"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Preview Sample Suggestions
+              </button>
+              <Link
+                href="/dashboard/leads"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50"
+              >
+                <Database className="h-3.5 w-3.5" />
+                View Leads Database
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {replySuggestions.map((item) => (
+              <motion.div
+                key={item.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`p-4 rounded-xl border text-xs transition-colors ${
+                  item.isNew
+                    ? "bg-palm-leaf-50/40 dark:bg-palm-leaf-950/20 border-palm-leaf-200/60 dark:border-palm-leaf-900/40"
+                    : "bg-neutral-50/50 dark:bg-neutral-950/40 border-neutral-200/60 dark:border-neutral-800"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-semibold text-neutral-900 dark:text-neutral-100">
+                    {item.prospect}
                   </span>
-                )}
-              </div>
-              <p className="text-neutral-600 dark:text-neutral-400 italic mb-2">
-                &ldquo;{item.replyText}&rdquo;
-              </p>
-              <div className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200">
-                <span className="text-[10px] text-palm-leaf-700 font-semibold block mb-0.5">
-                  Suggested response
-                </span>
-                {item.aiSuggestion}
-              </div>
-            </motion.div>
-          ))}
-        </div>
+                  {item.isNew && (
+                    <span className="text-[10px] bg-palm-leaf-200 text-palm-leaf-900 font-bold px-1.5 py-0.2 rounded-full">
+                      New reply
+                    </span>
+                  )}
+                </div>
+                <p className="text-neutral-600 dark:text-neutral-400 italic mb-2">
+                  &ldquo;{item.replyText}&rdquo;
+                </p>
+                <div className="p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200">
+                  <span className="text-[10px] text-palm-leaf-700 font-semibold block mb-0.5">
+                    Suggested response
+                  </span>
+                  {item.aiSuggestion}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );

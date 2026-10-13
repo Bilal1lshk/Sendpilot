@@ -118,20 +118,9 @@ export default function LeadExtractorPage() {
   const [csvSavedSuccess, setCsvSavedSuccess] = useState(false);
 
   // History list state
-  const [importHistory, setImportHistory] = useState([
-    {
-      file: "Series-A-Founders.csv",
-      date: "Today at 10:15 AM",
-      count: 270,
-      status: "Completed",
-    },
-    {
-      file: "Fintech-Leads-Stockholm.xlsx",
-      date: "Yesterday at 3:20 PM",
-      count: 145,
-      status: "Completed",
-    },
-  ]);
+  const [importHistory, setImportHistory] = useState<
+    Array<{ file: string; date: string; count: number; status: string }>
+  >([]);
 
   // Sources Cards
   const SOURCES = [
@@ -1671,26 +1660,32 @@ driver.quit()`;
         <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 mb-3">
           Extraction & Import history
         </h3>
-        <div className="divide-y divide-neutral-100 dark:divide-neutral-800 text-xs">
-          {importHistory.map((row, idx) => (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              className="py-3 flex items-center justify-between"
-            >
-              <div>
-                <p className="font-semibold text-neutral-800 dark:text-neutral-200">{row.file}</p>
-                <p className="text-[11px] text-neutral-400">{row.date}</p>
-              </div>
-              <div className="flex items-center gap-4">
-                <span className="text-neutral-600 dark:text-neutral-300">{row.count} leads</span>
-                <span className="text-palm-leaf-700 font-semibold">{row.status}</span>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+        {importHistory.length === 0 ? (
+          <div className="py-6 text-center text-xs text-neutral-400">
+            No extraction or import history yet. Real-time operations will appear here as you scrape LinkedIn profiles or upload CSVs.
+          </div>
+        ) : (
+          <div className="divide-y divide-neutral-100 dark:divide-neutral-800 text-xs">
+            {importHistory.map((row, idx) => (
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.05 }}
+                className="py-3 flex items-center justify-between"
+              >
+                <div>
+                  <p className="font-semibold text-neutral-800 dark:text-neutral-200">{row.file}</p>
+                  <p className="text-[11px] text-neutral-400">{row.date}</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-neutral-600 dark:text-neutral-300">{row.count} leads</span>
+                  <span className="text-palm-leaf-700 font-semibold">{row.status}</span>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );
