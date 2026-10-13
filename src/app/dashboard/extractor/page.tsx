@@ -89,14 +89,24 @@ export default function LeadExtractorPage() {
 
   const PROFILE_PRESETS = [
     { label: "Ali (from Gujranwala)", url: "https://www.linkedin.com/in/ali-gujranwala" },
+    { label: "Graphic Designer Search", url: "https://www.linkedin.com/search/results/people/?keywords=graphic%20designer&origin=SWITCH_SEARCH_VERTICAL" },
+    { label: "Software Engineer Search", url: "https://www.linkedin.com/search/results/people/?keywords=software%20engineer&origin=SWITCH_SEARCH_VERTICAL" },
     { label: "Bill Gates", url: "https://www.linkedin.com/in/williamhgates" },
     { label: "Satya Nadella", url: "https://www.linkedin.com/in/satyanadella" },
-    { label: "Sundar Pichai", url: "https://www.linkedin.com/in/sundarpichai" },
   ];
 
+  // LinkedIn Search Mode & Inputs
+  const [searchMethod, setSearchMethod] = useState<"keywords" | "search_url" | "raw_html">("keywords");
+  const [searchUrlInput, setSearchUrlInput] = useState<string>("https://www.linkedin.com/search/results/people/?keywords=graphic%20designer&origin=SWITCH_SEARCH_VERTICAL");
+  const [rawHtmlInput, setRawHtmlInput] = useState<string>("");
+
+  // Extracted leads detected from Search URL in Profile Tab
+  const [detectedSearchLeads, setDetectedSearchLeads] = useState<ExtractedLead[]>([]);
+  const [detectedSearchQuery, setDetectedSearchQuery] = useState<string>("");
+
   // LinkedIn Extractor Inputs
-  const [keywords, setKeywords] = useState("Marketing Data Analyst");
-  const [location, setLocation] = useState("Berlin");
+  const [keywords, setKeywords] = useState("Graphic Designer");
+  const [location, setLocation] = useState("");
   const [maxLeads, setMaxLeads] = useState<number>(10);
   const [engineMode, setEngineMode] = useState<"live" | "fast">("live");
 
@@ -178,18 +188,39 @@ export default function LeadExtractorPage() {
       clearTimeout(t2);
       clearTimeout(t3);
 
-      if (data.success && data.profile) {
-        setScrapedProfile(data.profile);
-        setImportHistory((prev) => [
-          {
-            file: `Profile: ${data.profile.name} (${data.profile.company || "LinkedIn"})`,
-            date: "Just now",
-            count: 1,
-            status: "Extracted",
-          },
-          ...prev,
-        ]);
-        toast.success(`Scraped profile for ${data.profile.name}!`);
+      if (data.success) {
+        if (data.isSearchUrl && Array.isArray(data.leads) && data.leads.length > 0) {
+          setDetectedSearchLeads(data.leads);
+          setDetectedSearchQuery(data.keywords || "Graphic Designer");
+          setExtractedLeads(data.leads);
+          setSelectedLeadIds(data.leads.map((l: ExtractedLead) => l.id));
+          setScrapedProfile(null);
+          setImportHistory((prev) => [
+            {
+              file: `LinkedIn Search: "${data.keywords || "Candidates"}" (${data.leads.length} profiles)`,
+              date: "Just now",
+              count: data.leads.length,
+              status: "Extracted",
+            },
+            ...prev,
+          ]);
+          toast.success(`Search URL detected! Extracted ${data.leads.length} profiles matching "${data.keywords || "Graphic Designer"}"!`);
+        } else if (data.profile) {
+          setScrapedProfile(data.profile);
+          setDetectedSearchLeads([]);
+          setImportHistory((prev) => [
+            {
+              file: `Profile: ${data.profile.name} (${data.profile.company || "LinkedIn"})`,
+              date: "Just now",
+              count: 1,
+              status: "Extracted",
+            },
+            ...prev,
+          ]);
+          toast.success(`Scraped profile for ${data.profile.name}!`);
+        } else {
+          toast.error(data.error || "Failed to scrape profile");
+        }
       } else {
         toast.error(data.error || "Failed to scrape profile");
       }
@@ -255,19 +286,21 @@ export default function LeadExtractorPage() {
 
   // Trigger LinkedIn Extraction via API & Selenium
   const handleRunLinkedInExtractor = async () => {
-    if (!keywords.trim()) {
-      toast.error("Please enter search keywords or a job title");
-      return;
-    }
-
     setIsExtracting(true);
     setExtractedLeads([]);
     setSelectedLeadIds([]);
 
+    const searchDesc =
+      searchMethod === "search_url"
+        ? "LinkedIn Search URL"
+        : searchMethod === "raw_html"
+        ? "LinkedIn Raw HTML Source"
+        : `"${keywords}" ${location ? `in "${location}"` : ""}`;
+
     setExtractionStep("1/4: Initializing Chrome WebDriver with Selenium...");
 
     const t1 = setTimeout(() => {
-      setExtractionStep(`2/4: Searching LinkedIn for "${keywords}" in "${location}"...`);
+      setExtractionStep(`2/4: Searching LinkedIn for ${searchDesc}...`);
     }, 1200);
 
     const t2 = setTimeout(() => {
@@ -279,16 +312,43 @@ export default function LeadExtractorPage() {
     }, 4200);
 
     try {
+      const payload: any = {
+        maxLeads,
+        mode: engineMode,
+        saveToWorkspace: false,
+      };
+
+      if (searchMethod === "search_url") {
+        if (!searchUrlInput.trim()) {
+          toast.error("Please enter a LinkedIn search URL");
+          setIsExtracting(false);
+          setExtractionStep("");
+          return;
+        }
+        payload.searchUrl = searchUrlInput.trim();
+      } else if (searchMethod === "raw_html") {
+        if (!rawHtmlInput.trim()) {
+          toast.error("Please paste LinkedIn search HTML source");
+          setIsExtracting(false);
+          setExtractionStep("");
+          return;
+        }
+        payload.rawHtml = rawHtmlInput.trim();
+      } else {
+        if (!keywords.trim()) {
+          toast.error("Please enter search keywords or a job title");
+          setIsExtracting(false);
+          setExtractionStep("");
+          return;
+        }
+        payload.keywords = keywords.trim();
+        payload.location = location.trim();
+      }
+
       const res = await fetch("/api/extractor/linkedin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          keywords,
-          location,
-          maxLeads,
-          mode: engineMode,
-          saveToWorkspace: false,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -301,7 +361,7 @@ export default function LeadExtractorPage() {
         setSelectedLeadIds(data.leads.map((l: ExtractedLead) => l.id));
         setImportHistory((prev) => [
           {
-            file: `LinkedIn Search: "${keywords}" in ${location}`,
+            file: `LinkedIn Search: ${data.keywords || searchDesc} (${data.leads.length} leads)`,
             date: "Just now",
             count: data.leads.length,
             status: "Extracted",
@@ -621,10 +681,10 @@ driver.quit()`;
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                    LinkedIn Single Profile Scraper
+                    LinkedIn Profile & Search URL Scraper
                   </h3>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Paste any LinkedIn profile URL (e.g. <span className="font-semibold text-neutral-700 dark:text-neutral-300">ali from gujranwala</span>) to extract headline, company, email & ICP fit.
+                    Paste a profile URL (e.g. <span className="font-semibold text-neutral-700 dark:text-neutral-300">ali from gujranwala</span>) for one person, or a LinkedIn <span className="font-semibold text-neutral-700 dark:text-neutral-300">people search URL</span> to extract multiple profiles.
                   </p>
                 </div>
               </div>
@@ -965,6 +1025,76 @@ driver.quit()`;
               </div>
             </motion.div>
           )}
+
+          {/* Multi-profile results from a Search URL */}
+          {!scrapedProfile && detectedSearchLeads.length > 0 && !isScrapingProfile && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xs overflow-hidden"
+            >
+              <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-xl bg-palm-leaf-100 dark:bg-palm-leaf-950 flex items-center justify-center text-palm-leaf-700 dark:text-palm-leaf-300">
+                    <Users className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                      {detectedSearchLeads.length} profiles found for &quot;{detectedSearchQuery}&quot;
+                    </h4>
+                    <p className="text-[11px] text-neutral-500">Search URL detected — showing all matching candidates.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={handleExportCsv} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">
+                    <Download className="h-3.5 w-3.5 text-palm-leaf-600" />
+                    <span>Export CSV</span>
+                  </button>
+                  <button type="button" onClick={handleSaveToDatabase} disabled={isSavingDb} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white text-xs font-semibold cursor-pointer disabled:opacity-50">
+                    {isSavingDb ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
+                    <span>Save All to CRM</span>
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-neutral-50/70 dark:bg-neutral-950/40 text-[11px] font-medium text-neutral-500 uppercase tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Contact</th>
+                      <th className="py-3 px-4">Headline & Company</th>
+                      <th className="py-3 px-4">Location</th>
+                      <th className="py-3 px-4">ICP</th>
+                      <th className="py-3 px-4">Profile</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
+                    {detectedSearchLeads.map((lead) => (
+                      <tr key={lead.id} className="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40">
+                        <td className="py-3 px-4">
+                          <span className="font-semibold text-neutral-900 dark:text-neutral-100 block">{lead.name}</span>
+                          <span className="text-[11px] text-neutral-400 font-mono">{lead.email}</span>
+                        </td>
+                        <td className="py-3 px-4 text-neutral-700 dark:text-neutral-300">
+                          <span className="font-medium block">{lead.title}</span>
+                          <span className="text-[11px] text-neutral-400">{lead.company}</span>
+                        </td>
+                        <td className="py-3 px-4 text-neutral-500">{lead.location}</td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-palm-leaf-50 text-palm-leaf-800 dark:bg-palm-leaf-950 dark:text-palm-leaf-300">{lead.icpScore}%</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <a href={lead.linkedinUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[#0a66c2] hover:underline">
+                            <span>Open</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
         </motion.div>
       )}
 
@@ -1037,8 +1167,68 @@ driver.quit()`;
               ))}
             </div>
 
+            {/* Search Method Toggle */}
+            <div className="flex items-center gap-1.5 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-xl text-xs w-fit">
+              {([
+                { id: "keywords", label: "Keywords" },
+                { id: "search_url", label: "LinkedIn Search URL" },
+                { id: "raw_html", label: "Paste Page HTML (exact data)" },
+              ] as const).map((m) => (
+                <button
+                  key={m.id}
+                  id={`search-method-${m.id}`}
+                  type="button"
+                  onClick={() => setSearchMethod(m.id)}
+                  className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                    searchMethod === m.id
+                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-2xs"
+                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {searchMethod === "search_url" && (
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <input
+                  id="search-url-input"
+                  type="text"
+                  value={searchUrlInput}
+                  onChange={(e) => setSearchUrlInput(e.target.value)}
+                  placeholder="https://www.linkedin.com/search/results/people/?keywords=graphic%20designer"
+                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-xs focus:outline-none focus:border-palm-leaf-500 font-medium"
+                />
+                <button type="button" disabled={isExtracting} onClick={handleRunLinkedInExtractor} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-5 py-2.5 text-xs font-semibold cursor-pointer disabled:opacity-50">
+                  {isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                  <span>{isExtracting ? "Extracting..." : "Extract Profiles"}</span>
+                </button>
+              </div>
+            )}
+
+            {searchMethod === "raw_html" && (
+              <div className="space-y-2">
+                <p className="text-[11px] text-neutral-500">
+                  Open the search page in your logged-in browser → right-click → <b>View Page Source</b> (or Ctrl+U) → copy everything and paste here. This extracts the real names, headlines & locations shown on that page.
+                </p>
+                <textarea
+                  id="raw-html-input"
+                  value={rawHtmlInput}
+                  onChange={(e) => setRawHtmlInput(e.target.value)}
+                  rows={6}
+                  placeholder="<!DOCTYPE html> ... paste LinkedIn search page source here"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-[11px] font-mono focus:outline-none focus:border-palm-leaf-500"
+                />
+                <button type="button" disabled={isExtracting} onClick={handleRunLinkedInExtractor} className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-5 py-2.5 text-xs font-semibold cursor-pointer disabled:opacity-50">
+                  {isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Code2 className="h-3.5 w-3.5" />}
+                  <span>{isExtracting ? "Parsing..." : "Parse HTML"}</span>
+                </button>
+              </div>
+            )}
+
             {/* Search Input Form */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+            <div className={`grid grid-cols-1 md:grid-cols-12 gap-3.5 ${searchMethod !== "keywords" ? "hidden" : ""}`}>
               <div className="md:col-span-5 space-y-1.5">
                 <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
                   <Briefcase className="h-3.5 w-3.5 text-neutral-400" />
