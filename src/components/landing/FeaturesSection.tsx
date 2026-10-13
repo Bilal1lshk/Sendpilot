@@ -94,7 +94,7 @@ export function FeaturesSection() {
             Everything your team needs to scale outbound.
           </h2>
 
-          <p className="text-base sm:text-lg text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg text-neutral-600 max-w-2xl mx-auto">
             Engineered to replace disjointed tool stacks with a cohesive, AI-powered system designed for modern revenue teams.
           </p>
         </div>
@@ -106,30 +106,30 @@ export function FeaturesSection() {
             return (
               <div
                 key={feat.title}
-                className="group relative rounded-3xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-8 shadow-xs hover:shadow-md hover:border-palm-leaf-300 dark:hover:border-palm-leaf-700 transition-all duration-200 flex flex-col justify-between"
+                className="group relative rounded-3xl border border-neutral-200 bg-white p-8 shadow-xs hover:shadow-md hover:border-palm-leaf-300 transition-all duration-200 flex flex-col justify-between"
               >
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-palm-leaf-50 dark:bg-palm-leaf-950/60 text-palm-leaf-700 dark:text-palm-leaf-300 group-hover:bg-palm-leaf-600 group-hover:text-white transition-colors duration-200">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-palm-leaf-50 text-palm-leaf-700 group-hover:bg-palm-leaf-600 group-hover:text-white transition-colors duration-200">
                       <Icon className="h-6 w-6 stroke-[1.8]" />
                     </div>
-                    <span className="text-[11px] font-semibold text-palm-leaf-800 dark:text-palm-leaf-300 bg-palm-leaf-50 dark:bg-palm-leaf-950/40 px-3 py-1 rounded-full border border-palm-leaf-200 dark:border-palm-leaf-800/40">
+                    <span className="text-[11px] font-semibold text-palm-leaf-800 bg-palm-leaf-50 px-3 py-1 rounded-full border border-palm-leaf-200">
                       {feat.badge}
                     </span>
                   </div>
 
                   <div className="space-y-2">
-                    <h3 className="text-xl font-bold text-neutral-900 dark:text-white flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-black flex items-center justify-between">
                       <span>{feat.title}</span>
                     </h3>
-                    <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                    <p className="text-sm text-neutral-600 leading-relaxed">
                       {feat.description}
                     </p>
                   </div>
                 </div>
 
-                <div className="pt-6 mt-6 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between text-xs font-semibold text-neutral-500 dark:text-neutral-400">
-                  <span className="flex items-center gap-1.5 text-palm-leaf-700 dark:text-palm-leaf-400">
+                <div className="pt-6 mt-6 border-t border-neutral-100 flex items-center justify-between text-xs font-semibold text-neutral-500">
+                  <span className="flex items-center gap-1.5 text-palm-leaf-700">
                     <CheckCircle2 className="h-3.5 w-3.5 text-palm-leaf-600" />
                     {feat.highlight}
                   </span>

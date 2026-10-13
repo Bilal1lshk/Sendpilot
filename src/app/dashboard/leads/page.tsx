@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Search,
@@ -15,6 +16,7 @@ import {
   CheckCircle2,
   Table as TableIcon,
   Kanban,
+  Upload,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants, drawerVariants, floatingBarVariants } from "@/lib/motion";
@@ -92,6 +94,41 @@ export default function LeadDatabasePage() {
     },
   ]);
 
+  useEffect(() => {
+    async function loadDatabaseLeads() {
+      try {
+        const res = await fetch("/api/leads");
+        const data = await res.json();
+        if (data.success && Array.isArray(data.leads) && data.leads.length > 0) {
+          const freshLeads = data.leads.map((l: any) => ({
+            id: l.id,
+            name: `${l.firstName || ""} ${l.lastName || ""}`.trim() || l.name || "Prospect",
+            title: l.jobTitle || l.title || "Decision Maker",
+            company: l.company || "Enterprise",
+            email: l.email || "",
+            score: (l.icpScore >= 90 ? "High" : l.icpScore >= 75 ? "Medium" : "Low") as "High" | "Medium" | "Low",
+            icpScore: l.icpScore || 85,
+            icpReason: "Imported lead matching qualification criteria.",
+            pipeline: "New" as "New" | "Contacted" | "Accepted" | "Replied" | "Meeting",
+            campaign: "Direct CSV & LinkedIn Extractor",
+            timeline: [
+              { time: "Recently", event: "Imported into SendPilot database" },
+            ],
+          }));
+
+          setLeads((prev) => {
+            const existingIds = new Set(prev.map((i) => i.id));
+            const newOnly = freshLeads.filter((i: any) => !existingIds.has(i.id));
+            return [...newOnly, ...prev];
+          });
+        }
+      } catch (err) {
+        console.warn("Could not fetch database leads:", err);
+      }
+    }
+    loadDatabaseLeads();
+  }, []);
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
@@ -130,13 +167,21 @@ export default function LeadDatabasePage() {
           </p>
         </div>
 
-        {/* View mode toggle (Table / Pipeline) */}
-        <div className="flex items-center gap-2">
+        {/* View mode toggle & Import CTA */}
+        <div className="flex items-center gap-2.5">
+          <Link
+            href="/dashboard/extractor"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors shadow-2xs"
+          >
+            <Upload className="h-3.5 w-3.5 text-palm-leaf-600" />
+            <span>Import CSV</span>
+          </Link>
+
           <div className="flex rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-100/60 dark:bg-neutral-800/60 p-0.5">
             <button
               type="button"
               onClick={() => setViewMode("table")}
-              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
                 viewMode === "table"
                   ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-2xs"
                   : "text-neutral-500 hover:text-neutral-900"
@@ -148,7 +193,7 @@ export default function LeadDatabasePage() {
             <button
               type="button"
               onClick={() => setViewMode("pipeline")}
-              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
                 viewMode === "pipeline"
                   ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-2xs"
                   : "text-neutral-500 hover:text-neutral-900"

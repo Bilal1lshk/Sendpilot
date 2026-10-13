@@ -58,6 +58,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (account?.provider === "google") {
         try {
           if (!user.email) {
+            console.error("Google OAuth signIn failed: user.email is missing", user);
             return false;
           }
 
@@ -89,7 +90,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           }
         } catch (error) {
           console.error("Error creating or updating Google OAuth user:", error);
-          return false;
+          return "/login?error=DatabaseError";
         }
       }
       return true;

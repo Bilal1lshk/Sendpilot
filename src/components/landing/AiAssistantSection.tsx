@@ -1,41 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import {
-  Bot,
-  User,
-  Sparkles,
-  ArrowRight,
-  Send,
-} from "lucide-react";
+import { Bot, Sparkles, Send, ArrowRight, User } from "lucide-react";
 
 export function AiAssistantSection() {
   const suggestedProspects = [
     {
-      name: "Rachel Vance",
-      role: "VP of Commercial Sales",
-      company: "Synthetix Cloud",
+      name: "Marcus Vance",
+      role: "VP of Engineering",
+      company: "ApexScale",
       score: 95,
-      intent: "High Intent",
+      intent: "High - Actively Hiring",
     },
     {
-      name: "Karan Patel",
-      role: "Head of GTM Operations",
-      company: "OrbitFlow AI",
-      score: 91,
-      intent: "High Intent",
+      name: "Elena Rostova",
+      role: "Head of Growth",
+      company: "DataMetrics Inc.",
+      score: 92,
+      intent: "Series B Announcement",
     },
     {
-      name: "Nora Lindqvist",
-      role: "Director of Enterprise Sales",
-      company: "ScaleMetric",
+      name: "Julian Thorne",
+      role: "Chief Revenue Officer",
+      company: "HyperCloud Systems",
       score: 89,
-      intent: "Immediate Match",
+      intent: "Viewed Product Page",
     },
   ];
 
   return (
-    <section id="ai-assistant" className="py-20 md:py-32 bg-white dark:bg-neutral-900 border-b border-neutral-200/80 dark:border-neutral-800">
+    <section id="ai-assistant" className="py-20 md:py-32 bg-white border-b border-neutral-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
         {/* Title */}
         <div className="max-w-3xl mx-auto text-center space-y-4">
@@ -44,11 +38,11 @@ export function AiAssistantSection() {
             <span>Conversational Intelligence</span>
           </div>
 
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-white leading-tight">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-black leading-tight">
             Your AI sales assistant works behind the scenes.
           </h2>
 
-          <p className="text-base sm:text-lg text-neutral-600 dark:text-neutral-300 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg text-neutral-600 max-w-2xl mx-auto">
             Interact with your entire lead database using natural language. Surface high-intent prospects, analyze campaign performance, and generate custom pitches in seconds.
           </p>
         </div>
@@ -61,7 +55,7 @@ export function AiAssistantSection() {
               <div className="text-[11px] font-bold text-neutral-300 uppercase tracking-wider">
                 Sales Rep Query
               </div>
-              <p className="text-sm font-medium">
+              <p className="text-sm font-medium text-white">
                 &quot;Find my highest-quality SaaS leads that haven&apos;t been contacted yet.&quot;
               </p>
             </div>
@@ -76,11 +70,11 @@ export function AiAssistantSection() {
               <Bot className="h-5 w-5" />
             </div>
 
-            <div className="flex-1 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 sm:p-6 shadow-sm space-y-5">
-              <div className="flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800 pb-3">
+            <div className="flex-1 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 shadow-sm space-y-5">
+              <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-palm-leaf-600" />
-                  <span className="text-xs font-bold text-neutral-900 dark:text-white">
+                  <span className="text-xs font-bold text-neutral-900">
                     SendPilot Copilot Analysis
                   </span>
                 </div>
@@ -89,14 +83,14 @@ export function AiAssistantSection() {
                 </span>
               </div>
 
-              <p className="text-xs sm:text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed">
+              <p className="text-xs sm:text-sm text-neutral-700 leading-relaxed">
                 I filtered your active workspace across 2,400+ leads. Here is the breakdown of your top uncontacted prospects matching your ICP:
               </p>
 
               {/* 4 Stats Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 text-center">
-                  <div className="text-xl font-bold text-neutral-900 dark:text-white">
+                <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
+                  <div className="text-xl font-bold text-neutral-900">
                     24
                   </div>
                   <div className="text-[11px] text-neutral-500 font-medium">
@@ -104,8 +98,8 @@ export function AiAssistantSection() {
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 text-center">
-                  <div className="text-xl font-bold text-palm-leaf-600 dark:text-palm-leaf-400">
+                <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
+                  <div className="text-xl font-bold text-palm-leaf-600">
                     87%
                   </div>
                   <div className="text-[11px] text-neutral-500 font-medium">
@@ -113,8 +107,8 @@ export function AiAssistantSection() {
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 text-center">
-                  <div className="text-xl font-bold text-palm-leaf-700 dark:text-palm-leaf-400">
+                <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
+                  <div className="text-xl font-bold text-palm-leaf-700">
                     8
                   </div>
                   <div className="text-[11px] text-neutral-500 font-medium">
@@ -122,8 +116,8 @@ export function AiAssistantSection() {
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 text-center">
-                  <div className="text-xl font-bold text-neutral-900 dark:text-white">
+                <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
+                  <div className="text-xl font-bold text-neutral-900">
                     5
                   </div>
                   <div className="text-[11px] text-neutral-500 font-medium">
@@ -141,10 +135,10 @@ export function AiAssistantSection() {
                   {suggestedProspects.map((lead) => (
                     <div
                       key={lead.name}
-                      className="flex items-center justify-between p-2.5 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-950/40 text-xs"
+                      className="flex items-center justify-between p-2.5 rounded-xl border border-neutral-100 bg-neutral-50/70 text-xs"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-neutral-900 dark:text-white">
+                        <span className="font-bold text-neutral-900">
                           {lead.name}
                         </span>
                         <span className="text-neutral-400">•</span>
@@ -184,7 +178,7 @@ export function AiAssistantSection() {
               type="text"
               readOnly
               value="Draft a 3-step follow-up for leads that didn't reply to email #1..."
-              className="w-full pl-4 pr-12 py-3 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-600 dark:text-neutral-300 outline-none shadow-2xs"
+              className="w-full pl-4 pr-12 py-3 rounded-2xl bg-white border border-neutral-200 text-xs text-neutral-600 outline-none shadow-2xs"
             />
             <button
               type="button"
@@ -199,7 +193,7 @@ export function AiAssistantSection() {
         <div className="text-center pt-4">
           <Link
             href="/get-started"
-            className="inline-flex items-center gap-2 rounded-2xl bg-neutral-900 hover:bg-black dark:bg-white dark:hover:bg-neutral-100 text-white dark:text-neutral-900 px-7 py-3.5 text-sm font-semibold shadow-md transition-all hover:gap-2.5"
+            className="inline-flex items-center gap-2 rounded-2xl bg-neutral-900 hover:bg-black text-white px-7 py-3.5 text-sm font-semibold shadow-md transition-all hover:gap-2.5"
           >
             <Sparkles className="h-4 w-4 text-palm-leaf-400" />
             <span>Meet Your AI Assistant</span>

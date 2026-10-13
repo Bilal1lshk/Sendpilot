@@ -19,8 +19,10 @@ function AuthErrorMessage() {
     message = "Could not sign in with provider. Please ensure provider credentials are configured.";
   } else if (error === "OAuthAccountNotLinked") {
     message = "An account already exists with this email address using another sign-in method.";
+  } else if (error === "DatabaseError") {
+    message = "Database connection failed. Please ensure your IP address is whitelisted in MongoDB Atlas (Network Access -> Add IP Address).";
   } else if (error === "AccessDenied") {
-    message = "Access was denied by the provider.";
+    message = "Access was denied by the provider. Please verify that your email is added to 'Test Users' in Google Cloud Console, or check your MongoDB Atlas IP whitelist.";
   }
 
   return (

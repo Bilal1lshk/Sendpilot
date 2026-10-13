@@ -9,54 +9,52 @@ export function PricingSection() {
 
   const tiers = [
     {
-      name: "Free",
-      tagline: "For exploring SendPilot",
-      priceMonthly: 0,
-      priceAnnual: 0,
-      isPopular: false,
-      ctaText: "Start for Free",
+      name: "Starter",
+      tagline: "Ideal for solo founders and early outbound experiments.",
+      priceMonthly: 49,
+      priceAnnual: 39,
+      ctaText: "Start 14-Day Trial",
       ctaHref: "/get-started",
+      isPopular: false,
       features: [
-        "50 qualified leads",
-        "Basic lead management",
-        "AI summary previews",
-        "Standard ICP scoring",
-        "1 connected sender profile",
-        "Community support",
+        "1 connected LinkedIn sender profile",
+        "Up to 500 enriched leads / month",
+        "AI ICP lead qualification & scoring",
+        "Contextual AI opening hook generator",
+        "Standard CSV & LinkedIn import",
+        "Community & documentation support",
       ],
     },
     {
-      name: "Pro",
-      tagline: "For scaling reps, founders & revenue teams",
-      priceMonthly: 49,
-      priceAnnual: 39,
-      isPopular: true,
-      ctaText: "Start 14-Day Free Trial",
+      name: "Growth",
+      tagline: "Designed for scaling sales reps needing consistent meetings.",
+      priceMonthly: 119,
+      priceAnnual: 95,
+      ctaText: "Get Started Free",
       ctaHref: "/get-started",
+      isPopular: true,
       features: [
-        "1,500 qualified leads / month",
-        "Full AI qualification & ICP scoring",
-        "AI personalized outreach generator",
-        "Multi-channel sequence tracking",
-        "Assisted sending daily task lists",
-        "3 connected sender profiles",
-        "Priority email & chat support",
+        "Up to 3 connected sender profiles",
+        "Up to 2,500 enriched leads / month",
+        "AI Sales Copilot conversational queries",
+        "Automated multi-step cadence reminders",
+        "Human-in-the-loop review batch mode",
+        "Priority live chat & email support",
       ],
     },
     {
       name: "Scale",
-      tagline: "For agencies & high-volume outbound teams",
-      priceMonthly: 129,
-      priceAnnual: 99,
-      isPopular: false,
-      ctaText: "Scale Your Pipeline",
+      tagline: "For high-velocity outbound teams and growing sales pods.",
+      priceMonthly: 249,
+      priceAnnual: 199,
+      ctaText: "Talk to Sales",
       ctaHref: "/get-started",
+      isPopular: false,
       features: [
-        "10,000 qualified leads / month",
-        "Unlimited AI enrichment & deep signals",
-        "Unlimited personalized message drafts",
-        "Team workspaces & role-based permissions",
-        "10+ connected sender profiles",
+        "Unlimited sender accounts & team seats",
+        "10,000+ enriched leads / month",
+        "Custom ICP fine-tuning & prompt control",
+        "HubSpot & Salesforce bi-directional sync",
         "Suppression list & compliance protection",
         "Dedicated onboarding manager & API access",
       ],
@@ -84,7 +82,7 @@ export function PricingSection() {
           <div className="pt-4 flex items-center justify-center gap-3">
             <span
               className={`text-xs font-semibold ${
-                !isAnnual ? "text-neutral-900 dark:text-white" : "text-neutral-400"
+                !isAnnual ? "text-black" : "text-neutral-400"
               }`}
             >
               Monthly
@@ -104,12 +102,12 @@ export function PricingSection() {
             <div className="flex items-center gap-1.5">
               <span
                 className={`text-xs font-semibold ${
-                  isAnnual ? "text-neutral-900 dark:text-white" : "text-neutral-400"
+                  isAnnual ? "text-black" : "text-neutral-400"
                 }`}
               >
                 Annual
               </span>
-              <span className="text-[10px] font-bold text-palm-leaf-900 bg-palm-leaf-200 dark:bg-palm-leaf-900 dark:text-palm-leaf-200 px-2 py-0.5 rounded-full">
+              <span className="text-[10px] font-bold text-palm-leaf-900 bg-palm-leaf-200 px-2 py-0.5 rounded-full">
                 Save 20%
               </span>
             </div>
@@ -126,8 +124,8 @@ export function PricingSection() {
                 key={tier.name}
                 className={`rounded-3xl p-8 flex flex-col justify-between transition-all duration-300 relative ${
                   tier.isPopular
-                    ? "bg-white dark:bg-neutral-900 border-2 border-palm-leaf-500 shadow-xl shadow-palm-leaf-500/10 scale-102 lg:-translate-y-2"
-                    : "bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xs hover:shadow-md"
+                    ? "bg-white border-2 border-palm-leaf-500 shadow-xl shadow-palm-leaf-500/10 scale-102 lg:-translate-y-2"
+                    : "bg-white border border-neutral-200 shadow-xs hover:shadow-md"
                 }`}
               >
                 {tier.isPopular && (
@@ -141,7 +139,7 @@ export function PricingSection() {
 
                 <div className="space-y-6">
                   <div>
-                    <h3 className="text-xl font-bold text-neutral-900 dark:text-white">
+                    <h3 className="text-xl font-bold text-black">
                       {tier.name}
                     </h3>
                     <p className="text-xs text-neutral-500 mt-1 min-h-[32px]">
@@ -150,7 +148,7 @@ export function PricingSection() {
                   </div>
 
                   <div className="flex items-baseline gap-1">
-                    <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
+                    <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-black">
                       ${price}
                     </span>
                     <span className="text-xs text-neutral-500 font-medium">
@@ -159,15 +157,15 @@ export function PricingSection() {
                   </div>
 
                   {/* Feature Checklist */}
-                  <div className="space-y-3 pt-4 border-t border-neutral-100 dark:border-neutral-800">
-                    <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 block">
+                  <div className="space-y-3 pt-4 border-t border-neutral-100">
+                    <span className="text-xs font-semibold text-neutral-800 block">
                       What&apos;s included:
                     </span>
                     <ul className="space-y-2.5">
                       {tier.features.map((feat) => (
                         <li
                           key={feat}
-                          className="flex items-start gap-2.5 text-xs text-neutral-600 dark:text-neutral-300"
+                          className="flex items-start gap-2.5 text-xs text-neutral-700"
                         >
                           <Check className="h-4 w-4 text-palm-leaf-600 shrink-0 stroke-[2.5] mt-0.5" />
                           <span>{feat}</span>
@@ -183,7 +181,7 @@ export function PricingSection() {
                     className={`w-full inline-flex items-center justify-center gap-2 rounded-2xl py-3 text-xs font-semibold transition-all ${
                       tier.isPopular
                         ? "bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white shadow-md shadow-palm-leaf-600/25"
-                        : "border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                        : "border border-neutral-200 hover:bg-neutral-50 text-neutral-800"
                     }`}
                   >
                     <span>{tier.ctaText}</span>

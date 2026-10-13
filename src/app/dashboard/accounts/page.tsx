@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ShieldCheck,
@@ -11,79 +12,207 @@ import {
   AlertCircle,
   Plus,
   X,
-  ExternalLink,
-  ChevronRight,
-  Info,
+  Loader2,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants, drawerVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
-import { ConnectLinkedInModal, ConnectedAccountData } from "@/components/dashboard/ConnectLinkedInModal";
+import { toast } from "sonner";
+
+export interface ConnectedAccountData {
+  id: string;
+  name: string;
+  headline: string;
+  type: string;
+  photo: string;
+  status: "Active" | "Paused" | "Disconnected";
+  connectedDate: string;
+  usedToday: number;
+  dailyCap: number;
+  warmupStage: number;
+}
 
 export default function LinkedInAccountsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [securityPanelOpen, setSecurityPanelOpen] = useState(false);
-  const [connectModalOpen, setConnectModalOpen] = useState(false);
+  const [accounts, setAccounts] = useState<ConnectedAccountData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // [PLACEHOLDER DATA] Accounts state
-  const [accounts, setAccounts] = useState([
-    {
-      id: "acc_1",
-      name: "Alex Rivera",
-      headline: "Sales Director @ SendPilot",
-      type: "Sales Navigator",
-      photo: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces",
-      status: "Active" as "Active" | "Paused" | "Disconnected",
-      connectedDate: "Aug 12, 2026",
-      usedToday: 18,
-      dailyCap: 25,
-      warmupStage: 3, // 1 to 3
-    },
-    {
-      id: "acc_2",
-      name: "Elena Rostova",
-      headline: "Founder & CEO @ SendPilot",
-      type: "LinkedIn Premium",
-      photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=faces",
-      status: "Active" as "Active" | "Paused" | "Disconnected",
-      connectedDate: "Sep 04, 2026",
-      usedToday: 12,
-      dailyCap: 15,
-      warmupStage: 2,
-    },
-    {
-      id: "acc_3",
-      name: "Jordan Lee",
-      headline: "Growth Consultant",
-      type: "LinkedIn Free",
-      photo: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=faces",
-      status: "Disconnected" as "Active" | "Paused" | "Disconnected",
-      connectedDate: "Jul 19, 2026",
-      usedToday: 0,
-      dailyCap: 15,
-      warmupStage: 1,
-    },
-  ]);
-
-  const togglePause = (id: string) => {
-    setAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id === id) {
-          const nextStatus = acc.status === "Active" ? "Paused" : "Active";
-          return { ...acc, status: nextStatus };
-        }
-        return acc;
-      })
-    );
+  // Fetch real accounts from database
+  const fetchAccounts = async () => {
+    try {
+      setIsLoading(true);
+      const res = await fetch("/api/linkedin/accounts");
+      const data = await res.json();
+      if (res.ok && data.accounts) {
+        setAccounts(data.accounts);
+      }
+    } catch (err) {
+      console.error("Failed to load accounts:", err);
+      toast.error("Failed to load accounts from database");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const reconnect = (id: string) => {
+  const handleCodeSubmission = async (input: string) => {
+    let cleanCode = input.trim();
+    if (cleanCode.includes("code=")) {
+      try {
+        const urlObj = new URL(cleanCode.startsWith("http") ? cleanCode : `https://${cleanCode}`);
+        cleanCode = urlObj.searchParams.get("code") || cleanCode;
+      } catch {
+        const match = cleanCode.match(/code=([^&]+)/);
+        if (match) cleanCode = match[1];
+      }
+    }
+
+    if (!cleanCode) {
+      toast.error("Could not find authorization code");
+      return;
+    }
+
+    const toastId = toast.loading("Connecting LinkedIn account...");
+    try {
+      const res = await fetch("/api/linkedin/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: cleanCode,
+        }),
+      });
+      const data = await res.json();
+      toast.dismiss(toastId);
+
+      if (res.ok && data.success) {
+        toast.success("LinkedIn account connected successfully!");
+        const inputEl = document.getElementById("redirectCodeInput") as HTMLInputElement;
+        if (inputEl) inputEl.value = "";
+        fetchAccounts();
+      } else {
+        toast.error(data.error || "Failed to connect LinkedIn account");
+      }
+    } catch {
+      toast.dismiss(toastId);
+      toast.error("Error connecting LinkedIn account");
+    }
+  };
+
+  useEffect(() => {
+    console.log("🖥️ [Frontend Accounts Page] Mounted or searchParams changed:", {
+      connected: searchParams.get("connected"),
+      error: searchParams.get("error"),
+      code: searchParams.get("code") ? "code_present" : null,
+    });
+
+    fetchAccounts();
+
+    // 1. Auto-handle code in query params if redirected back
+    const code = searchParams.get("code");
+    if (code) {
+      console.log("🖥️ [Frontend Accounts Page] Authorization code found in URL params! Calling /api/linkedin/connect...");
+      toast.loading("Connecting LinkedIn account...");
+      fetch("/api/linkedin/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+        }),
+      })
+        .then((r) => r.json())
+        .then((d) => {
+          console.log("🖥️ [Frontend Accounts Page] Response from /api/linkedin/connect:", d);
+          toast.dismiss();
+          if (d.success) {
+            toast.success("LinkedIn account connected successfully!");
+            fetchAccounts();
+          } else {
+            toast.error(d.error || "Failed to connect LinkedIn account");
+          }
+          router.replace("/dashboard/accounts");
+        })
+        .catch((err) => {
+          console.error("🖥️ [Frontend Accounts Page] Error calling /api/linkedin/connect:", err);
+          toast.dismiss();
+          toast.error("Failed to connect account");
+          router.replace("/dashboard/accounts");
+        });
+      return;
+    }
+
+    // 2. Check URL parameters for OAuth status
+    const connected = searchParams.get("connected");
+    const error = searchParams.get("error");
+
+    if (connected === "true") {
+      toast.success("LinkedIn account connected successfully!");
+      router.replace("/dashboard/accounts");
+    } else if (error) {
+      toast.error(`LinkedIn connection error: ${decodeURIComponent(error)}`);
+      router.replace("/dashboard/accounts");
+    }
+  }, [searchParams]);
+
+  const togglePause = async (id: string) => {
+    const target = accounts.find((a) => a.id === id);
+    if (!target) return;
+    const nextStatus = target.status === "Active" ? "Paused" : "Active";
+
+    // Optimistic update
+    setAccounts((prev) =>
+      prev.map((acc) => (acc.id === id ? { ...acc, status: nextStatus } : acc))
+    );
+
+    try {
+      const res = await fetch("/api/linkedin/accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: nextStatus }),
+      });
+      if (!res.ok) throw new Error("Failed to update status");
+      toast.success(`Account ${nextStatus.toLowerCase()}`);
+    } catch {
+      toast.error("Failed to update account status");
+      fetchAccounts();
+    }
+  };
+
+  const reconnect = async (id: string) => {
     setAccounts((prev) =>
       prev.map((acc) => (acc.id === id ? { ...acc, status: "Active" } : acc))
     );
+
+    try {
+      const res = await fetch("/api/linkedin/accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: "Active" }),
+      });
+      if (!res.ok) throw new Error("Failed to reconnect");
+      toast.success("Account status marked as Active");
+    } catch {
+      toast.error("Failed to update account");
+      fetchAccounts();
+    }
   };
 
-  const removeAccount = (id: string) => {
+  const removeAccount = async (id: string) => {
+    if (!confirm("Are you sure you want to disconnect this LinkedIn account?")) return;
+
     setAccounts((prev) => prev.filter((acc) => acc.id !== id));
+
+    try {
+      const res = await fetch(`/api/linkedin/accounts?id=${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to remove account");
+      toast.success("LinkedIn account disconnected");
+    } catch {
+      toast.error("Failed to disconnect account");
+      fetchAccounts();
+    }
   };
 
   const disconnectedAccount = accounts.find((a) => a.status === "Disconnected");
@@ -110,15 +239,18 @@ export default function LinkedInAccountsPage() {
           <button
             type="button"
             onClick={() => setSecurityPanelOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:border-palm-leaf-400 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:border-palm-leaf-400 transition-colors cursor-pointer"
           >
             <ShieldCheck className="h-3.5 w-3.5 text-palm-leaf-600" />
             <span>Security notes</span>
           </button>
 
+          {/* Direct LinkedIn GET Request */}
           <button
             type="button"
-            onClick={() => setConnectModalOpen(true)}
+            onClick={() => {
+              window.location.href = "/api/auth/linkedin/authorize";
+            }}
             className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 active:scale-[0.99] text-white px-3.5 py-1.5 text-xs font-medium shadow-xs transition-all cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -127,7 +259,9 @@ export default function LinkedInAccountsPage() {
         </div>
       </motion.div>
 
-      {/* Disconnected account friendly banner: No alarm colours, calm wording */}
+
+
+      {/* Disconnected account friendly banner */}
       {disconnectedAccount && (
         <motion.div
           variants={cardVariants}
@@ -150,7 +284,7 @@ export default function LinkedInAccountsPage() {
           <button
             type="button"
             onClick={() => reconnect(disconnectedAccount.id)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-3 py-1 text-xs font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 shadow-2xs shrink-0 self-start sm:self-center"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-3 py-1 text-xs font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 shadow-2xs shrink-0 self-start sm:self-center cursor-pointer"
           >
             <RotateCw className="h-3 w-3 text-palm-leaf-600" />
             <span>Reconnect</span>
@@ -158,163 +292,208 @@ export default function LinkedInAccountsPage() {
         </motion.div>
       )}
 
-      {/* Spacious Account Cards */}
-      <div className="space-y-4">
-        {accounts.map((acc) => {
-          const usagePercent = Math.min((acc.usedToday / acc.dailyCap) * 100, 100);
-
-          return (
-            <motion.div
-              key={acc.id}
-              variants={cardVariants}
-              className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs hover:border-neutral-300 transition-all"
+      {/* Accounts List / Loading / Empty State */}
+      {isLoading ? (
+        <div className="p-12 text-center rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 space-y-3">
+          <Loader2 className="h-6 w-6 animate-spin text-palm-leaf-600 mx-auto" />
+          <p className="text-xs text-neutral-500">Loading connected accounts...</p>
+        </div>
+      ) : accounts.length === 0 ? (
+        <motion.div
+          variants={cardVariants}
+          className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-10 text-center space-y-4 shadow-xs"
+        >
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0a66c2]/10 border border-[#0a66c2]/20 text-[#0a66c2]">
+            <LinkedInIcon className="h-7 w-7" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-neutral-900 dark:text-neutral-100">
+              No LinkedIn accounts connected yet
+            </h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-sm mx-auto">
+              Link your real LinkedIn profile to start safe, personalized outreach with AI assistance.
+            </p>
+          </div>
+          <div>
+            {/* Direct LinkedIn GET Request */}
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/api/auth/linkedin/authorize";
+              }}
+              className="inline-flex items-center gap-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-4 py-2 text-xs font-semibold shadow-xs transition-all cursor-pointer"
             >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                {/* Left: Avatar, Name, Status line */}
-                <div className="flex items-start gap-4">
-                  <div className="relative h-12 w-12 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center overflow-hidden border border-neutral-200 dark:border-neutral-700 shrink-0">
-                    <LinkedInIcon className="h-6 w-6 text-[#0a66c2]" />
-                  </div>
+              <Plus className="h-3.5 w-3.5" />
+              <span>Connect LinkedIn Account</span>
+            </button>
+          </div>
+        </motion.div>
+      ) : (
+        <div className="space-y-4">
+          {accounts.map((acc) => {
+            const usagePercent = Math.min((acc.usedToday / acc.dailyCap) * 100, 100);
 
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                        {acc.name}
-                      </h3>
-                      <span className="text-[11px] text-neutral-400">
-                        ({acc.type})
-                      </span>
+            return (
+              <motion.div
+                key={acc.id}
+                variants={cardVariants}
+                className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs hover:border-neutral-300 transition-all"
+              >
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  {/* Left: Avatar, Name, Status line */}
+                  <div className="flex items-start gap-4">
+                    <div className="relative h-12 w-12 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center overflow-hidden border border-neutral-200 dark:border-neutral-700 shrink-0">
+                      {acc.photo ? (
+                        <img
+                          src={acc.photo}
+                          alt={acc.name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <LinkedInIcon className="h-6 w-6 text-[#0a66c2]" />
+                      )}
                     </div>
 
-                    {/* Single human status line */}
-                    <div className="mt-1 flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                          {acc.name}
+                        </h3>
+                        <span className="text-[11px] text-neutral-400">
+                          ({acc.type})
+                        </span>
+                      </div>
+
+                      {/* Single human status line */}
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+                          {acc.status === "Active" ? (
+                            <>
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              <span className="font-medium text-emerald-800 dark:text-emerald-300">Active</span>
+                            </>
+                          ) : acc.status === "Paused" ? (
+                            <>
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                              <span className="font-medium text-amber-700 dark:text-amber-400">Paused</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                              <span className="font-medium text-rose-700 dark:text-rose-400">Disconnected</span>
+                            </>
+                          )}
+                          <span className="text-neutral-400">•</span>
+                          <span>
+                            {acc.usedToday} of {acc.dailyCap} requests used today.
+                          </span>
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-neutral-400 mt-1">
+                        Connected {acc.connectedDate}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Middle: Usage Progress & 3 Warm-up steps */}
+                  <div className="flex-1 max-w-sm space-y-3">
+                    {/* Thin usage bar */}
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400 mb-1">
+                        <span>Daily requests</span>
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">
+                          {acc.usedToday} / {acc.dailyCap}
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${usagePercent}%` }}
+                          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                          className="h-full rounded-full bg-palm-leaf-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 3 Warm-up steps */}
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-1">
+                        <span>Warm-up progression</span>
+                        <span className="font-medium text-neutral-600 dark:text-neutral-300">
+                          Stage {acc.warmupStage} of 3
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[1, 2, 3].map((stage) => {
+                          const isCurrent = acc.warmupStage === stage;
+                          const isCompleted = acc.warmupStage > stage;
+                          return (
+                            <div
+                              key={stage}
+                              className={`h-1.5 rounded-full transition-colors ${
+                                isCompleted
+                                  ? "bg-palm-leaf-600"
+                                  : isCurrent
+                                  ? "bg-palm-leaf-400"
+                                  : "bg-neutral-200 dark:bg-neutral-800"
+                              }`}
+                              title={`Stage ${stage}`}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Actions */}
+                  <div className="flex items-center gap-1.5 self-end md:self-center shrink-0">
+                    {acc.status === "Disconnected" ? (
+                      <button
+                        type="button"
+                        onClick={() => reconnect(acc.id)}
+                        className="inline-flex items-center gap-1 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-3 py-1.5 text-xs font-medium shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <RotateCw className="h-3 w-3" />
+                        <span>Reconnect</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => togglePause(acc.id)}
+                        className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 transition-colors cursor-pointer"
+                      >
                         {acc.status === "Active" ? (
                           <>
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span className="font-medium text-emerald-800 dark:text-emerald-300">Active</span>
-                          </>
-                        ) : acc.status === "Paused" ? (
-                          <>
-                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                            <span className="font-medium text-amber-700 dark:text-amber-400">Paused</span>
+                            <Pause className="h-3 w-3 text-neutral-400" />
+                            <span>Pause</span>
                           </>
                         ) : (
                           <>
-                            <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                            <span className="font-medium text-rose-700 dark:text-rose-400">Disconnected</span>
+                            <Play className="h-3 w-3 text-palm-leaf-600" />
+                            <span>Resume</span>
                           </>
                         )}
-                        <span className="text-neutral-400">•</span>
-                        <span>
-                          {acc.usedToday} of {acc.dailyCap} requests used today.
-                        </span>
-                      </span>
-                    </div>
+                      </button>
+                    )}
 
-                    <p className="text-[11px] text-neutral-400 mt-1">
-                      Connected {acc.connectedDate}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Middle: Usage Progress & 3 Warm-up steps */}
-                <div className="flex-1 max-w-sm space-y-3">
-                  {/* Thin usage bar */}
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400 mb-1">
-                      <span>Daily requests</span>
-                      <span className="font-medium text-neutral-700 dark:text-neutral-300">
-                        {acc.usedToday} / {acc.dailyCap}
-                      </span>
-                    </div>
-                    <div className="h-1.5 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${usagePercent}%` }}
-                        transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                        className="h-full rounded-full bg-palm-leaf-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 3 Warm-up steps with current gently highlighted */}
-                  <div>
-                    <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-1">
-                      <span>Warm-up progression</span>
-                      <span className="font-medium text-neutral-600 dark:text-neutral-300">
-                        Stage {acc.warmupStage} of 3
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {[1, 2, 3].map((stage) => {
-                        const isCurrent = acc.warmupStage === stage;
-                        const isCompleted = acc.warmupStage > stage;
-                        return (
-                          <div
-                            key={stage}
-                            className={`h-1.5 rounded-full transition-colors ${
-                              isCompleted
-                                ? "bg-palm-leaf-600"
-                                : isCurrent
-                                ? "bg-palm-leaf-400"
-                                : "bg-neutral-200 dark:bg-neutral-800"
-                            }`}
-                            title={`Stage ${stage}`}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right: Actions */}
-                <div className="flex items-center gap-1.5 self-end md:self-center shrink-0">
-                  {acc.status === "Disconnected" ? (
                     <button
                       type="button"
-                      onClick={() => reconnect(acc.id)}
-                      className="inline-flex items-center gap-1 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-3 py-1.5 text-xs font-medium shadow-2xs transition-colors"
+                      onClick={() => removeAccount(acc.id)}
+                      className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                      title="Remove profile"
                     >
-                      <RotateCw className="h-3 w-3" />
-                      <span>Reconnect</span>
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => togglePause(acc.id)}
-                      className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 transition-colors"
-                    >
-                      {acc.status === "Active" ? (
-                        <>
-                          <Pause className="h-3 w-3 text-neutral-400" />
-                          <span>Pause</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-3 w-3 text-palm-leaf-600" />
-                          <span>Resume</span>
-                        </>
-                      )}
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => removeAccount(acc.id)}
-                    className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                    title="Remove profile"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  </div>
                 </div>
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
-      {/* Security Side Panel with Soft Slide */}
+      {/* Security Side Panel */}
       <AnimatePresence>
         {securityPanelOpen && (
           <>
@@ -344,7 +523,7 @@ export default function LinkedInAccountsPage() {
                   <button
                     type="button"
                     onClick={() => setSecurityPanelOpen(false)}
-                    className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700"
+                    className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 cursor-pointer"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -356,7 +535,7 @@ export default function LinkedInAccountsPage() {
                       What we store
                     </h4>
                     <p className="text-neutral-500 dark:text-neutral-400">
-                      We store your profile name, email, avatar photo, and OAuth token so outreach sequences can authenticate as you.
+                      We store your profile name, headline, avatar, and encrypted OAuth token to authenticate actions within safe rate limits.
                     </p>
                   </div>
 
@@ -374,7 +553,7 @@ export default function LinkedInAccountsPage() {
                       Account safety limits
                     </h4>
                     <p className="text-neutral-500 dark:text-neutral-400">
-                      Every connected profile is throttled to 15–25 connection requests per day with randomized intervals to keep your reputation intact.
+                      Every connected profile is throttled to 15–25 connection requests per day with randomized intervals to protect your reputation.
                     </p>
                   </div>
 
@@ -393,7 +572,7 @@ export default function LinkedInAccountsPage() {
                 <button
                   type="button"
                   onClick={() => setSecurityPanelOpen(false)}
-                  className="w-full rounded-xl bg-neutral-100 dark:bg-neutral-800 py-2 text-xs font-semibold text-neutral-800 dark:text-neutral-200 hover:bg-neutral-200 transition-colors"
+                  className="w-full rounded-xl bg-neutral-100 dark:bg-neutral-800 py-2 text-xs font-semibold text-neutral-800 dark:text-neutral-200 hover:bg-neutral-200 transition-colors cursor-pointer"
                 >
                   Got it
                 </button>
@@ -402,16 +581,6 @@ export default function LinkedInAccountsPage() {
           </>
         )}
       </AnimatePresence>
-
-      {/* Connect LinkedIn Account Interactive Flow Modal */}
-      <ConnectLinkedInModal
-        isOpen={connectModalOpen}
-        onClose={() => setConnectModalOpen(false)}
-        onConnected={(newAcc) => {
-          setAccounts((prev) => [newAcc, ...prev]);
-        }}
-        defaultUserName="Alex Rivera"
-      />
     </motion.div>
   );
 }

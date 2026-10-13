@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, MessageSquareOff, Layers, AlertCircle, ArrowDown } from "lucide-react";
+import { Clock, MessageSquareOff, Layers, AlertCircle } from "lucide-react";
 
 export function ProblemSection() {
   const problems = [
@@ -60,27 +60,27 @@ export function ProblemSection() {
               >
                 <div className="space-y-5">
                   <div className="flex items-center justify-between">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 group-hover:scale-105 transition-transform">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600 group-hover:scale-105 transition-transform">
                       <Icon className="h-6 w-6 stroke-[1.8]" />
                     </div>
-                    <span className="text-[11px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-2.5 py-0.5 rounded-full">
+                    <span className="text-[11px] font-semibold text-red-600 bg-red-50 px-2.5 py-0.5 rounded-full">
                       {prob.tag}
                     </span>
                   </div>
 
                   <div className="space-y-2">
-                    <h3 className="text-xl font-bold text-neutral-900 dark:text-white">
+                    <h3 className="text-xl font-bold text-black">
                       {prob.title}
                     </h3>
-                    <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                    <p className="text-sm text-neutral-600 leading-relaxed">
                       {prob.description}
                     </p>
                   </div>
                 </div>
 
-                <div className="pt-6 mt-6 border-t border-neutral-100 dark:border-neutral-800 text-xs font-semibold text-neutral-500 dark:text-neutral-400 flex items-center justify-between">
+                <div className="pt-6 mt-6 border-t border-neutral-100 text-xs font-semibold text-neutral-500 flex items-center justify-between">
                   <span>Impact:</span>
-                  <span className="text-red-600 dark:text-red-400 font-bold">
+                  <span className="text-red-600 font-bold">
                     {prob.impact}
                   </span>
                 </div>

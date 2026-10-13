@@ -24,7 +24,14 @@ export interface IWorkspace extends Document {
         headline?: string;
         photo?: string;
         status: string;
-        connectedAt: string;
+        connectedDate?: string;
+        connectedAt?: string;
+        usedToday?: number;
+        dailyCap?: number;
+        warmupStage?: number;
+        type?: string;
+        accessToken?: string;
+        linkedinId?: string;
       }>;
       invitedTeammates: Array<{
         email: string;
