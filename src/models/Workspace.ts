@@ -31,6 +31,11 @@ export interface IWorkspace extends Document {
         warmupStage?: number;
         type?: string;
         accessToken?: string;
+        refreshToken?: string;
+        tokenExpiresAt?: Date;
+        /** OIDC `sub` from LinkedIn userinfo — used as the stable dedup key */
+        linkedinMemberId?: string;
+        /** @deprecated use linkedinMemberId */
         linkedinId?: string;
       }>;
       invitedTeammates: Array<{
@@ -85,6 +90,8 @@ export interface IWorkspace extends Document {
       };
     };
   };
+  /** Set once legacy step3/step4 data has been copied into Lead/Campaign collections */
+  crmMigratedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -147,6 +154,7 @@ const WorkspaceSchema: Schema<IWorkspace> = new Schema(
         },
       },
     },
+    crmMigratedAt: { type: Date },
   },
   { timestamps: true }
 );

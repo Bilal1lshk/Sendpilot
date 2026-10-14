@@ -34,6 +34,16 @@ export interface CampaignItem {
   variantB: number;
 }
 
+export interface CampaignDetail {
+  id: string;
+  name: string;
+  status: string;
+  dailyCap: number;
+  sentToday: number;
+  remainingToday: number;
+  funnel: { stage: string; count: number }[];
+}
+
 const SAMPLE_DEMO_CAMPAIGNS: CampaignItem[] = [
   {
     id: "sample_c1",
@@ -71,6 +81,8 @@ export default function CampaignsPage() {
 
   // Real campaigns from database
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
+  const [campaignDetail, setCampaignDetail] = useState<CampaignDetail | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
@@ -113,14 +125,41 @@ export default function CampaignsPage() {
     );
 
     try {
-      await fetch("/api/campaigns", {
+      await fetch(`/api/campaigns/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ status: nextStatus.toLowerCase() }),
       });
       toast.success(`Campaign marked as ${nextStatus}`);
     } catch {
       toast.error("Failed to update campaign status");
+      fetchCampaigns();
+    }
+  };
+
+  const fetchCampaignDetail = async (id: string) => {
+    setIsLoadingDetail(true);
+    setCampaignDetail(null);
+    try {
+      const res = await fetch(`/api/campaigns/${id}`);
+      const data = await res.json();
+      if (data.success) {
+        setCampaignDetail({
+          id,
+          name: data.campaign.name,
+          status: data.campaign.status,
+          dailyCap: data.campaign.dailyCap ?? 20,
+          sentToday: data.sentToday ?? 0,
+          remainingToday: data.remainingToday ?? 0,
+          funnel: data.funnel || [],
+        });
+      } else {
+        toast.error(data.error || "Failed to load campaign details");
+      }
+    } catch {
+      toast.error("Failed to load campaign details");
+    } finally {
+      setIsLoadingDetail(false);
     }
   };
 
@@ -273,6 +312,7 @@ export default function CampaignsPage() {
                       onClick={() => {
                         setSelectedCampaignId(camp.id);
                         setActiveTab("detail");
+                        fetchCampaignDetail(camp.id);
                       }}
                       className="group hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40 cursor-pointer transition-colors"
                     >
@@ -338,7 +378,7 @@ export default function CampaignsPage() {
         </motion.div>
       )}
 
-      {/* VIEW 2: Campaign Detail with Focused Funnel & A/B Variants */}
+      {/* VIEW 2: Campaign Detail with Real Funnel Stats */}
       {activeTab === "detail" && (
         <div className="space-y-6">
           <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs">
@@ -353,71 +393,88 @@ export default function CampaignsPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <span
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+                    selectedCampaign.status === "Active"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-neutral-100 text-neutral-600"
+                  }`}
+                >
+                  {selectedCampaign.status === "Active" && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  )}
                   {selectedCampaign.status}
                 </span>
               </div>
             </div>
 
-            {/* A/B Test Focus */}
+            {/* Sequence Funnel */}
             <div className="mt-6">
-              <h4 className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
-                A/B Message Test Comparison
+              <h4 className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 mb-4">
+                Sequence Funnel
               </h4>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
-                {microcopy.feedback.abTestingNote}
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Variant A */}
-                <div className="p-4 rounded-xl border border-neutral-200/80 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/40 space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-800 dark:text-neutral-200">
-                      Variant A (Direct Value)
-                    </span>
-                    <span className="text-palm-leaf-700 dark:text-palm-leaf-400 font-bold">
-                      {selectedCampaign.variantA}% accept
-                    </span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${selectedCampaign.variantA}%` }}
-                      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                      className="h-full bg-palm-leaf-500 rounded-full"
-                    />
-                  </div>
-                  <p className="text-[11px] text-neutral-500 italic">
-                    &quot;Hey [First Name], saw you lead sales at [Company]. We automated account scoring...&quot;
-                  </p>
+              {isLoadingDetail ? (
+                <div className="flex items-center justify-center py-10 gap-2 text-neutral-400">
+                  <Loader2 className="h-5 w-5 animate-spin text-palm-leaf-600" />
+                  <span className="text-xs">Loading funnel data...</span>
                 </div>
-
-                {/* Variant B */}
-                <div className="p-4 rounded-xl border border-palm-leaf-200 dark:border-palm-leaf-900/60 bg-palm-leaf-50/40 dark:bg-palm-leaf-950/20 space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
-                      Variant B (Post Observation)
-                      <span className="text-[9px] bg-palm-leaf-200 text-palm-leaf-900 font-bold px-1.5 py-0.2 rounded-full">
-                        Leader
-                      </span>
-                    </span>
-                    <span className="text-palm-leaf-800 dark:text-palm-leaf-300 font-bold">
-                      {selectedCampaign.variantB}% accept
-                    </span>
+              ) : campaignDetail && campaignDetail.funnel.length > 0 ? (
+                <div className="space-y-3">
+                  {campaignDetail.funnel.map((stage, idx) => {
+                    const maxCount = campaignDetail.funnel[0].count || 1;
+                    const pct = Math.min((stage.count / maxCount) * 100, 100);
+                    return (
+                      <div key={stage.stage}>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="text-neutral-600 dark:text-neutral-400 font-medium">{stage.stage}</span>
+                          <span className="font-bold text-neutral-900 dark:text-neutral-100">{stage.count}</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${pct}%` }}
+                            transition={{ duration: 0.5, delay: idx * 0.07, ease: [0.16, 1, 0.3, 1] }}
+                            className="h-full rounded-full bg-palm-leaf-500"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="mt-4 grid grid-cols-2 gap-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+                    <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950/40 text-center">
+                      <p className="text-[10px] text-neutral-500 mb-0.5">Sent today</p>
+                      <p className="text-base font-bold text-neutral-900 dark:text-neutral-100">{campaignDetail.sentToday}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-palm-leaf-50 dark:bg-palm-leaf-950/30 text-center">
+                      <p className="text-[10px] text-neutral-500 mb-0.5">Remaining today</p>
+                      <p className="text-base font-bold text-palm-leaf-700 dark:text-palm-leaf-300">{campaignDetail.remainingToday}</p>
+                    </div>
                   </div>
-                  <div className="h-2 w-full rounded-full bg-palm-leaf-200 dark:bg-neutral-800 overflow-hidden">
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${selectedCampaign.variantB}%` }}
-                      transition={{ duration: 0.5, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-                      className="h-full bg-palm-leaf-600 rounded-full"
-                    />
-                  </div>
-                  <p className="text-[11px] text-neutral-600 dark:text-neutral-400 italic">
-                    &quot;Hi [First Name], really agreed with your thoughts on PLG efficiency this week...&quot;
-                  </p>
                 </div>
+              ) : (
+                <div className="py-10 text-center">
+                  <div className="h-12 w-12 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-400 mx-auto flex items-center justify-center mb-3">
+                    <TrendingUp className="h-6 w-6" />
+                  </div>
+                  <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">No funnel data yet</p>
+                  <p className="text-[11px] text-neutral-400 mt-1">Enroll leads and start the campaign to see stats here.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Quick stats from the list */}
+            <div className="mt-6 grid grid-cols-3 gap-3 pt-4 border-t border-neutral-100 dark:border-neutral-800">
+              <div className="text-center">
+                <p className="text-[10px] text-neutral-500">Leads</p>
+                <p className="text-sm font-bold text-neutral-900 dark:text-neutral-100">{selectedCampaign.sentCount}/{selectedCampaign.leadsCount}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] text-neutral-500">Accept rate</p>
+                <p className="text-sm font-bold text-palm-leaf-700 dark:text-palm-leaf-400">{selectedCampaign.acceptRate}%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] text-neutral-500">Reply rate</p>
+                <p className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{selectedCampaign.replyRate}%</p>
               </div>
             </div>
           </motion.div>

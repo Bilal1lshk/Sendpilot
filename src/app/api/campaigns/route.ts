@@ -1,167 +1,129 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import connectDB from "@/lib/mongodb";
+import { Types } from "mongoose";
+import Campaign from "@/models/Campaign";
+import CampaignLead from "@/models/CampaignLead";
+import Lead from "@/models/Lead";
 import Workspace from "@/models/Workspace";
+import {
+  requireUser,
+  apiError,
+  getCampaignStats,
+  serializeCampaign,
+  DEFAULT_STEPS,
+  isValidObjectId,
+  nextActionable,
+  sanitizeSteps,
+} from "@/lib/crm";
 
+/** GET /api/campaigns — every campaign for the user with live aggregated stats */
 export async function GET() {
+  const ctx = await requireUser();
+  if (ctx instanceof NextResponse) return ctx;
+
   try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
+    const [campaigns, availableLeadsCount, workspace] = await Promise.all([
+      Campaign.find({ userId: ctx.userId }).sort({ createdAt: -1 }).lean(),
+      Lead.countDocuments({ userId: ctx.userId, isSample: { $ne: true } }),
+      Workspace.findOne({ userId: ctx.userId }, { "step2.data.connectedAccounts": 1 }).lean(),
+    ]);
 
-    await connectDB();
-    const workspace = await Workspace.findOne({ userId });
+    const stats = await getCampaignStats(
+      ctx.userId,
+      campaigns.map((c) => c._id as Types.ObjectId)
+    );
 
-    const step4 = workspace?.step4?.data;
-    const leads = workspace?.step3?.data?.leads || [];
-    const accounts = workspace?.step2?.data?.connectedAccounts || [];
-
-    const campaigns: any[] = [];
-
-    // If a primary campaign is configured in workspace step4
-    if (step4?.campaignName) {
-      campaigns.push({
-        id: "c_primary",
-        name: step4.campaignName,
-        status: step4.status === "active" ? "Active" : "Paused",
-        sender: accounts[0]?.name || "Connected Sender",
-        leadsCount: step4.targetLeadsCount || leads.length || 0,
-        sentCount: step4.stats?.sent || 0,
-        acceptRate:
-          step4.stats?.sent && step4.stats.accepted !== undefined
-            ? Math.round((step4.stats.accepted / step4.stats.sent) * 100)
-            : 48,
-        replyRate:
-          step4.stats?.accepted && step4.stats.replied !== undefined
-            ? Math.round((step4.stats.replied / step4.stats.accepted) * 100)
-            : 34,
-        variantA: 44,
-        variantB: 52,
-        messages: step4.messages || {
-          connectionNote: "",
-          followUp1: "",
-          followUp2: "",
-        },
-      });
-    }
+    const accounts = ((workspace as any)?.step2?.data?.connectedAccounts || []).map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      status: a.status,
+      dailyCap: a.dailyCap,
+    }));
 
     return NextResponse.json({
       success: true,
-      campaigns,
-      availableLeadsCount: leads.length,
+      campaigns: campaigns.map((c) => serializeCampaign(c, stats.get(String(c._id)))),
+      availableLeadsCount,
       availableAccountsCount: accounts.length,
+      accounts,
     });
-  } catch (error: any) {
-    console.error("Error fetching campaigns:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch campaigns", message: error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    return apiError(error, "Failed to fetch campaigns");
   }
 }
 
+/**
+ * POST /api/campaigns
+ * { name, description?, steps?, dailyCap?, senderAccountId?, timezone?, workingHours?, leadIds?: string[], launch?: boolean }
+ */
 export async function POST(req: Request) {
+  const ctx = await requireUser();
+  if (ctx instanceof NextResponse) return ctx;
+
   try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
-
     const body = await req.json().catch(() => ({}));
-    const {
-      name = "Outreach Sequence #1",
-      targetLeadsCount = 50,
-      niche = "B2B SaaS",
-      tone = "Professional & Direct",
-      messages = {},
-      dailyCap = 25,
-      status = "Active",
-    } = body;
+    const name = String(body.name || "").trim();
+    if (!name) return NextResponse.json({ success: false, error: "Campaign name is required" }, { status: 400 });
 
-    await connectDB();
-    let workspace = await Workspace.findOne({ userId });
-
-    if (!workspace) {
-      workspace = new Workspace({
-        userId,
-        name: session?.user?.name ? `${session.user.name}'s Workspace` : "My Workspace",
-      });
+    const steps = body.steps === undefined ? DEFAULT_STEPS : sanitizeSteps(body.steps);
+    if (!steps) return NextResponse.json({ success: false, error: "Invalid sequence steps" }, { status: 400 });
+    if (!steps.some((s) => s.type !== "wait")) {
+      return NextResponse.json({ success: false, error: "Sequence needs at least one connect or message step" }, { status: 400 });
     }
 
-    if (!workspace.step4) {
-      workspace.step4 = {
-        status: "completed",
-        data: {},
-      };
+    let senderName = "";
+    const senderAccountId = String(body.senderAccountId || "");
+    if (senderAccountId) {
+      const ws: any = await Workspace.findOne({ userId: ctx.userId }, { "step2.data.connectedAccounts": 1 }).lean();
+      senderName = ws?.step2?.data?.connectedAccounts?.find((a: any) => a.id === senderAccountId)?.name || "";
     }
 
-    workspace.step4.status = "completed";
-    workspace.step4.data = {
-      campaignName: name,
-      targetLeadsCount: Number(targetLeadsCount) || 50,
-      niche,
-      tone,
-      messages: {
-        connectionNote: messages.connectionNote || "Hi {{firstName}}, would love to connect and share insights.",
-        followUp1: messages.followUp1 || "Hey {{firstName}}, following up on my previous message.",
-        followUp2: messages.followUp2 || "Just wanted to make sure this didn't get buried.",
-      },
-      humanApproved: true,
-      dailyCap: Number(dailyCap) || 25,
-      warmUpActive: true,
-      status: status.toLowerCase(),
-      stats: {
-        sent: 0,
-        accepted: 0,
-        replied: 0,
-        meetingsBooked: 0,
-      },
-    };
-
-    workspace.markModified("step4.data");
-    await workspace.save();
-
-    return NextResponse.json({
-      success: true,
-      campaign: {
-        id: "c_primary",
-        name,
-        status,
-        leadsCount: Number(targetLeadsCount) || 50,
-        sentCount: 0,
-        acceptRate: 0,
-        replyRate: 0,
-      },
+    const launch = Boolean(body.launch);
+    const campaign = await Campaign.create({
+      userId: ctx.userId,
+      name,
+      description: String(body.description || ""),
+      steps,
+      dailyCap: Math.max(1, Math.min(100, Number(body.dailyCap) || 20)),
+      senderAccountId,
+      senderName,
+      timezone: body.timezone || undefined,
+      workingHours: body.workingHours || undefined,
+      status: launch ? "active" : "draft",
+      launchedAt: launch ? new Date() : undefined,
     });
-  } catch (error: any) {
-    console.error("Error creating campaign:", error);
-    return NextResponse.json(
-      { error: "Failed to create campaign", message: error.message },
-      { status: 500 }
-    );
-  }
-}
 
-export async function PATCH(req: Request) {
-  try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
-
-    const body = await req.json().catch(() => ({}));
-    const { status } = body;
-
-    await connectDB();
-    const workspace = await Workspace.findOne({ userId });
-
-    if (workspace && workspace.step4?.data) {
-      workspace.step4.data.status = status?.toLowerCase() === "active" ? "active" : "paused";
-      workspace.markModified("step4.data");
-      await workspace.save();
+    // Optional initial enrollment
+    let enrolled = 0;
+    const leadIds: string[] = Array.isArray(body.leadIds) ? body.leadIds.filter(isValidObjectId) : [];
+    if (leadIds.length > 0) {
+      const validLeads = await Lead.find(
+        { userId: ctx.userId, _id: { $in: leadIds }, isSample: { $ne: true } },
+        { _id: 1 }
+      ).lean();
+      const first = nextActionable(steps, 0);
+      if (validLeads.length > 0) {
+        const docs = await CampaignLead.insertMany(
+          validLeads.map((l) => ({
+            userId: ctx.userId,
+            campaignId: campaign._id,
+            leadId: l._id,
+            currentStep: first.currentStep,
+            nextActionAt: first.nextActionAt,
+            state: "queued",
+            history: [{ event: "enrolled", at: new Date() }],
+          })),
+          { ordered: false }
+        );
+        enrolled = docs.length;
+      }
     }
 
-    return NextResponse.json({ success: true, status });
-  } catch (error: any) {
-    console.error("Error updating campaign status:", error);
+    const stats = await getCampaignStats(ctx.userId, [campaign._id as Types.ObjectId]);
     return NextResponse.json(
-      { error: "Failed to update campaign", message: error.message },
-      { status: 500 }
+      { success: true, enrolled, campaign: serializeCampaign(campaign.toObject(), stats.get(String(campaign._id))) },
+      { status: 201 }
     );
+  } catch (error) {
+    return apiError(error, "Failed to create campaign");
   }
 }

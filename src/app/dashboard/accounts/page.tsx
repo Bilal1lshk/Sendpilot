@@ -13,6 +13,8 @@ import {
   Plus,
   X,
   Loader2,
+  Info,
+  ExternalLink,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants, drawerVariants } from "@/lib/motion";
@@ -32,15 +34,27 @@ export interface ConnectedAccountData {
   warmupStage: number;
 }
 
+/** Tip shown before the user starts a new LinkedIn OAuth flow when they already
+ *  have at least one account connected. Explains the browser-session constraint. */
+const ADD_ACCOUNT_TIP =
+  "LinkedIn reuses your current browser session, so clicking Continue will connect whichever LinkedIn account you are logged into right now. " +
+  "To add a different account, first log into that account on linkedin.com (or open an incognito / private window and log in there), then come back and click Add account.";
+
+/** Toast message shown when the same LinkedIn member is reconnected. */
+const ALREADY_CONNECTED_MSG =
+  "This LinkedIn account is already connected — your tokens have been refreshed. " +
+  "To add a different account, log out of LinkedIn first (or use an incognito window / another browser profile), then click Add account again.";
+
 export default function LinkedInAccountsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [securityPanelOpen, setSecurityPanelOpen] = useState(false);
+  const [addAccountModalOpen, setAddAccountModalOpen] = useState(false);
   const [accounts, setAccounts] = useState<ConnectedAccountData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch real accounts from database
+  // ── Fetch accounts ──────────────────────────────────────────────
   const fetchAccounts = async () => {
     try {
       setIsLoading(true);
@@ -57,6 +71,7 @@ export default function LinkedInAccountsPage() {
     }
   };
 
+  // ── Manual code submission ──────────────────────────────────────
   const handleCodeSubmission = async (input: string) => {
     let cleanCode = input.trim();
     if (cleanCode.includes("code=")) {
@@ -79,15 +94,17 @@ export default function LinkedInAccountsPage() {
       const res = await fetch("/api/linkedin/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: cleanCode,
-        }),
+        body: JSON.stringify({ code: cleanCode }),
       });
       const data = await res.json();
       toast.dismiss(toastId);
 
       if (res.ok && data.success) {
-        toast.success("LinkedIn account connected successfully!");
+        if (data.alreadyConnected) {
+          toast.warning(ALREADY_CONNECTED_MSG, { duration: 8000 });
+        } else {
+          toast.success("LinkedIn account connected successfully!");
+        }
         const inputEl = document.getElementById("redirectCodeInput") as HTMLInputElement;
         if (inputEl) inputEl.value = "";
         fetchAccounts();
@@ -100,41 +117,40 @@ export default function LinkedInAccountsPage() {
     }
   };
 
+  // ── Handle OAuth redirect-back params ──────────────────────────
   useEffect(() => {
-    console.log("🖥️ [Frontend Accounts Page] Mounted or searchParams changed:", {
-      connected: searchParams.get("connected"),
-      error: searchParams.get("error"),
-      code: searchParams.get("code") ? "code_present" : null,
-    });
-
     fetchAccounts();
 
-    // 1. Auto-handle code in query params if redirected back
+    const status = searchParams.get("status");
+    const error = searchParams.get("error");
+    // Legacy param support
+    const connected = searchParams.get("connected");
     const code = searchParams.get("code");
+
+    // Old flow: code landed in query string (non-callback path)
     if (code) {
-      console.log("🖥️ [Frontend Accounts Page] Authorization code found in URL params! Calling /api/linkedin/connect...");
       toast.loading("Connecting LinkedIn account...");
       fetch("/api/linkedin/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-        }),
+        body: JSON.stringify({ code }),
       })
         .then((r) => r.json())
         .then((d) => {
-          console.log("🖥️ [Frontend Accounts Page] Response from /api/linkedin/connect:", d);
           toast.dismiss();
           if (d.success) {
-            toast.success("LinkedIn account connected successfully!");
+            if (d.alreadyConnected) {
+              toast.warning(ALREADY_CONNECTED_MSG, { duration: 8000 });
+            } else {
+              toast.success("LinkedIn account connected successfully!");
+            }
             fetchAccounts();
           } else {
             toast.error(d.error || "Failed to connect LinkedIn account");
           }
           router.replace("/dashboard/accounts");
         })
-        .catch((err) => {
-          console.error("🖥️ [Frontend Accounts Page] Error calling /api/linkedin/connect:", err);
+        .catch(() => {
           toast.dismiss();
           toast.error("Failed to connect account");
           router.replace("/dashboard/accounts");
@@ -142,11 +158,15 @@ export default function LinkedInAccountsPage() {
       return;
     }
 
-    // 2. Check URL parameters for OAuth status
-    const connected = searchParams.get("connected");
-    const error = searchParams.get("error");
-
-    if (connected === "true") {
+    // New callback redirects with ?status=
+    if (status === "connected") {
+      toast.success("LinkedIn account connected successfully!");
+      router.replace("/dashboard/accounts");
+    } else if (status === "already_connected") {
+      toast.warning(ALREADY_CONNECTED_MSG, { duration: 8000 });
+      router.replace("/dashboard/accounts");
+    } else if (connected === "true") {
+      // Legacy ?connected=true
       toast.success("LinkedIn account connected successfully!");
       router.replace("/dashboard/accounts");
     } else if (error) {
@@ -155,12 +175,12 @@ export default function LinkedInAccountsPage() {
     }
   }, [searchParams]);
 
+  // ── Account actions ─────────────────────────────────────────────
   const togglePause = async (id: string) => {
     const target = accounts.find((a) => a.id === id);
     if (!target) return;
     const nextStatus = target.status === "Active" ? "Paused" : "Active";
 
-    // Optimistic update
     setAccounts((prev) =>
       prev.map((acc) => (acc.id === id ? { ...acc, status: nextStatus } : acc))
     );
@@ -179,23 +199,9 @@ export default function LinkedInAccountsPage() {
     }
   };
 
-  const reconnect = async (id: string) => {
-    setAccounts((prev) =>
-      prev.map((acc) => (acc.id === id ? { ...acc, status: "Active" } : acc))
-    );
-
-    try {
-      const res = await fetch("/api/linkedin/accounts", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status: "Active" }),
-      });
-      if (!res.ok) throw new Error("Failed to reconnect");
-      toast.success("Account status marked as Active");
-    } catch {
-      toast.error("Failed to update account");
-      fetchAccounts();
-    }
+  const reconnect = (_id: string) => {
+    toast.loading("Redirecting to LinkedIn to reconnect...");
+    window.location.href = "/api/auth/linkedin/authorize";
   };
 
   const removeAccount = async (id: string) => {
@@ -204,14 +210,22 @@ export default function LinkedInAccountsPage() {
     setAccounts((prev) => prev.filter((acc) => acc.id !== id));
 
     try {
-      const res = await fetch(`/api/linkedin/accounts?id=${id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(`/api/linkedin/accounts?id=${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to remove account");
       toast.success("LinkedIn account disconnected");
     } catch {
       toast.error("Failed to disconnect account");
       fetchAccounts();
+    }
+  };
+
+  /** Opens the add-account modal when there are existing accounts (to show the tip),
+   *  otherwise navigates directly to the OAuth flow. */
+  const handleAddAccount = () => {
+    if (accounts.length > 0) {
+      setAddAccountModalOpen(true);
+    } else {
+      window.location.href = "/api/auth/linkedin/authorize";
     }
   };
 
@@ -245,21 +259,17 @@ export default function LinkedInAccountsPage() {
             <span>Security notes</span>
           </button>
 
-          {/* Direct LinkedIn GET Request */}
           <button
             type="button"
-            onClick={() => {
-              window.location.href = "/api/auth/linkedin/authorize";
-            }}
+            id="add-account-btn"
+            onClick={handleAddAccount}
             className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 active:scale-[0.99] text-white px-3.5 py-1.5 text-xs font-medium shadow-xs transition-all cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
-            <span>Connect account</span>
+            <span>{accounts.length > 0 ? "Add account" : "Connect account"}</span>
           </button>
         </div>
       </motion.div>
-
-
 
       {/* Disconnected account friendly banner */}
       {disconnectedAccount && (
@@ -315,12 +325,9 @@ export default function LinkedInAccountsPage() {
             </p>
           </div>
           <div>
-            {/* Direct LinkedIn GET Request */}
             <button
               type="button"
-              onClick={() => {
-                window.location.href = "/api/auth/linkedin/authorize";
-              }}
+              onClick={() => { window.location.href = "/api/auth/linkedin/authorize"; }}
               className="inline-flex items-center gap-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-4 py-2 text-xs font-semibold shadow-xs transition-all cursor-pointer"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -344,11 +351,7 @@ export default function LinkedInAccountsPage() {
                   <div className="flex items-start gap-4">
                     <div className="relative h-12 w-12 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center overflow-hidden border border-neutral-200 dark:border-neutral-700 shrink-0">
                       {acc.photo ? (
-                        <img
-                          src={acc.photo}
-                          alt={acc.name}
-                          className="h-full w-full object-cover"
-                        />
+                        <img src={acc.photo} alt={acc.name} className="h-full w-full object-cover" />
                       ) : (
                         <LinkedInIcon className="h-6 w-6 text-[#0a66c2]" />
                       )}
@@ -359,12 +362,9 @@ export default function LinkedInAccountsPage() {
                         <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
                           {acc.name}
                         </h3>
-                        <span className="text-[11px] text-neutral-400">
-                          ({acc.type})
-                        </span>
+                        <span className="text-[11px] text-neutral-400">({acc.type})</span>
                       </div>
 
-                      {/* Single human status line */}
                       <div className="mt-1 flex items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300">
                           {acc.status === "Active" ? (
@@ -384,9 +384,7 @@ export default function LinkedInAccountsPage() {
                             </>
                           )}
                           <span className="text-neutral-400">•</span>
-                          <span>
-                            {acc.usedToday} of {acc.dailyCap} requests used today.
-                          </span>
+                          <span>{acc.usedToday} of {acc.dailyCap} requests used today.</span>
                         </span>
                       </div>
 
@@ -396,9 +394,8 @@ export default function LinkedInAccountsPage() {
                     </div>
                   </div>
 
-                  {/* Middle: Usage Progress & 3 Warm-up steps */}
+                  {/* Middle: Usage Progress & Warm-up steps */}
                   <div className="flex-1 max-w-sm space-y-3">
-                    {/* Thin usage bar */}
                     <div>
                       <div className="flex items-center justify-between text-[11px] text-neutral-500 dark:text-neutral-400 mb-1">
                         <span>Daily requests</span>
@@ -416,7 +413,6 @@ export default function LinkedInAccountsPage() {
                       </div>
                     </div>
 
-                    {/* 3 Warm-up steps */}
                     <div>
                       <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-1">
                         <span>Warm-up progression</span>
@@ -493,7 +489,118 @@ export default function LinkedInAccountsPage() {
         </div>
       )}
 
-      {/* Security Side Panel */}
+      {/* ── Add Account Modal ─────────────────────────────────────── */}
+      <AnimatePresence>
+        {addAccountModalOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="add-modal-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={() => setAddAccountModalOpen(false)}
+              className="fixed inset-0 z-50 bg-neutral-900/50 backdrop-blur-sm"
+            />
+
+            {/* Modal */}
+            <motion.div
+              key="add-modal"
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-2xl p-6 space-y-4"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-[#0a66c2]/10 text-[#0a66c2] flex items-center justify-center shrink-0">
+                    <LinkedInIcon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                      Add another LinkedIn account
+                    </h3>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                      Before you continue, please read this.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAddAccountModalOpen(false)}
+                  className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Tip card */}
+              <div className="rounded-xl border border-amber-200/80 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/20 p-4 flex gap-3">
+                <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-neutral-700 dark:text-neutral-300 leading-relaxed">
+                  {ADD_ACCOUNT_TIP}
+                </p>
+              </div>
+
+              {/* Steps */}
+              <ol className="space-y-2 text-xs text-neutral-600 dark:text-neutral-400">
+                <li className="flex gap-2">
+                  <span className="h-5 w-5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] font-bold text-neutral-700 dark:text-neutral-300 flex items-center justify-center shrink-0">1</span>
+                  <span>Switch to the LinkedIn account you want to add (or open an incognito window).</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="h-5 w-5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] font-bold text-neutral-700 dark:text-neutral-300 flex items-center justify-center shrink-0">2</span>
+                  <span>Click <strong className="text-neutral-800 dark:text-neutral-200">Continue</strong> — you'll be taken to LinkedIn to authorize.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="h-5 w-5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-[10px] font-bold text-neutral-700 dark:text-neutral-300 flex items-center justify-center shrink-0">3</span>
+                  <span>After authorizing, you'll be redirected back here and the new card will appear.</span>
+                </li>
+              </ol>
+
+              {/* Actions */}
+              <div className="flex items-center justify-between pt-2">
+                <a
+                  href="https://www.linkedin.com/m/logout/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  <span>Log out of LinkedIn first</span>
+                </a>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAddAccountModalOpen(false)}
+                    className="px-3 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    id="add-account-continue-btn"
+                    onClick={() => {
+                      setAddAccountModalOpen(false);
+                      window.location.href = "/api/auth/linkedin/authorize";
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-4 py-1.5 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Continue to LinkedIn</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* ── Security Side Panel ───────────────────────────────────── */}
       <AnimatePresence>
         {securityPanelOpen && (
           <>
@@ -517,7 +624,7 @@ export default function LinkedInAccountsPage() {
                   <div className="flex items-center gap-2 text-palm-leaf-700 dark:text-palm-leaf-400">
                     <ShieldCheck className="h-4 w-4" />
                     <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                      Security & Privacy
+                      Security &amp; Privacy
                     </h3>
                   </div>
                   <button
@@ -545,6 +652,15 @@ export default function LinkedInAccountsPage() {
                     </h4>
                     <p className="text-neutral-500 dark:text-neutral-400">
                       We never ask for your LinkedIn password, never scrape private inboxes without permission, and never send high-volume mass spam.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+                      Multiple accounts
+                    </h4>
+                    <p className="text-neutral-500 dark:text-neutral-400">
+                      You can connect multiple LinkedIn profiles. Each is tracked independently with its own daily cap, warm-up stage, and token. To add a different profile, you must be logged into that LinkedIn account in your browser first.
                     </p>
                   </div>
 

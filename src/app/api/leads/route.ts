@@ -1,160 +1,145 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import connectDB from "@/lib/mongodb";
-import Workspace from "@/models/Workspace";
+import Lead, { LEAD_STATUSES, LEAD_SOURCES } from "@/models/Lead";
+import CampaignLead from "@/models/CampaignLead";
+import { requireUser, importLeads, serializeLead, toLeadSource, apiError, isValidObjectId } from "@/lib/crm";
 
-export async function GET() {
-  try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
-
-    await connectDB();
-    const workspace = await Workspace.findOne({ userId });
-
-    const leads = workspace?.step3?.data?.leads || [];
-    return NextResponse.json({
-      success: true,
-      total: leads.length,
-      leads,
-    });
-  } catch (error: any) {
-    console.error("Error fetching leads:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch leads", message: error.message },
-      { status: 500 }
-    );
-  }
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export async function POST(req: Request) {
+/**
+ * GET /api/leads?q=&status=&source=&tag=&sample=include|exclude|only&page=1&limit=25
+ */
+export async function GET(req: Request) {
+  const ctx = await requireUser();
+  if (ctx instanceof NextResponse) return ctx;
+
   try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
-
-    const body = await req.json().catch(() => ({}));
-    const { leads = [], importType = "csv" } = body;
-
-    if (!Array.isArray(leads) || leads.length === 0) {
-      return NextResponse.json(
-        { error: "No leads provided in request payload" },
-        { status: 400 }
-      );
-    }
-
-    await connectDB();
-    let workspace = await Workspace.findOne({ userId });
-
-    if (!workspace) {
-      workspace = new Workspace({
-        userId,
-        name: session?.user?.name ? `${session.user.name}'s Workspace` : "My Workspace",
-      });
-    }
-
-    if (!workspace.step3) {
-      workspace.step3 = {
-        status: "completed",
-        data: { leads: [], readyCount: 0, importType },
-      };
-    }
-    if (!workspace.step3.data) {
-      workspace.step3.data = { leads: [], readyCount: 0, importType };
-    }
-
-    const existingLeads = workspace.step3.data.leads || [];
-    const existingEmails = new Set(
-      existingLeads.map((l: any) => l.email?.toLowerCase().trim()).filter(Boolean)
-    );
-    const existingUrls = new Set(
-      existingLeads.map((l: any) => l.linkedinUrl?.toLowerCase().trim()).filter(Boolean)
-    );
-
-    const formattedNewLeads: any[] = [];
-    let duplicatesSkipped = 0;
-
-    for (const lead of leads) {
-      const email = lead.email?.toLowerCase().trim() || "";
-      const url = lead.linkedinUrl?.toLowerCase().trim() || "";
-
-      if ((email && existingEmails.has(email)) || (url && existingUrls.has(url))) {
-        duplicatesSkipped++;
-        continue;
-      }
-
-      if (email) existingEmails.add(email);
-      if (url) existingUrls.add(url);
-
-      formattedNewLeads.push({
-        id: lead.id || `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        firstName: lead.firstName || lead.name?.split(" ")[0] || "Prospect",
-        lastName: lead.lastName || lead.name?.split(" ").slice(1).join(" ") || "",
-        jobTitle: lead.jobTitle || lead.title || "Decision Maker",
-        company: lead.company || "Enterprise",
-        email: lead.email || "",
-        linkedinUrl: lead.linkedinUrl || "",
-        icpScore: Number(lead.icpScore) || 85,
-        status: lead.status || "ready",
-      });
-    }
-
-    workspace.step3.data.leads = [...formattedNewLeads, ...existingLeads];
-    workspace.step3.data.readyCount = workspace.step3.data.leads.length;
-    workspace.step3.data.importType = importType;
-    workspace.step3.status = "completed";
-    workspace.markModified("step3.data");
-
-    await workspace.save();
-
-    return NextResponse.json({
-      success: true,
-      importedCount: formattedNewLeads.length,
-      duplicatesSkipped,
-      totalCount: workspace.step3.data.leads.length,
-      leads: workspace.step3.data.leads,
-    });
-  } catch (error: any) {
-    console.error("Error importing leads:", error);
-    return NextResponse.json(
-      { error: "Failed to import leads", message: error.message },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(req: Request) {
-  try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
     const { searchParams } = new URL(req.url);
-    const leadId = searchParams.get("id");
+    const q = (searchParams.get("q") || "").trim();
+    const status = searchParams.get("status");
+    const source = searchParams.get("source");
+    const tag = searchParams.get("tag");
+    const sample = searchParams.get("sample") || "include";
+    const page = Math.max(1, Number(searchParams.get("page")) || 1);
+    const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit")) || 25));
 
-    await connectDB();
-    const workspace = await Workspace.findOne({ userId });
-
-    if (!workspace || !workspace.step3?.data?.leads) {
-      return NextResponse.json({ success: true, count: 0 });
+    const filter: Record<string, any> = { userId: ctx.userId };
+    if (status && (LEAD_STATUSES as readonly string[]).includes(status)) filter.status = status;
+    if (source && (LEAD_SOURCES as readonly string[]).includes(source)) filter.source = source;
+    if (tag) filter.tags = tag;
+    if (sample === "exclude") filter.isSample = { $ne: true };
+    if (sample === "only") filter.isSample = true;
+    if (q) {
+      const rx = new RegExp(escapeRegex(q), "i");
+      filter.$or = [{ firstName: rx }, { lastName: rx }, { company: rx }, { title: rx }, { email: rx }, { location: rx }];
     }
 
-    if (leadId) {
-      workspace.step3.data.leads = workspace.step3.data.leads.filter(
-        (l: any) => l.id !== leadId
-      );
-    } else {
-      workspace.step3.data.leads = [];
+    const [items, total, statusCounts, tags] = await Promise.all([
+      Lead.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      Lead.countDocuments(filter),
+      Lead.aggregate([{ $match: { userId: ctx.userId } }, { $group: { _id: "$status", n: { $sum: 1 } } }]),
+      Lead.distinct("tags", { userId: ctx.userId }),
+    ]);
+
+    // Which campaigns each lead on this page is enrolled in
+    const enrollments = await CampaignLead.find(
+      { userId: ctx.userId, leadId: { $in: items.map((i) => i._id) } },
+      { leadId: 1, campaignId: 1, state: 1 }
+    ).lean();
+    const byLead = new Map<string, { campaignId: string; state: string }[]>();
+    for (const e of enrollments) {
+      const k = String(e.leadId);
+      if (!byLead.has(k)) byLead.set(k, []);
+      byLead.get(k)!.push({ campaignId: String(e.campaignId), state: e.state });
     }
 
-    workspace.step3.data.readyCount = workspace.step3.data.leads.length;
-    workspace.markModified("step3.data");
-    await workspace.save();
+    const counts: Record<string, number> = { all: 0 };
+    for (const s of statusCounts) {
+      counts[s._id] = s.n;
+      counts.all += s.n;
+    }
 
     return NextResponse.json({
       success: true,
-      remainingCount: workspace.step3.data.leads.length,
+      leads: items.map((l) => ({ ...serializeLead(l), campaigns: byLead.get(String(l._id)) || [] })),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      counts,
+      tags: (tags as string[]).sort(),
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: "Failed to delete lead(s)", message: error.message },
-      { status: 500 }
+  } catch (error) {
+    return apiError(error, "Failed to fetch leads");
+  }
+}
+
+/** POST /api/leads  { leads: RawLeadInput[], importType?: "csv" | "linkedin_search" | "profile" | "manual" } */
+export async function POST(req: Request) {
+  const ctx = await requireUser();
+  if (ctx instanceof NextResponse) return ctx;
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const leads = Array.isArray(body.leads) ? body.leads : body.lead ? [body.lead] : [];
+    if (leads.length === 0) {
+      return NextResponse.json({ success: false, error: "No leads provided" }, { status: 400 });
+    }
+    if (leads.length > 5000) {
+      return NextResponse.json({ success: false, error: "Max 5000 leads per import" }, { status: 400 });
+    }
+
+    const result = await importLeads(ctx.userId, leads, toLeadSource(body.importType || body.source));
+    const totalCount = await Lead.countDocuments({ userId: ctx.userId });
+
+    return NextResponse.json({
+      success: true,
+      importedCount: result.imported,
+      duplicatesSkipped: result.duplicates,
+      invalidSkipped: result.invalid,
+      totalCount,
+      leads: result.leads.map(serializeLead),
+    });
+  } catch (error) {
+    return apiError(error, "Failed to import leads");
+  }
+}
+
+/**
+ * DELETE /api/leads            body { ids: string[] }  → delete selected
+ * DELETE /api/leads?all=true                          → delete every lead for the user
+ * DELETE /api/leads?id=...                            → legacy single delete
+ */
+export async function DELETE(req: Request) {
+  const ctx = await requireUser();
+  if (ctx instanceof NextResponse) return ctx;
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const body = await req.json().catch(() => ({}));
+    let ids: string[] = Array.isArray(body.ids) ? body.ids : [];
+    const single = searchParams.get("id");
+    if (single) ids.push(single);
+    ids = ids.filter(isValidObjectId);
+
+    const deleteAll = searchParams.get("all") === "true" || (!single && ids.length === 0 && !Array.isArray(body.ids));
+
+    const filter: Record<string, any> = { userId: ctx.userId };
+    if (!deleteAll) {
+      if (ids.length === 0) return NextResponse.json({ success: false, error: "No valid lead ids" }, { status: 400 });
+      filter._id = { $in: ids };
+    }
+
+    const targetIds = deleteAll ? undefined : ids;
+    const { deletedCount } = await Lead.deleteMany(filter);
+    await CampaignLead.deleteMany(
+      targetIds ? { userId: ctx.userId, leadId: { $in: targetIds } } : { userId: ctx.userId }
     );
+    const remainingCount = await Lead.countDocuments({ userId: ctx.userId });
+
+    return NextResponse.json({ success: true, deletedCount, remainingCount });
+  } catch (error) {
+    return apiError(error, "Failed to delete lead(s)");
   }
 }

@@ -3,6 +3,16 @@ import { auth } from "@/auth";
 import connectDB from "@/lib/mongodb";
 import Workspace from "@/models/Workspace";
 
+/**
+ * POST /api/linkedin/connect
+ *
+ * Manual code-submission path (used when the user pastes the auth code from
+ * the redirect URL into the accounts page instead of being auto-redirected).
+ *
+ * Applies the same upsert-by-linkedinMemberId logic as the OAuth callback:
+ *   - Known member → refresh tokens, return { success: true, alreadyConnected: true }.
+ *   - New member   → insert a new account row, return { success: true, alreadyConnected: false }.
+ */
 export async function POST(req: Request) {
   try {
     const session = await auth();
@@ -12,7 +22,7 @@ export async function POST(req: Request) {
     console.log("\n=======================================================");
     console.log("➡️ [POST /api/linkedin/connect] Incoming Request");
     console.log("User ID:", userId);
-    console.log("Body:", { ...body, code: body.code ? `${body.code.substring(0, 20)}...` : "None" });
+    console.log("Body:", { ...body, code: body.code ? `${body.code.substring(0, 20)}…` : "None" });
 
     const {
       code,
@@ -28,22 +38,13 @@ export async function POST(req: Request) {
       process.env.LINKEDIN_DEV_REDIRECT_URI;
 
     if (!code) {
-      console.error("❌ Authorization code missing");
-      return NextResponse.json(
-        { error: "Authorization code is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Authorization code is required" }, { status: 400 });
     }
 
-    const clientId =
-      process.env.LINKEDIN_CLIENT_ID ||
-      process.env.Linkedin_Client_ID;
-    const clientSecret =
-      process.env.LINKEDIN_CLIENT_SECRET ||
-      process.env.Linkedin_Client_Secret;
+    const clientId = process.env.LINKEDIN_CLIENT_ID || process.env.Linkedin_Client_ID;
+    const clientSecret = process.env.LINKEDIN_CLIENT_SECRET || process.env.Linkedin_Client_Secret;
 
     if (!clientId || !clientSecret || !redirectUri) {
-      console.error("❌ Missing LinkedIn OAuth credentials in .env");
       return NextResponse.json(
         {
           error:
@@ -53,37 +54,24 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("📡 Direct Connect: Exchanging code with LinkedIn...");
-    console.log("Redirect URI:", redirectUri);
-
-    // 1. Exchange code for access token with LinkedIn
-    const tokenResponse = await fetch(
-      "https://www.linkedin.com/oauth/v2/accessToken",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "authorization_code",
-          code: code.trim(),
-          redirect_uri: redirectUri.trim(),
-          client_id: clientId.trim(),
-          client_secret: clientSecret.trim(),
-        }),
-      }
-    );
-
-    const tokenData = await tokenResponse.json();
-    console.log("📥 LinkedIn Token API Status:", tokenResponse.status);
-    console.log("📥 LinkedIn Token API Response:", {
-      has_access_token: !!tokenData.access_token,
-      expires_in: tokenData.expires_in,
-      scope: tokenData.scope,
-      error: tokenData.error,
-      error_description: tokenData.error_description,
+    // ── 1. Exchange code for tokens ───────────────────────────────
+    console.log("📡 Exchanging code with LinkedIn…");
+    const tokenResponse = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: code.trim(),
+        redirect_uri: redirectUri.trim(),
+        client_id: clientId.trim(),
+        client_secret: clientSecret.trim(),
+      }),
     });
 
+    const tokenData = await tokenResponse.json();
+
     if (!tokenResponse.ok || !tokenData.access_token) {
-      console.error("❌ LinkedIn direct connect token error:", tokenData);
+      console.error("❌ LinkedIn token error:", tokenData);
       return NextResponse.json(
         {
           error:
@@ -95,14 +83,16 @@ export async function POST(req: Request) {
       );
     }
 
-    const accessToken = tokenData.access_token;
-    const expiresIn = tokenData.expires_in;
+    const accessToken: string = tokenData.access_token;
+    const refreshToken: string | undefined = tokenData.refresh_token;
+    const expiresIn: number | undefined = tokenData.expires_in;
+    const tokenExpiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : undefined;
 
-    // 2. Fetch LinkedIn Profile
+    // ── 2. Fetch profile / userinfo ───────────────────────────────
     let name = customName?.trim() || session?.user?.name || "LinkedIn User";
     let headline = customHeadline?.trim() || "Connected via LinkedIn OAuth";
     let photo = "";
-    let linkedinSub = "";
+    let linkedinMemberId = "";
 
     try {
       const userinfoRes = await fetch("https://api.linkedin.com/v2/userinfo", {
@@ -113,10 +103,8 @@ export async function POST(req: Request) {
         const userInfo = await userinfoRes.json();
         name = userInfo.name || `${userInfo.given_name || ""} ${userInfo.family_name || ""}`.trim() || name;
         photo = userInfo.picture || "";
-        linkedinSub = userInfo.sub || "";
-        if (userInfo.email) {
-          headline = `Verified (${userInfo.email})`;
-        }
+        linkedinMemberId = userInfo.sub || "";
+        if (userInfo.email) headline = `Verified (${userInfo.email})`;
       } else {
         const meRes = await fetch("https://api.linkedin.com/v2/me", {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -124,14 +112,14 @@ export async function POST(req: Request) {
         if (meRes.ok) {
           const meData = await meRes.json();
           name = `${meData.localizedFirstName || ""} ${meData.localizedLastName || ""}`.trim() || name;
-          linkedinSub = meData.id || "";
+          linkedinMemberId = meData.id || "";
         }
       }
     } catch (profileErr) {
       console.warn("Could not retrieve profile directly:", profileErr);
     }
 
-    // 3. Save Connected Account in Database
+    // ── 3. Upsert by (userId, linkedinMemberId) ───────────────────
     await connectDB();
 
     let workspace = await Workspace.findOne({ userId });
@@ -142,26 +130,6 @@ export async function POST(req: Request) {
       });
     }
 
-    const newAccount = {
-      id: `acc_${Date.now()}`,
-      name,
-      headline,
-      type: accountType,
-      photo,
-      status: "Active",
-      connectedDate: new Date().toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-      usedToday: 0,
-      dailyCap: Number(dailyCap) || 25,
-      warmupStage: 1,
-      accessToken,
-      tokenExpiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000) : undefined,
-      linkedinId: linkedinSub,
-    };
-
     if (!workspace.step2) {
       workspace.step2 = { status: "completed", data: { connectedAccounts: [], invitedTeammates: [] } };
     }
@@ -169,23 +137,75 @@ export async function POST(req: Request) {
       workspace.step2.data = { connectedAccounts: [], invitedTeammates: [] };
     }
 
-    const existing = workspace.step2.data.connectedAccounts || [];
-    const filtered = existing.filter((acc: any) => acc.linkedinId !== linkedinSub || !linkedinSub);
-    workspace.step2.data.connectedAccounts = [newAccount, ...filtered];
+    const existing: any[] = workspace.step2.data.connectedAccounts || [];
+
+    const existingIdx = linkedinMemberId
+      ? existing.findIndex(
+          (a: any) =>
+            (a.linkedinMemberId && a.linkedinMemberId === linkedinMemberId) ||
+            (a.linkedinId && a.linkedinId === linkedinMemberId)
+        )
+      : -1;
+
+    let alreadyConnected = false;
+    let savedAccount: any;
+
+    if (existingIdx !== -1) {
+      // Known member — refresh tokens only
+      existing[existingIdx] = {
+        ...existing[existingIdx],
+        accessToken,
+        refreshToken: refreshToken ?? existing[existingIdx].refreshToken,
+        tokenExpiresAt,
+        linkedinMemberId,
+        name,
+        headline,
+        photo: photo || existing[existingIdx].photo,
+        status: "Active",
+      };
+      workspace.step2.data.connectedAccounts = existing;
+      savedAccount = existing[existingIdx];
+      alreadyConnected = true;
+    } else {
+      // New member — insert
+      savedAccount = {
+        id: `acc_${Date.now()}`,
+        name,
+        headline,
+        type: accountType,
+        photo,
+        status: "Active",
+        connectedDate: new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        usedToday: 0,
+        dailyCap: Number(dailyCap) || 25,
+        warmupStage: 1,
+        accessToken,
+        refreshToken,
+        tokenExpiresAt,
+        linkedinMemberId,
+        linkedinId: linkedinMemberId,
+      };
+      workspace.step2.data.connectedAccounts = [savedAccount, ...existing];
+    }
+
     workspace.step2.status = "completed";
     workspace.markModified("step2.data.connectedAccounts");
-
     await workspace.save();
+
+    // Strip server-only fields before returning to client
+    const { accessToken: _at, refreshToken: _rt, ...publicAccount } = savedAccount;
 
     return NextResponse.json({
       success: true,
-      account: newAccount,
+      alreadyConnected,
+      account: publicAccount,
     });
   } catch (error: any) {
     console.error("Error in /api/linkedin/connect:", error);
-    return NextResponse.json(
-      { error: "Failed to connect LinkedIn account" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to connect LinkedIn account" }, { status: 500 });
   }
 }
