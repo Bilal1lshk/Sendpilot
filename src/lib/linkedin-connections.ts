@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Campaign from "@/models/Campaign";
 import CampaignLead from "@/models/CampaignLead";
-import LinkedInConnection, { ILinkedInConnection } from "@/models/LinkedInConnection";
+import LinkedInConnection, { type ILinkedInConnection } from "@/models/LinkedInConnection";
 import Workspace from "@/models/Workspace";
 import { decryptConnectionSecrets, encryptConnectionSecrets } from "@/lib/connection-crypto";
 import { toSafeConnection } from "@/lib/linkedin-connection-dto";
@@ -11,6 +11,17 @@ export interface LinkedInCredentials {
   refreshToken?: string;
   tokenExpiresAt?: string;
   linkedinMemberId?: string;
+}
+
+interface LegacyLinkedInAccount {
+  id?: unknown;
+  name?: unknown;
+  photo?: unknown;
+  accessToken?: unknown;
+  refreshToken?: unknown;
+  tokenExpiresAt?: unknown;
+  linkedinMemberId?: unknown;
+  linkedinId?: unknown;
 }
 
 export function createConnectionId() {
@@ -41,14 +52,13 @@ export async function stopConnectionJobs(connectionId: string, userId: string) {
   const campaigns = await Campaign.find({
     userId,
     senderAccountId: connectionId,
-    status: "active",
   }).select("_id");
   const campaignIds = campaigns.map((campaign) => campaign._id);
   if (campaignIds.length === 0) return;
 
   await Promise.all([
     Campaign.updateMany(
-      { userId, _id: { $in: campaignIds } },
+      { userId, _id: { $in: campaignIds }, status: "active" },
       { $set: { status: "paused" } }
     ),
     CampaignLead.updateMany(
@@ -82,6 +92,9 @@ export async function verifyConnection(id: string, userId: string) {
     const name = String(profile.name || `${profile.given_name || ""} ${profile.family_name || ""}`).trim();
     if (!name) throw new Error("LinkedIn profile name is unavailable");
 
+    if (credentials.linkedinMemberId && credentials.linkedinMemberId !== String(profile.sub || "")) {
+      throw new Error("LinkedIn member does not match the connected account");
+    }
     if (connection.linkedinName && normalizeName(connection.linkedinName) !== normalizeName(name)) {
       throw new Error("LinkedIn profile does not match the connected account");
     }
@@ -122,7 +135,7 @@ export async function connectWithCredentials(userId: string, credentials: Linked
         candidate.linkedinName = connection.linkedinName;
         candidate.linkedinAvatar = connection.linkedinAvatar;
         candidate.lastVerifiedAt = connection.lastVerifiedAt;
-        candidate.confirmedAt = undefined;
+        candidate.confirmedAt = candidate.confirmedAt || undefined;
         await candidate.save();
         await connection.deleteOne();
         return { verified: true as const, alreadyConnected: true, connection: toSafeConnection(candidate) };
@@ -142,26 +155,31 @@ export async function connectWithCredentials(userId: string, credentials: Linked
 
 export async function migrateLegacyLinkedInConnections(userId: string) {
   const workspace = await Workspace.findOne({ userId });
-  const legacyAccounts = (workspace?.step2?.data?.connectedAccounts || []) as Array<Record<string, any>>;
+  const legacyAccounts = (workspace?.step2?.data?.connectedAccounts || []) as LegacyLinkedInAccount[];
   if (!workspace || legacyAccounts.length === 0) return;
 
   for (const account of legacyAccounts) {
-    const id = String(account.id || createConnectionId());
+    const id = typeof account.id === "string" ? account.id : createConnectionId();
+    const accessToken = typeof account.accessToken === "string" ? account.accessToken : "";
+    const refreshToken = typeof account.refreshToken === "string" ? account.refreshToken : undefined;
+    const expires = account.tokenExpiresAt ? new Date(String(account.tokenExpiresAt)) : null;
+    const linkedinMemberId = typeof account.linkedinMemberId === "string"
+      ? account.linkedinMemberId
+      : typeof account.linkedinId === "string" ? account.linkedinId : undefined;
     let connection = await LinkedInConnection.findOne({ id, userId }).select("+encryptedCredentials");
     if (!connection) {
       connection = await LinkedInConnection.create({
         id,
         userId,
         encryptedCredentials: encryptConnectionSecrets({
-          accessToken: account.accessToken || "",
-          refreshToken: account.refreshToken || undefined,
-          tokenExpiresAt: account.tokenExpiresAt ? new Date(account.tokenExpiresAt).toISOString() : undefined,
-          linkedinMemberId: account.linkedinMemberId || account.linkedinId || undefined,
+          accessToken,
+          refreshToken,
+          tokenExpiresAt: expires && !Number.isNaN(expires.getTime()) ? expires.toISOString() : undefined,
+          linkedinMemberId,
         }),
-        status: account.accessToken ? "active" : "expired",
-        linkedinName: String(account.name || "LinkedIn User"),
-        linkedinAvatar: String(account.photo || ""),
-        confirmedAt: new Date(),
+        status: "expired",
+        linkedinName: typeof account.name === "string" ? account.name : "LinkedIn User",
+        linkedinAvatar: typeof account.photo === "string" ? account.photo : "",
       });
     }
   }

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { toSafeConnection, isConnectionOwnedBy } from "../src/lib/linkedin-connection-dto.ts";
 import { createSessionId, hashSessionId } from "../src/lib/session-id.ts";
+import { redactSensitive } from "../src/lib/log-redactor.ts";
 
 const connectionRow = {
   id: "li_connection_1",
@@ -45,4 +46,16 @@ test("app session cookie value is a random opaque identifier", () => {
   assert.match(sessionId, /^[A-Za-z0-9_-]{43}$/);
   assert.notEqual(hashSessionId(sessionId), sessionId);
   assert.equal(hashSessionId(sessionId).length, 64);
+});
+
+test("log redactor masks secret-bearing keys and inline cookie/token values", () => {
+  const redacted = redactSensitive({
+    cookieHeader: "li_at=private-cookie",
+    nested: { accessToken: "private-token", safe: "visible" },
+    message: "request contained secret=private-secret",
+  });
+  const output = JSON.stringify(redacted);
+
+  assert.doesNotMatch(output, /private-cookie|private-token|private-secret|li_at=/i);
+  assert.match(output, /visible/);
 });

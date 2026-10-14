@@ -39,16 +39,16 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ success: false, error: "Missing connection ID" }, { status: 400 });
     }
 
-    const deleted = await LinkedInConnection.findOneAndDelete({ id, userId: ctx.userId });
-    if (!deleted) return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
-
+    const exists = await LinkedInConnection.exists({ id, userId: ctx.userId });
+    if (!exists) return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
     await stopConnectionJobs(id, ctx.userId);
+    await LinkedInConnection.deleteOne({ id, userId: ctx.userId });
     const accounts = await LinkedInConnection.find({ userId: ctx.userId }).sort({ createdAt: -1 });
     return NextResponse.json(
       {
         success: true,
         accounts: accounts.map(toSafeConnection),
-        message: "Connection removed. Log out of LinkedIn separately to end its browser session.",
+        message: "LinkedIn account disconnected successfully.",
       },
       NO_STORE
     );

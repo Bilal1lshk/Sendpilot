@@ -100,7 +100,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               await existingUser.save();
             }
           }
-        } catch (error) {
+        } catch {
           console.error("Error creating or updating Google OAuth user");
           return "/login?error=DatabaseError";
         }

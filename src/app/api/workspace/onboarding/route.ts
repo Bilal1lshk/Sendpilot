@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import Workspace from "@/models/Workspace";
+import Workspace, { IWorkspace } from "@/models/Workspace";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import { requireUser, apiError } from "@/lib/crm";
 import { toSafeConnection } from "@/lib/linkedin-connection-dto";
 
-async function safeWorkspaceResponse(workspace: any, userId: string) {
+async function safeWorkspaceResponse(workspace: IWorkspace, userId: string) {
   const connections = await LinkedInConnection.find({ userId }).sort({ createdAt: -1 });
   const value = workspace.toObject();
   return {
@@ -39,7 +39,7 @@ export async function GET() {
         step1: {
           status: "not_started",
           data: {
-            fullName: session?.user?.name || "",
+            fullName: ctx.userName || "",
             jobTitle: "",
             companyName: "",
             companyWebsite: "",
@@ -77,7 +77,8 @@ export async function POST(req: Request) {
       workspace.step1 = { ...workspace.step1, ...body.step1 };
     }
     if (body.step2) {
-      const { connectedAccounts: _ignored, ...step2 } = body.step2;
+      const step2 = { ...body.step2, data: { ...body.step2.data } };
+      delete step2.data.connectedAccounts;
       workspace.step2 = {
         ...workspace.step2,
         ...step2,

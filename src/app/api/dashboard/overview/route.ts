@@ -24,24 +24,24 @@ export async function GET() {
     const activeAccountsCount = accounts.filter((account) => account.status === "active").length;
 
     // Build real tasks for outreach queue from the user's real leads
-    const realTasks = leads.slice(0, 10).map((l: any, idx: number) => {
-      const name = `${l.firstName || ""} ${l.lastName || ""}`.trim() || l.name || "Prospect";
-      const company = l.company || "Enterprise";
-      const title = l.jobTitle || l.title || "Decision Maker";
+    const realTasks = leads.slice(0, 10).map((lead, idx) => {
+      const name = `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Prospect";
+      const company = lead.company || "Enterprise";
+      const title = lead.jobTitle || "Decision Maker";
 
       return {
-        id: l.id || `task_${idx}`,
-        leadId: l.id,
+        id: lead.id || `task_${idx}`,
+        leadId: lead.id,
         name,
         title,
         company,
-        photo: l.avatar || "",
-        profileUrl: l.linkedinUrl || "https://linkedin.com",
-        email: l.email || "",
-        message: `Hi ${l.firstName || name.split(" ")[0]}, noticed your work as ${title} at ${company}. Would love to connect and share notes on pipeline acceleration.`,
-        done: l.status === "contacted" || l.status === "Accepted",
-        status: l.status || "ready",
-        icpScore: l.icpScore || 90,
+        photo: "",
+        profileUrl: lead.linkedinUrl || "https://linkedin.com",
+        email: lead.email || "",
+        message: `Hi ${lead.firstName || name.split(" ")[0]}, noticed your work as ${title} at ${company}. Would love to connect and share notes on pipeline acceleration.`,
+        done: lead.status === "contacted" || lead.status === "Accepted",
+        status: lead.status || "ready",
+        icpScore: lead.icpScore || 90,
       };
     });
 

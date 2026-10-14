@@ -7,7 +7,13 @@ type EncryptedBlob = {
 };
 
 function getKey(): Buffer {
-  const encodedKey = process.env.COOKIE_ENC_KEY;
+  let encodedKey = process.env.COOKIE_ENC_KEY;
+  if (!encodedKey && typeof process.loadEnvFile === "function") {
+    try {
+      process.loadEnvFile(".env");
+      encodedKey = process.env.COOKIE_ENC_KEY;
+    } catch {}
+  }
   if (!encodedKey) {
     throw new Error("COOKIE_ENC_KEY must be configured on the server");
   }

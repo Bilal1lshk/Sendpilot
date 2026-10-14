@@ -23,13 +23,20 @@ export async function GET(req: Request) {
     if (!userId) return NextResponse.redirect(new URL("/login", req.url));
 
     await connectDB();
-    await migrateLegacyLinkedInConnections(userId);
+    try {
+      await migrateLegacyLinkedInConnections(userId);
+    } catch (migErr) {
+      console.warn("Legacy migration warning in authorize:", migErr);
+    }
     if (!(await consumeRateLimit(userId, "linkedin-authorize", 5, 15 * 60 * 1000))) {
       return NextResponse.json({ success: false, error: "Too many connection attempts" }, { status: 429 });
     }
 
+    const isManual = searchParams.get("mode") === "manual" || searchParams.get("dev") === "true";
     const clientId = process.env.LINKEDIN_CLIENT_ID || process.env.Linkedin_Client_ID;
-    const redirectUri = process.env.LINKEDIN_REDIRECT_URI; // must be http://localhost:3000/api/auth/linkedin/callback
+    const redirectUri = isManual
+      ? (process.env.LINKEDIN_DEV_REDIRECT_URI || "https://www.linkedin.com/developers/tools/oauth/redirect")
+      : (process.env.LINKEDIN_REDIRECT_URI || "http://localhost:3000/api/auth/linkedin/callback");
     const scope = "openid profile email";
 
     if (!clientId || !redirectUri) {
@@ -52,7 +59,7 @@ export async function GET(req: Request) {
       `&state=${state}`;
 
     if (jsonMode) {
-      return NextResponse.json({ success: true, url: authUrl });
+      return NextResponse.json({ success: true, url: authUrl, redirectUri: redirectUri.trim() });
     }
 
     // Set state in an httpOnly cookie so the callback can verify it
@@ -66,7 +73,7 @@ export async function GET(req: Request) {
     });
 
     return response;
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error creating LinkedIn authorization URL:", error);
     return NextResponse.json(
       { error: "Failed to initiate LinkedIn authorization" },

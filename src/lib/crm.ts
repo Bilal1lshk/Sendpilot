@@ -7,6 +7,7 @@ import Campaign, { ICampaignStep, STEP_TYPES } from "@/models/Campaign";
 import CampaignLead, { EnrollmentState, FUNNEL_ORDER } from "@/models/CampaignLead";
 import Workspace from "@/models/Workspace";
 import { migrateLegacyLinkedInConnections } from "@/lib/linkedin-connections";
+import { redactSensitive } from "@/lib/log-redactor";
 
 // ───────────────────────────── Auth ─────────────────────────────
 
@@ -22,7 +23,11 @@ export async function requireUser(): Promise<{ userId: string; userName?: string
   }
   await connectDB();
   await migrateWorkspaceIfNeeded(userId);
-  await migrateLegacyLinkedInConnections(userId);
+  try {
+    await migrateLegacyLinkedInConnections(userId);
+  } catch (err) {
+    console.error("Legacy LinkedIn connection migration failed for user", userId, err);
+  }
   return { userId, userName: session?.user?.name || undefined };
 }
 
@@ -33,32 +38,6 @@ export function isValidObjectId(id: string | null | undefined): id is string {
 export function apiError(error: unknown, fallback: string, status = 500) {
   console.error(fallback, redactSensitive(error));
   return NextResponse.json({ success: false, error: fallback }, { status });
-}
-
-const SENSITIVE_KEY = /(cookie|token|li_at|secret)/i;
-
-export function redactSensitive(value: unknown, key = ""): unknown {
-  if (SENSITIVE_KEY.test(key)) return "[REDACTED]";
-  if (value instanceof Error) {
-    return { name: value.name, message: redactSensitiveText(value.message) };
-  }
-  if (Array.isArray(value)) return value.map((item) => redactSensitive(item));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([entryKey, entryValue]) => [
-        entryKey,
-        redactSensitive(entryValue, entryKey),
-      ])
-    );
-  }
-  return typeof value === "string" ? redactSensitiveText(value) : value;
-}
-
-function redactSensitiveText(value: string) {
-  return value.replace(
-    /((?:cookie|token|li_at|secret|code)\s*[=:]\s*)([^&\s,;]+)/gi,
-    "$1[REDACTED]"
-  );
 }
 
 // ───────────────────────────── Leads ─────────────────────────────

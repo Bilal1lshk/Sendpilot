@@ -1,5 +1,16 @@
 import { OnboardingState, StepStatus } from "@/types/onboarding";
 
+interface OnboardingConnection {
+  id: string;
+  name?: string;
+  linkedinName?: string;
+  photo?: string;
+  linkedinAvatar?: string;
+  status?: string;
+  connectedAt?: string;
+  lastVerifiedAt?: string;
+}
+
 // [PLACEHOLDER DATA] Default initial state when workspace has not started yet
 export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
   step1: {
@@ -67,7 +78,7 @@ function sanitizeOnboardingState(state: OnboardingState): OnboardingState {
       ...state.step2,
       data: {
         ...state.step2.data,
-        connectedAccounts: (state.step2.data?.connectedAccounts || []).map((account: any) => ({
+        connectedAccounts: ((state.step2.data?.connectedAccounts || []) as unknown as OnboardingConnection[]).map((account) => ({
           id: account.id,
           name: account.linkedinName || account.name || "LinkedIn User",
           headline: "LinkedIn profile",

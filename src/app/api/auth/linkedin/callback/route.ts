@@ -26,7 +26,6 @@ export async function GET(req: Request) {
   const code = url.searchParams.get("code");
   const stateParam = url.searchParams.get("state");
   const error = url.searchParams.get("error");
-  const errorDescription = url.searchParams.get("error_description");
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
 
   console.log("\n=======================================================");
@@ -53,7 +52,11 @@ export async function GET(req: Request) {
   }
 
   await connectDB();
-  await migrateLegacyLinkedInConnections(userId);
+  try {
+    await migrateLegacyLinkedInConnections(userId);
+  } catch (migErr) {
+    console.warn("Legacy migration warning in callback:", migErr);
+  }
   if (!(await consumeRateLimit(userId, "linkedin-callback", 5, 15 * 60 * 1000))) {
     return NextResponse.redirect(`${baseUrl}/dashboard/accounts?error=TooManyAttempts`);
   }
@@ -149,10 +152,11 @@ export async function GET(req: Request) {
       return clearStateCookie(`${baseUrl}/dashboard/accounts?status=verification_failed`);
     }
 
+    const statusParam = result.alreadyConnected ? "already_connected" : "connected";
     return clearStateCookie(
-      `${baseUrl}/dashboard/accounts?status=connected&id=${encodeURIComponent(result.connection.id)}`
+      `${baseUrl}/dashboard/accounts?status=${statusParam}&id=${encodeURIComponent(result.connection.id)}`
     );
-  } catch (error: any) {
+  } catch {
     console.error("LinkedIn OAuth callback failed");
     const baseUrl2 = process.env.NEXTAUTH_URL || "http://localhost:3000";
     return NextResponse.redirect(

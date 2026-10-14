@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useSession, signIn } from "next-auth/react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -29,7 +28,6 @@ import { LinkedInAccount, TeammateInvite } from "@/types/onboarding";
 
 export default function ConnectStepPage() {
   const router = useRouter();
-  const { data: session } = useSession();
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [showConsentModal, setShowConsentModal] = useState<boolean>(false);
@@ -62,59 +60,29 @@ export default function ConnectStepPage() {
     setShowConsentModal(true);
   };
 
-  const handleConsentAgreed = async () => {
+  const handleConsentAgreed = () => {
     setShowConsentModal(false);
     setIsConnecting(true);
-
-    try {
-      // If LinkedIn credentials configured in NextAuth, initiate NextAuth LinkedIn OIDC
-      // Otherwise gracefully add user profile as connected account
-      const newAccount: LinkedInAccount = {
-        id: `li-${Date.now()}`,
-        name: session?.user?.name || "Alex Morgan",
-        headline: "VP of Business Development • Growth & Partnerships",
-        photo: session?.user?.image || undefined,
-        status: "Active",
-        connectedAt: new Date().toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }),
-      };
-
-      const updatedList = [...connectedAccounts, newAccount];
-      setConnectedAccounts(updatedList);
-
-      await saveOnboardingStep("step2", "completed", {
-        connectedAccounts: updatedList,
-        invitedTeammates,
-      });
-
-      toast.success("LinkedIn profile connected successfully!");
-    } catch {
-      toast.error("Failed to connect LinkedIn account.");
-    } finally {
-      setIsConnecting(false);
-    }
+    window.location.assign("/api/auth/linkedin/authorize");
   };
 
-  const handleReconnect = (id: string) => {
-    setConnectedAccounts((prev) =>
-      prev.map((acc) =>
-        acc.id === id ? { ...acc, status: "Active" } : acc
-      )
-    );
-    toast.success("Account re-authenticated.");
+  const handleReconnect = (_id: string) => {
+    window.location.assign("/api/auth/linkedin/authorize");
   };
 
   const handleRemove = async (id: string) => {
+    const response = await fetch(`/api/linkedin/accounts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!response.ok) {
+      toast.error("Could not disconnect LinkedIn account");
+      return;
+    }
+
     const updated = connectedAccounts.filter((acc) => acc.id !== id);
     setConnectedAccounts(updated);
     await saveOnboardingStep("step2", updated.length > 0 ? "completed" : "in_progress", {
-      connectedAccounts: updated,
       invitedTeammates,
     });
-    toast.success("Profile removed from workspace.");
+    toast.success("LinkedIn account disconnected successfully.");
   };
 
   const handleInviteTeammate = async (e: React.FormEvent) => {
@@ -135,7 +103,6 @@ export default function ConnectStepPage() {
     setTeammateEmail("");
 
     await saveOnboardingStep("step2", "completed", {
-      connectedAccounts,
       invitedTeammates: updated,
     });
 
@@ -149,7 +116,6 @@ export default function ConnectStepPage() {
 
   const handleContinue = async () => {
     await saveOnboardingStep("step2", "completed", {
-      connectedAccounts,
       invitedTeammates,
     });
     router.push("/get-started/leads");
