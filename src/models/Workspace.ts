@@ -30,13 +30,6 @@ export interface IWorkspace extends Document {
         dailyCap?: number;
         warmupStage?: number;
         type?: string;
-        accessToken?: string;
-        refreshToken?: string;
-        tokenExpiresAt?: Date;
-        /** OIDC `sub` from LinkedIn userinfo — used as the stable dedup key */
-        linkedinMemberId?: string;
-        /** @deprecated use linkedinMemberId */
-        linkedinId?: string;
       }>;
       invitedTeammates: Array<{
         email: string;

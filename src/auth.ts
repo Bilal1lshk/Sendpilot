@@ -5,9 +5,21 @@ import connectDB from "@/lib/mongodb";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
 import { authConfig } from "./auth.config";
+import { decodeOpaqueSession, encodeOpaqueSession, revokeOpaqueSession } from "@/lib/opaque-auth-session";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
+  cookies: {
+    sessionToken: {
+      name: "__Host-sendpilot.session",
+      options: {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+      },
+    },
+  },
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID || process.env.GOOGLE_CLIENT_ID,
@@ -58,7 +70,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (account?.provider === "google") {
         try {
           if (!user.email) {
-            console.error("Google OAuth signIn failed: user.email is missing", user);
+            console.error("Google OAuth signIn failed: user.email is missing");
             return false;
           }
 
@@ -89,7 +101,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             }
           }
         } catch (error) {
-          console.error("Error creating or updating Google OAuth user:", error);
+          console.error("Error creating or updating Google OAuth user");
           return "/login?error=DatabaseError";
         }
       }
@@ -127,5 +139,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
   },
   session: { strategy: "jwt" },
+  jwt: { encode: encodeOpaqueSession, decode: decodeOpaqueSession },
+  events: {
+    async signOut(message) {
+      if ("token" in message) await revokeOpaqueSession(message.token);
+    },
+  },
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
 });

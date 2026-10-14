@@ -3,7 +3,9 @@ import { Types } from "mongoose";
 import Campaign from "@/models/Campaign";
 import CampaignLead from "@/models/CampaignLead";
 import Lead from "@/models/Lead";
-import Workspace from "@/models/Workspace";
+import LinkedInConnection from "@/models/LinkedInConnection";
+import { toSafeConnection } from "@/lib/linkedin-connection-dto";
+import { verifyConnection } from "@/lib/linkedin-connections";
 import {
   requireUser,
   apiError,
@@ -21,10 +23,10 @@ export async function GET() {
   if (ctx instanceof NextResponse) return ctx;
 
   try {
-    const [campaigns, availableLeadsCount, workspace] = await Promise.all([
+    const [campaigns, availableLeadsCount, connectionRows] = await Promise.all([
       Campaign.find({ userId: ctx.userId }).sort({ createdAt: -1 }).lean(),
       Lead.countDocuments({ userId: ctx.userId, isSample: { $ne: true } }),
-      Workspace.findOne({ userId: ctx.userId }, { "step2.data.connectedAccounts": 1 }).lean(),
+      LinkedInConnection.find({ userId: ctx.userId }).sort({ createdAt: -1 }),
     ]);
 
     const stats = await getCampaignStats(
@@ -32,12 +34,7 @@ export async function GET() {
       campaigns.map((c) => c._id as Types.ObjectId)
     );
 
-    const accounts = ((workspace as any)?.step2?.data?.connectedAccounts || []).map((a: any) => ({
-      id: a.id,
-      name: a.name,
-      status: a.status,
-      dailyCap: a.dailyCap,
-    }));
+    const accounts = connectionRows.map(toSafeConnection);
 
     return NextResponse.json({
       success: true,
@@ -73,11 +70,24 @@ export async function POST(req: Request) {
     let senderName = "";
     const senderAccountId = String(body.senderAccountId || "");
     if (senderAccountId) {
-      const ws: any = await Workspace.findOne({ userId: ctx.userId }, { "step2.data.connectedAccounts": 1 }).lean();
-      senderName = ws?.step2?.data?.connectedAccounts?.find((a: any) => a.id === senderAccountId)?.name || "";
+      const connection = await LinkedInConnection.findOne({ id: senderAccountId, userId: ctx.userId });
+      if (!connection) return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
+      senderName = connection.linkedinName;
     }
 
     const launch = Boolean(body.launch);
+    if (launch) {
+      const connection = senderAccountId
+        ? await LinkedInConnection.findOne({ id: senderAccountId, userId: ctx.userId })
+        : null;
+      if (!connection || !connection.confirmedAt) {
+        return NextResponse.json({ success: false, error: "Confirm a LinkedIn sender account before launching" }, { status: 409 });
+      }
+      const verification = await verifyConnection(senderAccountId, ctx.userId);
+      if (!verification?.verified) {
+        return NextResponse.json({ success: false, error: "LinkedIn authorization expired. Queued work was stopped." }, { status: 409 });
+      }
+    }
     const campaign = await Campaign.create({
       userId: ctx.userId,
       name,

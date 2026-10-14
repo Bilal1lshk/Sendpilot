@@ -60,6 +60,26 @@ export const DEFAULT_ONBOARDING_STATE: OnboardingState = {
 
 const STORAGE_KEY = "sendpilot_onboarding_state";
 
+function sanitizeOnboardingState(state: OnboardingState): OnboardingState {
+  return {
+    ...state,
+    step2: {
+      ...state.step2,
+      data: {
+        ...state.step2.data,
+        connectedAccounts: (state.step2.data?.connectedAccounts || []).map((account: any) => ({
+          id: account.id,
+          name: account.linkedinName || account.name || "LinkedIn User",
+          headline: "LinkedIn profile",
+          photo: account.linkedinAvatar || account.photo || undefined,
+          status: account.status === "active" || account.status === "Active" ? "Active" : "Disconnected",
+          connectedAt: account.lastVerifiedAt || account.connectedAt || "",
+        })),
+      },
+    },
+  };
+}
+
 export async function fetchOnboardingState(): Promise<OnboardingState> {
   // Try to load from database first
   try {
@@ -67,12 +87,12 @@ export async function fetchOnboardingState(): Promise<OnboardingState> {
     if (res.ok) {
       const json = await res.json();
       if (json.workspace) {
-        const merged: OnboardingState = {
+        const merged = sanitizeOnboardingState({
           step1: json.workspace.step1 || DEFAULT_ONBOARDING_STATE.step1,
           step2: json.workspace.step2 || DEFAULT_ONBOARDING_STATE.step2,
           step3: json.workspace.step3 || DEFAULT_ONBOARDING_STATE.step3,
           step4: json.workspace.step4 || DEFAULT_ONBOARDING_STATE.step4,
-        };
+        });
         if (typeof window !== "undefined") {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
         }
@@ -88,7 +108,9 @@ export async function fetchOnboardingState(): Promise<OnboardingState> {
     const cached = localStorage.getItem(STORAGE_KEY);
     if (cached) {
       try {
-        return JSON.parse(cached);
+        const safeState = sanitizeOnboardingState(JSON.parse(cached) as OnboardingState);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(safeState));
+        return safeState;
       } catch {
         // ignore parse errors
       }
@@ -113,10 +135,10 @@ export async function saveOnboardingStep<K extends keyof OnboardingState>(
     },
   };
 
-  const updatedState: OnboardingState = {
+  const updatedState = sanitizeOnboardingState({
     ...current,
     [stepKey]: updatedStep,
-  };
+  } as OnboardingState);
 
   // Update localStorage immediately
   if (typeof window !== "undefined") {

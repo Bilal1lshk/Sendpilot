@@ -1,112 +1,58 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import connectDB from "@/lib/mongodb";
-import Workspace from "@/models/Workspace";
+import LinkedInConnection from "@/models/LinkedInConnection";
+import { requireUser, apiError } from "@/lib/crm";
+import { toSafeConnection } from "@/lib/linkedin-connection-dto";
+import { stopConnectionJobs } from "@/lib/linkedin-connections";
+
+const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 
 export async function GET() {
+  const ctx = await requireUser();
+  if (ctx instanceof NextResponse) return ctx;
+
   try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
-
-    console.log("\n➡️ [GET /api/linkedin/accounts] Request from User ID:", userId);
-
-    await connectDB();
-
-    const workspace = await Workspace.findOne({ userId });
-    const rawAccounts = workspace?.step2?.data?.connectedAccounts || [];
-
-    console.log(`📦 Loaded ${rawAccounts.length} accounts from DB for workspace:`, workspace?._id || "none");
-
-    // Format accounts to ensure consistent structure for frontend
-    const accounts = rawAccounts.map((acc: any) => ({
-      id: acc.id || `acc_${Date.now()}`,
-      name: acc.name || "LinkedIn User",
-      headline: acc.headline || "LinkedIn Profile",
-      type: acc.type || "Sales Navigator",
-      photo: acc.photo || "",
-      status: acc.status || "Active",
-      connectedDate: acc.connectedDate || acc.connectedAt || "Recently",
-      usedToday: acc.usedToday ?? 0,
-      dailyCap: acc.dailyCap ?? 25,
-      warmupStage: acc.warmupStage ?? 1,
-    }));
-
-    console.log("📤 Returning accounts to frontend:", accounts.map((a: any) => ({ id: a.id, name: a.name, status: a.status })));
-    return NextResponse.json({ success: true, accounts });
-  } catch (error: any) {
-    console.error("❌ Error fetching LinkedIn accounts:", error);
+    const connections = await LinkedInConnection.find({ userId: ctx.userId }).sort({ createdAt: -1 });
     return NextResponse.json(
-      { error: "Failed to load LinkedIn accounts" },
-      { status: 500 }
+      { success: true, accounts: connections.map(toSafeConnection) },
+      NO_STORE
     );
+  } catch (error) {
+    return apiError(error, "Failed to load LinkedIn accounts");
   }
 }
 
-export async function PATCH(req: Request) {
-  try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
-    const body = await req.json();
-    const { id, status } = body;
-
-    if (!id || !status) {
-      return NextResponse.json({ error: "Missing account ID or status" }, { status: 400 });
-    }
-
-    await connectDB();
-
-    const workspace = await Workspace.findOne({ userId });
-    if (!workspace || !workspace.step2?.data?.connectedAccounts) {
-      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-    }
-
-    const accounts = workspace.step2.data.connectedAccounts.map((acc: any) => {
-      if (acc.id === id) {
-        return { ...acc, status };
-      }
-      return acc;
-    });
-
-    workspace.step2.data.connectedAccounts = accounts;
-    workspace.markModified("step2.data.connectedAccounts");
-    await workspace.save();
-
-    return NextResponse.json({ success: true, accounts });
-  } catch (error: any) {
-    console.error("Error updating LinkedIn account status:", error);
-    return NextResponse.json({ error: "Failed to update account" }, { status: 500 });
-  }
+export async function PATCH() {
+  return NextResponse.json(
+    { success: false, error: "Connection status is managed through verify and disconnect" },
+    { status: 405, ...NO_STORE }
+  );
 }
 
 export async function DELETE(req: Request) {
+  const ctx = await requireUser();
+  if (ctx instanceof NextResponse) return ctx;
+
   try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
+    const id = new URL(req.url).searchParams.get("id");
 
     if (!id) {
-      return NextResponse.json({ error: "Missing account ID" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Missing connection ID" }, { status: 400 });
     }
 
-    await connectDB();
+    const deleted = await LinkedInConnection.findOneAndDelete({ id, userId: ctx.userId });
+    if (!deleted) return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
 
-    const workspace = await Workspace.findOne({ userId });
-    if (!workspace || !workspace.step2?.data?.connectedAccounts) {
-      return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
-    }
-
-    const filteredAccounts = workspace.step2.data.connectedAccounts.filter(
-      (acc: any) => acc.id !== id
+    await stopConnectionJobs(id, ctx.userId);
+    const accounts = await LinkedInConnection.find({ userId: ctx.userId }).sort({ createdAt: -1 });
+    return NextResponse.json(
+      {
+        success: true,
+        accounts: accounts.map(toSafeConnection),
+        message: "Connection removed. Log out of LinkedIn separately to end its browser session.",
+      },
+      NO_STORE
     );
-
-    workspace.step2.data.connectedAccounts = filteredAccounts;
-    workspace.markModified("step2.data.connectedAccounts");
-    await workspace.save();
-
-    return NextResponse.json({ success: true, accounts: filteredAccounts });
-  } catch (error: any) {
-    console.error("Error removing LinkedIn account:", error);
-    return NextResponse.json({ error: "Failed to remove account" }, { status: 500 });
+  } catch (error) {
+    return apiError(error, "Failed to disconnect LinkedIn account");
   }
 }

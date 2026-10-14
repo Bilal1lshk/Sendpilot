@@ -5,8 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ShieldCheck,
-  Pause,
-  Play,
   RotateCw,
   Trash2,
   AlertCircle,
@@ -27,7 +25,7 @@ export interface ConnectedAccountData {
   headline: string;
   type: string;
   photo: string;
-  status: "Active" | "Paused" | "Disconnected";
+  status: "Active" | "Expired" | "Disconnected";
   connectedDate: string;
   usedToday: number;
   dailyCap: number;
@@ -42,7 +40,7 @@ const ADD_ACCOUNT_TIP =
 
 /** Toast message shown when the same LinkedIn member is reconnected. */
 const ALREADY_CONNECTED_MSG =
-  "This LinkedIn account is already connected — your tokens have been refreshed. " +
+  "This LinkedIn account is already connected and its authorization was refreshed. " +
   "To add a different account, log out of LinkedIn first (or use an incognito window / another browser profile), then click Add account again.";
 
 export default function LinkedInAccountsPage() {
@@ -55,17 +53,32 @@ export default function LinkedInAccountsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   // ── Fetch accounts ──────────────────────────────────────────────
-  const fetchAccounts = async () => {
+  const fetchAccounts = async (): Promise<ConnectedAccountData[]> => {
     try {
       setIsLoading(true);
       const res = await fetch("/api/linkedin/accounts");
       const data = await res.json();
       if (res.ok && data.accounts) {
-        setAccounts(data.accounts);
+        const mapped = data.accounts.map((account: any) => ({
+          id: account.id,
+          name: account.linkedinName,
+          headline: "LinkedIn profile",
+          type: "LinkedIn OAuth",
+          photo: account.linkedinAvatar,
+          status: account.status === "active" ? "Active" : account.status === "expired" ? "Expired" : "Disconnected",
+          connectedDate: account.lastVerifiedAt ? new Date(account.lastVerifiedAt).toLocaleDateString() : "Not verified",
+          usedToday: 0,
+          dailyCap: 25,
+          warmupStage: 1,
+        } satisfies ConnectedAccountData));
+        setAccounts(mapped);
+        return mapped;
       }
+      return [];
     } catch (err) {
       console.error("Failed to load accounts:", err);
       toast.error("Failed to load accounts from database");
+      return [];
     } finally {
       setIsLoading(false);
     }
@@ -122,6 +135,7 @@ export default function LinkedInAccountsPage() {
     fetchAccounts();
 
     const status = searchParams.get("status");
+    const connectionId = searchParams.get("id");
     const error = searchParams.get("error");
     // Legacy param support
     const connected = searchParams.get("connected");
@@ -160,10 +174,34 @@ export default function LinkedInAccountsPage() {
 
     // New callback redirects with ?status=
     if (status === "connected") {
-      toast.success("LinkedIn account connected successfully!");
-      router.replace("/dashboard/accounts");
+      void (async () => {
+        const loadedAccounts = await fetchAccounts();
+        const connectedAccount = loadedAccounts.find((account) => account.id === connectionId);
+        if (!connectedAccount) {
+          toast.error("The verified LinkedIn account could not be loaded");
+          router.replace("/dashboard/accounts");
+          return;
+        }
+
+        const correctAccount = window.confirm(
+          `Connected as ${connectedAccount.name}. Is this the right LinkedIn account?`
+        );
+        if (correctAccount) {
+          const response = await fetch(`/api/linkedin/accounts/${encodeURIComponent(connectedAccount.id)}/confirm`, { method: "POST" });
+          if (response.ok) toast.success(`Connected as ${connectedAccount.name}`);
+          else toast.error("Could not confirm this LinkedIn account");
+        } else {
+          await fetch(`/api/linkedin/accounts?id=${encodeURIComponent(connectedAccount.id)}`, { method: "DELETE" });
+          await fetchAccounts();
+          toast.info("Account removed. Log out of LinkedIn separately if you want to end its browser session.");
+        }
+        router.replace("/dashboard/accounts");
+      })();
     } else if (status === "already_connected") {
       toast.warning(ALREADY_CONNECTED_MSG, { duration: 8000 });
+      router.replace("/dashboard/accounts");
+    } else if (status === "verification_failed") {
+      toast.error("LinkedIn could not verify this account. Please reconnect and try again.");
       router.replace("/dashboard/accounts");
     } else if (connected === "true") {
       // Legacy ?connected=true
@@ -176,26 +214,19 @@ export default function LinkedInAccountsPage() {
   }, [searchParams]);
 
   // ── Account actions ─────────────────────────────────────────────
-  const togglePause = async (id: string) => {
-    const target = accounts.find((a) => a.id === id);
-    if (!target) return;
-    const nextStatus = target.status === "Active" ? "Paused" : "Active";
-
-    setAccounts((prev) =>
-      prev.map((acc) => (acc.id === id ? { ...acc, status: nextStatus } : acc))
-    );
-
+  const verifyAccount = async (id: string) => {
     try {
-      const res = await fetch("/api/linkedin/accounts", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status: nextStatus }),
-      });
-      if (!res.ok) throw new Error("Failed to update status");
-      toast.success(`Account ${nextStatus.toLowerCase()}`);
+      const res = await fetch(`/api/linkedin/accounts/${encodeURIComponent(id)}/verify`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json();
+        await fetchAccounts();
+        toast.error(data.error || "LinkedIn authorization expired. Reconnect this account.");
+        return;
+      }
+      toast.success("LinkedIn account verified");
+      await fetchAccounts();
     } catch {
-      toast.error("Failed to update account status");
-      fetchAccounts();
+      toast.error("Could not verify LinkedIn account");
     }
   };
 
@@ -212,7 +243,7 @@ export default function LinkedInAccountsPage() {
     try {
       const res = await fetch(`/api/linkedin/accounts?id=${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to remove account");
-      toast.success("LinkedIn account disconnected");
+      toast.success("Disconnected. Log out of LinkedIn separately to end its browser session.");
     } catch {
       toast.error("Failed to disconnect account");
       fetchAccounts();
@@ -229,7 +260,7 @@ export default function LinkedInAccountsPage() {
     }
   };
 
-  const disconnectedAccount = accounts.find((a) => a.status === "Disconnected");
+  const disconnectedAccount = accounts.find((a) => a.status !== "Active");
 
   return (
     <motion.div
@@ -372,10 +403,10 @@ export default function LinkedInAccountsPage() {
                               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               <span className="font-medium text-emerald-800 dark:text-emerald-300">Active</span>
                             </>
-                          ) : acc.status === "Paused" ? (
+                          ) : acc.status === "Expired" ? (
                             <>
                               <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                              <span className="font-medium text-amber-700 dark:text-amber-400">Paused</span>
+                              <span className="font-medium text-amber-700 dark:text-amber-400">Expired</span>
                             </>
                           ) : (
                             <>
@@ -444,7 +475,7 @@ export default function LinkedInAccountsPage() {
 
                   {/* Right: Actions */}
                   <div className="flex items-center gap-1.5 self-end md:self-center shrink-0">
-                    {acc.status === "Disconnected" ? (
+                    {acc.status !== "Active" ? (
                       <button
                         type="button"
                         onClick={() => reconnect(acc.id)}
@@ -456,20 +487,11 @@ export default function LinkedInAccountsPage() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => togglePause(acc.id)}
+                        onClick={() => verifyAccount(acc.id)}
                         className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 transition-colors cursor-pointer"
                       >
-                        {acc.status === "Active" ? (
-                          <>
-                            <Pause className="h-3 w-3 text-neutral-400" />
-                            <span>Pause</span>
-                          </>
-                        ) : (
-                          <>
-                            <Play className="h-3 w-3 text-palm-leaf-600" />
-                            <span>Resume</span>
-                          </>
-                        )}
+                        <RotateCw className="h-3 w-3 text-palm-leaf-600" />
+                        <span>Verify</span>
                       </button>
                     )}
 
@@ -642,7 +664,7 @@ export default function LinkedInAccountsPage() {
                       What we store
                     </h4>
                     <p className="text-neutral-500 dark:text-neutral-400">
-                      We store your profile name, headline, avatar, and encrypted OAuth token to authenticate actions within safe rate limits.
+                      We store your profile name and avatar with OAuth credentials encrypted on the server. Credentials are never included in account responses.
                     </p>
                   </div>
 

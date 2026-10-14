@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import Campaign from "@/models/Campaign";
 import CampaignLead, { EnrollmentState } from "@/models/CampaignLead";
 import Lead, { LeadStatus } from "@/models/Lead";
+import LinkedInConnection from "@/models/LinkedInConnection";
+import { verifyConnection } from "@/lib/linkedin-connections";
 import { requireUser, apiError, isValidObjectId, nextActionable, funnelRank } from "@/lib/crm";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -53,6 +55,19 @@ export async function POST(req: Request, { params }: Ctx) {
     if (!campaign) return NextResponse.json({ success: false, error: "Campaign not found" }, { status: 404 });
     if (event === "sent" && campaign.status !== "active") {
       return NextResponse.json({ success: false, error: "Launch or resume the campaign before sending" }, { status: 400 });
+    }
+    if (event === "sent") {
+      const connection = campaign.senderAccountId
+        ? await LinkedInConnection.findOne({ id: campaign.senderAccountId, userId: ctx.userId })
+        : null;
+      if (!connection) return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
+      if (!connection.confirmedAt) {
+        return NextResponse.json({ success: false, error: "Confirm the LinkedIn sender account before sending" }, { status: 409 });
+      }
+      const verification = await verifyConnection(connection.id, ctx.userId);
+      if (!verification?.verified) {
+        return NextResponse.json({ success: false, error: "LinkedIn authorization expired. Queued work was stopped." }, { status: 409 });
+      }
     }
 
     const steps = campaign.steps || [];

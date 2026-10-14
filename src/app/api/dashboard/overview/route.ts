@@ -1,24 +1,27 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
-import connectDB from "@/lib/mongodb";
 import Workspace from "@/models/Workspace";
+import LinkedInConnection from "@/models/LinkedInConnection";
+import { requireUser, apiError } from "@/lib/crm";
+import { toSafeConnection } from "@/lib/linkedin-connection-dto";
 
 export async function GET() {
-  try {
-    const session = await auth();
-    const userId = session?.user?.id || "demo-workspace";
+  const ctx = await requireUser();
+  if (ctx instanceof NextResponse) return ctx;
 
-    await connectDB();
-    const workspace = await Workspace.findOne({ userId });
+  try {
+    const [workspace, connectionRows] = await Promise.all([
+      Workspace.findOne({ userId: ctx.userId }),
+      LinkedInConnection.find({ userId: ctx.userId }),
+    ]);
 
     const leads = workspace?.step3?.data?.leads || [];
-    const accounts = workspace?.step2?.data?.connectedAccounts || [];
+    const accounts = connectionRows.map(toSafeConnection);
     const step4 = workspace?.step4?.data || {};
 
     // Calculate real metrics
     const totalLeads = leads.length;
     const connectedAccountsCount = accounts.length;
-    const activeAccountsCount = accounts.filter((a: any) => a.status === "Active").length;
+    const activeAccountsCount = accounts.filter((account) => account.status === "active").length;
 
     // Build real tasks for outreach queue from the user's real leads
     const realTasks = leads.slice(0, 10).map((l: any, idx: number) => {
@@ -66,17 +69,13 @@ export async function GET() {
         meetingsBooked: meetingsBooked,
         acceptRate,
         replyRate,
-        dailyCap: accounts.reduce((acc: number, cur: any) => acc + (cur.dailyCap || 25), 0) || 25,
+        dailyCap: Math.max(accounts.length, 1) * 25,
       },
       tasks: realTasks,
       accounts,
       recentLeads: leads.slice(0, 5),
     });
-  } catch (error: any) {
-    console.error("Error in /api/dashboard/overview:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch dashboard metrics", message: error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    return apiError(error, "Failed to fetch dashboard metrics");
   }
 }

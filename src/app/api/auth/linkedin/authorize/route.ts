@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
+import { auth } from "@/auth";
+import connectDB from "@/lib/mongodb";
+import { migrateLegacyLinkedInConnections } from "@/lib/linkedin-connections";
+import { consumeRateLimit } from "@/lib/rate-limit";
 
 /** GET /api/auth/linkedin/authorize
  *
@@ -14,10 +18,19 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const jsonMode = searchParams.get("json") === "true";
+    const session = await auth();
+    const userId = session?.user?.id;
+    if (!userId) return NextResponse.redirect(new URL("/login", req.url));
+
+    await connectDB();
+    await migrateLegacyLinkedInConnections(userId);
+    if (!(await consumeRateLimit(userId, "linkedin-authorize", 5, 15 * 60 * 1000))) {
+      return NextResponse.json({ success: false, error: "Too many connection attempts" }, { status: 429 });
+    }
 
     const clientId = process.env.LINKEDIN_CLIENT_ID || process.env.Linkedin_Client_ID;
     const redirectUri = process.env.LINKEDIN_REDIRECT_URI; // must be http://localhost:3000/api/auth/linkedin/callback
-    const scope = process.env.LINKEDIN_SCOPE || "openid profile email w_member_social";
+    const scope = "openid profile email";
 
     if (!clientId || !redirectUri) {
       console.error("❌ Missing LINKEDIN_CLIENT_ID or LINKEDIN_REDIRECT_URI in environment variables (.env)");

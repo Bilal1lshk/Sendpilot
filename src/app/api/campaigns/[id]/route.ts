@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { Types } from "mongoose";
 import Campaign, { CAMPAIGN_STATUSES } from "@/models/Campaign";
 import CampaignLead from "@/models/CampaignLead";
-import Workspace from "@/models/Workspace";
+import LinkedInConnection from "@/models/LinkedInConnection";
+import { verifyConnection } from "@/lib/linkedin-connections";
 import {
   requireUser,
   apiError,
@@ -99,8 +100,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     if (typeof body.senderAccountId === "string") {
       campaign.senderAccountId = body.senderAccountId;
-      const ws: any = await Workspace.findOne({ userId: ctx.userId }, { "step2.data.connectedAccounts": 1 }).lean();
-      campaign.senderName = ws?.step2?.data?.connectedAccounts?.find((a: any) => a.id === body.senderAccountId)?.name || "";
+      const connection = body.senderAccountId
+        ? await LinkedInConnection.findOne({ id: body.senderAccountId, userId: ctx.userId })
+        : null;
+      if (body.senderAccountId && !connection) {
+        return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
+      }
+      campaign.senderName = connection?.linkedinName || "";
     }
 
     if (body.status !== undefined) {
@@ -112,6 +118,16 @@ export async function PATCH(req: Request, { params }: Ctx) {
         const enrolled = await CampaignLead.countDocuments({ campaignId: campaign._id });
         if (enrolled === 0) {
           return NextResponse.json({ success: false, error: "Add at least one lead before launching" }, { status: 400 });
+        }
+        const connection = campaign.senderAccountId
+          ? await LinkedInConnection.findOne({ id: campaign.senderAccountId, userId: ctx.userId })
+          : null;
+        if (!connection || !connection.confirmedAt) {
+          return NextResponse.json({ success: false, error: "Confirm a LinkedIn sender account before launching" }, { status: 409 });
+        }
+        const verification = await verifyConnection(connection.id, ctx.userId);
+        if (!verification?.verified) {
+          return NextResponse.json({ success: false, error: "LinkedIn authorization expired. Queued work was stopped." }, { status: 409 });
         }
         if (!campaign.launchedAt) campaign.launchedAt = new Date();
       }
