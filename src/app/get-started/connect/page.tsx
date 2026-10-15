@@ -25,12 +25,14 @@ import { ConsentPanel } from "@/components/onboarding/ConsentPanel";
 import { EmptyState } from "@/components/onboarding/EmptyState";
 import { ProfileCard } from "@/components/onboarding/ProfileCard";
 import { LinkedInAccount, TeammateInvite } from "@/types/onboarding";
+import { ConnectLinkedInModal, type ConnectedAccountData } from "@/components/dashboard/ConnectLinkedInModal";
 
 export default function ConnectStepPage() {
   const router = useRouter();
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [showConsentModal, setShowConsentModal] = useState<boolean>(false);
+  const [showConnectModal, setShowConnectModal] = useState<boolean>(false);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
 
   const [connectedAccounts, setConnectedAccounts] = useState<LinkedInAccount[]>(
@@ -62,12 +64,30 @@ export default function ConnectStepPage() {
 
   const handleConsentAgreed = () => {
     setShowConsentModal(false);
-    setIsConnecting(true);
-    window.location.assign("/api/auth/linkedin/authorize");
+    setShowConnectModal(true);
   };
 
   const handleReconnect = (_id: string) => {
-    window.location.assign("/api/auth/linkedin/authorize");
+    setShowConnectModal(true);
+  };
+
+  const handleAccountConnected = async (newAccount: ConnectedAccountData) => {
+    const mapped: LinkedInAccount = {
+      id: newAccount.id,
+      name: newAccount.name,
+      headline: newAccount.headline,
+      photo: newAccount.photo,
+      status: "Active",
+      connectedAt: newAccount.connectedDate,
+    };
+    const updated = [mapped, ...connectedAccounts.filter((a) => a.id !== mapped.id)];
+    setConnectedAccounts(updated);
+    await saveOnboardingStep("step2", "completed", {
+      connectedAccounts: updated,
+      invitedTeammates,
+    });
+    setShowConnectModal(false);
+    toast.success(`${mapped.name} connected successfully!`);
   };
 
   const handleDisconnect = async (id: string) => {
@@ -361,6 +381,12 @@ export default function ConnectStepPage() {
             </button>
           </div>
         </div>
+
+        <ConnectLinkedInModal
+          isOpen={showConnectModal}
+          onClose={() => setShowConnectModal(false)}
+          onConnected={handleAccountConnected}
+        />
       </div>
     </div>
   );

@@ -20,6 +20,7 @@ import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants, drawerVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
 import { toast } from "sonner";
+import { ConnectLinkedInModal } from "@/components/dashboard/ConnectLinkedInModal";
 
 export interface ConnectedAccountData {
   id: string;
@@ -51,6 +52,7 @@ export default function LinkedInAccountsPage() {
   const searchParams = useSearchParams();
 
   const [securityPanelOpen, setSecurityPanelOpen] = useState(false);
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [accounts, setAccounts] = useState<ConnectedAccountData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -257,48 +259,9 @@ export default function LinkedInAccountsPage() {
     }
   };
 
-  /** Directly connects or adds another LinkedIn account without cookie collision */
-  const handleAddAccount = async () => {
-    try {
-      const res = await fetch("/api/auth/linkedin/authorize?json=true");
-      const data = await res.json();
-      if (!data?.url) {
-        window.location.href = "/api/auth/linkedin/authorize";
-        return;
-      }
-
-      const authUrl = data.url;
-      const width = 600;
-      const height = 750;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
-      const windowFeatures = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`;
-
-      if (accounts.length > 0) {
-        toast.loading("Opening LinkedIn...", { id: "li-connect" });
-        // Clear active session in popup first so user can enter credentials for their other account
-        const authPopup = window.open("https://www.linkedin.com/m/logout", "linkedin_auth", windowFeatures);
-        if (!authPopup) {
-          window.location.href = authUrl;
-          return;
-        }
-        setTimeout(() => {
-          try {
-            authPopup.location.href = authUrl;
-            toast.dismiss("li-connect");
-          } catch {
-            window.location.href = authUrl;
-          }
-        }, 1200);
-      } else {
-        const authPopup = window.open(authUrl, "linkedin_auth", windowFeatures);
-        if (!authPopup) {
-          window.location.href = authUrl;
-        }
-      }
-    } catch {
-      window.location.href = "/api/auth/linkedin/authorize";
-    }
+  /** Opens safe LinkedIn connection modal with isolated Incognito mode */
+  const handleAddAccount = () => {
+    setConnectModalOpen(true);
   };
 
   const activeAccount = accounts.find((a) => a.status === "Active");
@@ -703,6 +666,14 @@ export default function LinkedInAccountsPage() {
           </>
         )}
       </AnimatePresence>
+
+      <ConnectLinkedInModal
+        isOpen={connectModalOpen}
+        onClose={() => setConnectModalOpen(false)}
+        onConnected={() => {
+          fetchAccounts();
+        }}
+      />
     </motion.div>
   );
 }

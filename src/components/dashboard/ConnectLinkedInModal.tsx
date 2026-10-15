@@ -12,6 +12,10 @@ import {
   Check,
   ShieldCheck,
   Globe,
+  Sparkles,
+  Lock,
+  Layers,
+  AlertTriangle,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { toast } from "sonner";
@@ -42,6 +46,7 @@ export function ConnectLinkedInModal({
   onConnected,
   defaultUserName = "LinkedIn User",
 }: ConnectLinkedInModalProps) {
+  const [connectMode, setConnectMode] = useState<"isolated" | "direct">("isolated");
   const [authCode, setAuthCode] = useState("");
   const [profileName, setProfileName] = useState(defaultUserName);
   const [accountType, setAccountType] = useState<"Sales Navigator" | "LinkedIn Premium" | "LinkedIn Free">("Sales Navigator");
@@ -50,38 +55,64 @@ export function ConnectLinkedInModal({
   const [step, setStep] = useState<"form" | "success">("form");
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccountData | null>(null);
   const [copied, setCopied] = useState(false);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [manualAuthUrl, setManualAuthUrl] = useState<string | null>(null);
+  const [directAuthUrl, setDirectAuthUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
+      // Fetch pre-signed manual authorization URL for isolated Incognito flow
       fetch("/api/auth/linkedin/authorize?mode=manual&json=true")
-        .then((r) => r.json())
+        .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          if (data?.url) setAuthUrl(data.url);
+          if (data?.url) setManualAuthUrl(data.url);
         })
-        .catch((err) => {
-          console.warn("Failed to fetch pre-signed manual authorization URL:", err);
-        });
+        .catch(() => {});
+
+      // Fetch pre-signed direct authorization URL
+      fetch("/api/auth/linkedin/authorize?json=true")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.url) setDirectAuthUrl(data.url);
+        })
+        .catch(() => {});
     }
   }, [isOpen]);
 
+  // Listen for popup callback messages if direct popup flow is used
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "LINKEDIN_AUTH_SUCCESS") {
+        toast.success("LinkedIn account connected successfully!");
+        onClose();
+      }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [onClose]);
+
   if (!isOpen) return null;
 
-  const handleOpenAuthUrl = () => {
-    const targetUrl = authUrl || "/api/auth/linkedin/authorize?mode=manual";
-    window.open(targetUrl, "_blank");
-  };
-
   const handleCopyLink = async () => {
-    const targetUrl = authUrl || `${window.location.origin}/api/auth/linkedin/authorize?mode=manual`;
+    const targetUrl =
+      manualAuthUrl || `${window.location.origin}/api/auth/linkedin/authorize?mode=manual`;
     try {
       await navigator.clipboard.writeText(targetUrl);
       setCopied(true);
-      toast.success("Authorization link copied to clipboard! Open in an Incognito window or another browser.");
-      setTimeout(() => setCopied(false), 2500);
+      toast.success("Authorization link copied! Open in an Incognito window to protect your personal LinkedIn session.");
+      setTimeout(() => setCopied(false), 3000);
     } catch {
       toast.error("Failed to copy link to clipboard");
     }
+  };
+
+  const handleOpenDirectPopup = () => {
+    const targetUrl = directAuthUrl || "/api/auth/linkedin/authorize";
+    const width = 600;
+    const height = 750;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    const windowFeatures = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`;
+    window.open(targetUrl, "linkedin_auth_direct", windowFeatures);
   };
 
   const handleConnect = async (e: React.FormEvent) => {
@@ -154,12 +185,11 @@ export function ConnectLinkedInModal({
       onConnected(mappedAccount);
 
       if (data.alreadyConnected) {
-        toast.info("This LinkedIn account is already connected to your workspace. Credentials refreshed!");
+        toast.info("This LinkedIn account is already connected to your workspace. Authorization refreshed!");
       } else {
-        toast.success("New LinkedIn account successfully added to workspace!");
+        toast.success("LinkedIn account successfully connected to workspace!");
       }
-    } catch (err: any) {
-      console.error("LinkedIn connect error:", err);
+    } catch {
       toast.error("Network error while connecting LinkedIn account");
     } finally {
       setIsSubmitting(false);
@@ -201,10 +231,10 @@ export function ConnectLinkedInModal({
               </div>
               <div>
                 <h3 className="text-base font-semibold text-white">
-                  Add LinkedIn Account
+                  Connect LinkedIn Account
                 </h3>
                 <p className="text-xs text-neutral-400">
-                  Connect multiple profiles to your workspace via redirect URL
+                  Safely link outreach sender profiles without session collisions
                 </p>
               </div>
             </div>
@@ -218,131 +248,202 @@ export function ConnectLinkedInModal({
             </button>
           </div>
 
+          {/* Mode Switcher Tabs */}
+          {step === "form" && (
+            <div className="px-6 pt-4">
+              <div className="grid grid-cols-2 p-1 rounded-xl bg-neutral-900 border border-neutral-800 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setConnectMode("isolated")}
+                  className={`py-2 px-3 rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    connectMode === "isolated"
+                      ? "bg-neutral-800 text-white shadow-xs font-semibold"
+                      : "text-neutral-400 hover:text-neutral-200"
+                  }`}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Isolated (Incognito)</span>
+                  <span className="text-[10px] text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded font-mono">
+                    Safe
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConnectMode("direct")}
+                  className={`py-2 px-3 rounded-lg font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    connectMode === "direct"
+                      ? "bg-neutral-800 text-white shadow-xs font-semibold"
+                      : "text-neutral-400 hover:text-neutral-200"
+                  }`}
+                >
+                  <Globe className="h-3.5 w-3.5 text-blue-400" />
+                  <span>Current Browser Profile</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Modal Body */}
           <div className="p-6 space-y-5">
             {step === "form" ? (
-              <form onSubmit={handleConnect} className="space-y-5">
-                {/* Notice banner */}
-                <div className="rounded-xl border border-blue-900/40 bg-blue-950/20 p-3.5 flex items-start gap-3">
-                  <Globe className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-neutral-300 leading-relaxed">
-                    This method uses LinkedIn&apos;s Developer Redirect URL. It prevents LinkedIn from automatically re-connecting whichever profile is active in your current browser, allowing you to add separate accounts cleanly.
-                  </p>
-                </div>
-
-                {/* Step 1: Authorization Link */}
-                <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-white uppercase tracking-wider">
-                      1. Open Authorization Link
-                    </span>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2 py-0.5 rounded">
-                      scope: openid profile email
-                    </span>
+              connectMode === "isolated" ? (
+                /* ── Mode 1: Isolated / Incognito Flow (Safe for separate accounts) ── */
+                <form onSubmit={handleConnect} className="space-y-4">
+                  {/* Protection Notice Banner */}
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-3.5 flex items-start gap-3">
+                    <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-1">
+                      <p className="font-semibold text-emerald-300">
+                        Zero Session Conflict Protection
+                      </p>
+                      <p className="text-neutral-300 leading-relaxed text-[11px]">
+                        Authorizing in an Incognito window guarantees that your personal LinkedIn session in this browser is <strong className="text-white">never logged out or modified</strong>.
+                      </p>
+                    </div>
                   </div>
 
-                  <p className="text-xs text-neutral-300 leading-relaxed">
-                    Open this link in an <strong className="text-white">Incognito / Private window</strong> or another browser profile where you sign into your other LinkedIn account:
-                  </p>
+                  {/* Step 1: Copy Link */}
+                  <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-white uppercase tracking-wider">
+                        1. Copy Link &amp; Open in Incognito
+                      </span>
+                      <span className="text-[10px] font-mono text-neutral-400">
+                        Ctrl+Shift+N / ⌘+Shift+N
+                      </span>
+                    </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <p className="text-xs text-neutral-300 leading-relaxed">
+                      Copy this link, open a new <strong className="text-white">Incognito / Private window</strong>, paste it into the address bar, and sign in to the LinkedIn account you want to connect:
+                    </p>
+
                     <button
                       type="button"
                       onClick={handleCopyLink}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700/60 text-white py-2.5 px-3 text-xs font-medium transition-all cursor-pointer"
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700/60 text-white py-2.5 px-3 text-xs font-semibold transition-all cursor-pointer shadow-xs"
                     >
-                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 text-neutral-300" />}
-                      <span>{copied ? "Copied to Clipboard!" : "Copy Link for Incognito"}</span>
+                      {copied ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Copied to Clipboard! Open in Incognito</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5 text-neutral-300" />
+                          <span>Copy Link for Incognito Window</span>
+                        </>
+                      )}
                     </button>
+                  </div>
+
+                  {/* Step 2: Paste Code */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-white uppercase tracking-wider block">
+                      2. Paste Redirect URL or Code
+                    </label>
+
+                    <textarea
+                      rows={2}
+                      value={authCode}
+                      onChange={(e) => setAuthCode(e.target.value)}
+                      placeholder="Paste the redirect URL or authorization code here..."
+                      className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 font-mono focus:outline-hidden focus:border-emerald-500 transition-colors"
+                      required
+                    />
+                    <p className="text-[11px] text-neutral-400">
+                      After authorizing on LinkedIn, copy the URL from the browser bar (or the <code className="text-emerald-400 font-mono">code</code> parameter) and paste it here.
+                    </p>
+                  </div>
+
+                  {/* Account Limits Configuration */}
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-300 mb-1">
+                        Account Tier
+                      </label>
+                      <select
+                        value={accountType}
+                        onChange={(e) => setAccountType(e.target.value as any)}
+                        className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white"
+                      >
+                        <option value="Sales Navigator">Sales Navigator</option>
+                        <option value="LinkedIn Premium">LinkedIn Premium</option>
+                        <option value="LinkedIn Free">LinkedIn Free</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-300 mb-1">
+                        Daily Safety Cap
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={5}
+                          max={50}
+                          value={dailyCap}
+                          onChange={(e) => setDailyCap(Number(e.target.value))}
+                          className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white"
+                        />
+                        <span className="text-xs text-neutral-400 shrink-0">req/day</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={isSubmitting || !authCode.trim()}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-3 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Verifying &amp; Connecting Account...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Connect Account to SendPilot</span>
+                          <ArrowRight className="h-4 w-4" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* ── Mode 2: Direct Popup Flow (Current Browser Session) ── */
+                <div className="space-y-4 py-2">
+                  <div className="rounded-xl border border-blue-900/40 bg-blue-950/20 p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-blue-300">
+                      <Globe className="h-4 w-4 text-blue-400" />
+                      <span>Connect Active Browser Session</span>
+                    </div>
+                    <p className="text-xs text-neutral-300 leading-relaxed">
+                      This will connect whichever LinkedIn profile is currently logged in on this browser. It will <strong className="text-white">not</strong> log you out of LinkedIn.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-900/50 space-y-3">
+                    <p className="text-xs text-neutral-400">
+                      Click below to open LinkedIn authorization in a secure popup window. Once approved, your account will be linked automatically.
+                    </p>
 
                     <button
                       type="button"
-                      onClick={handleOpenAuthUrl}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0a66c2] hover:bg-[#004182] text-white py-2.5 px-3 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                      onClick={handleOpenDirectPopup}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-[#0a66c2] hover:bg-[#004182] text-white py-3 text-xs font-semibold shadow-xs transition-all cursor-pointer"
                     >
                       <LinkedInIcon className="h-4 w-4" />
-                      <span>Open in New Window</span>
+                      <span>Open LinkedIn Authorization Popup</span>
                       <ExternalLink className="h-3.5 w-3.5 ml-0.5" />
                     </button>
                   </div>
                 </div>
-
-                {/* Step 2: Paste Code */}
-                <div className="space-y-3">
-                  <label className="text-xs font-semibold text-white uppercase tracking-wider block">
-                    2. Paste Redirect URL or Code
-                  </label>
-
-                  <textarea
-                    rows={2}
-                    value={authCode}
-                    onChange={(e) => setAuthCode(e.target.value)}
-                    placeholder="Paste the code or full redirect URL here (e.g. https://www.linkedin.com/developers/tools/oauth/redirect?code=AQRO... or AQRO...)"
-                    className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 font-mono focus:outline-hidden focus:border-neutral-600"
-                    required
-                  />
-                  <p className="text-[11px] text-neutral-400">
-                    After authorizing, LinkedIn redirects to <code className="text-neutral-300">https://www.linkedin.com/developers/tools/oauth/redirect?code=...</code>. Copy the address bar URL or the <code className="text-emerald-400">code</code> parameter and paste it above.
-                  </p>
-                </div>
-
-                {/* Account Details & Limits */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-300 mb-1">
-                      Account Tier
-                    </label>
-                    <select
-                      value={accountType}
-                      onChange={(e) => setAccountType(e.target.value as any)}
-                      className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white"
-                    >
-                      <option value="Sales Navigator">Sales Navigator</option>
-                      <option value="LinkedIn Premium">LinkedIn Premium</option>
-                      <option value="LinkedIn Free">LinkedIn Free</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-300 mb-1">
-                      Daily Safety Cap
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={5}
-                        max={50}
-                        value={dailyCap}
-                        onChange={(e) => setDailyCap(Number(e.target.value))}
-                        className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white"
-                      />
-                      <span className="text-xs text-neutral-400 shrink-0">req/day</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 3: Connect Button */}
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || !authCode.trim()}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-3 text-xs font-semibold shadow-xs transition-all cursor-pointer"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Verifying &amp; Connecting Account...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Finish &amp; Connect LinkedIn Account</span>
-                        <ArrowRight className="h-4 w-4" />
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
+              )
             ) : (
+              /* ── Success Screen ── */
               <div className="py-6 text-center space-y-4">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-950/60 text-emerald-400 border border-emerald-800/40">
                   <CheckCircle2 className="h-8 w-8 stroke-[2.5]" />
@@ -353,15 +454,15 @@ export function ConnectLinkedInModal({
                     LinkedIn Account Connected!
                   </h4>
                   <p className="text-xs text-neutral-400 max-w-sm mx-auto">
-                    <span className="font-semibold text-neutral-200">{connectedAccount?.name || profileName}</span> is now active in your workspace with {dailyCap} daily requests limit.
+                    <span className="font-semibold text-neutral-200">{connectedAccount?.name || profileName}</span> is now active in your workspace with a safe limit of {dailyCap} daily actions.
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-300 max-w-md mx-auto flex items-center justify-between">
-                  <span className="text-neutral-400">Status</span>
+                  <span className="text-neutral-400">Session Status</span>
                   <span className="inline-flex items-center gap-1.5 text-emerald-400 font-semibold">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Active
+                    Active &amp; Verified
                   </span>
                 </div>
 
@@ -370,7 +471,7 @@ export function ConnectLinkedInModal({
                   onClick={handleFinish}
                   className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-xs font-semibold shadow-xs transition-all cursor-pointer"
                 >
-                  View in Accounts Dashboard
+                  Done
                 </button>
               </div>
             )}
