@@ -5,8 +5,9 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { LogIn, Loader2, Mail, Lock, AlertCircle } from "lucide-react";
+import { Loader2, Mail, Lock, AlertCircle, Eye, EyeOff, Globe2, ShieldCheck, Zap } from "lucide-react";
 import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
+import { Globe } from "@/components/ui/globe";
 
 function AuthErrorMessage() {
   const searchParams = useSearchParams();
@@ -26,7 +27,10 @@ function AuthErrorMessage() {
   }
 
   return (
-    <div className="flex items-center gap-2 p-3 text-xs rounded-xl border border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400">
+    <div
+      role="alert"
+      className="flex items-center gap-2.5 p-3.5 text-xs rounded-xl border border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400"
+    >
       <AlertCircle className="h-4 w-4 shrink-0" />
       <span>{message}</span>
     </div>
@@ -37,6 +41,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -65,86 +70,211 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4 bg-neutral-50 dark:bg-neutral-950">
-      <div className="w-full max-w-md space-y-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-8 shadow-sm">
-        <div className="text-center space-y-2">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
-            <LogIn className="h-6 w-6" />
+    <div className="min-h-screen w-full flex bg-neutral-50 dark:bg-[#0c0d0e] text-neutral-900 dark:text-neutral-50 selection:bg-neutral-900 selection:text-white dark:selection:bg-white dark:selection:text-black">
+      {/* ── Left Column: Clean & Unobstructed Sign In Form ─────────────── */}
+      <div className="w-full lg:w-[48%] xl:w-[44%] min-h-screen flex flex-col justify-between p-6 sm:p-10 lg:p-12 xl:p-16 z-10 bg-white dark:bg-[#0f1112] border-r border-neutral-200/80 dark:border-neutral-800/80">
+        {/* Top bar: Brand */}
+        <div className="flex items-center justify-between">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2.5 font-bold tracking-tight text-lg text-neutral-900 dark:text-white hover:opacity-85 transition-opacity"
+            aria-label="SendPilot Home"
+          >
+            <div className="h-9 w-9 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 flex items-center justify-center font-bold text-sm shadow-xs">
+              S
+            </div>
+            <span>SendPilot</span>
+          </Link>
+
+          <Link
+            href="/"
+            className="text-xs font-medium text-neutral-500 hover:text-neutral-900 dark:hover:text-white transition-colors"
+          >
+            ← Back to home
+          </Link>
+        </div>
+
+        {/* Center: The Form Container */}
+        <div className="w-full max-w-[400px] mx-auto my-auto py-8 space-y-6">
+          <div className="space-y-2">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">
+              Welcome back
+            </h1>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              Enter your credentials to access your outreach workspace
+            </p>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">
-            Welcome back
-          </h1>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            Enter your credentials to access your account
+
+          <Suspense fallback={null}>
+            <AuthErrorMessage />
+          </Suspense>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label
+                htmlFor="email"
+                className="text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300"
+              >
+                Email Address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-3.5 h-4 w-4 text-neutral-400 pointer-events-none" />
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="username"
+                  inputMode="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/60 pl-10 pr-4 py-2.5 text-sm outline-none transition-colors focus:border-neutral-900 dark:focus:border-white focus:bg-white dark:focus:bg-black focus:ring-1 focus:ring-neutral-900 dark:focus:ring-white"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label
+                  htmlFor="password"
+                  className="text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300"
+                >
+                  Password
+                </label>
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-3.5 h-4 w-4 text-neutral-400 pointer-events-none" />
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/60 pl-10 pr-11 py-2.5 text-sm outline-none transition-colors focus:border-neutral-900 dark:focus:border-white focus:bg-white dark:focus:bg-black focus:ring-1 focus:ring-neutral-900 dark:focus:ring-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute right-3.5 top-3.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 py-2.5 text-sm font-semibold hover:opacity-90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-xs cursor-pointer"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                "Sign In"
+              )}
+            </button>
+          </form>
+
+          <SocialAuthButtons disabled={isLoading} />
+
+          <p className="text-center text-xs text-neutral-500 dark:text-neutral-400 pt-1">
+            Don&apos;t have an account?{" "}
+            <Link
+              href="/register"
+              className="font-semibold text-neutral-900 dark:text-neutral-100 underline underline-offset-2 hover:opacity-80"
+            >
+              Create one
+            </Link>
           </p>
         </div>
 
-        <Suspense fallback={null}>
-          <AuthErrorMessage />
-        </Suspense>
+        {/* Footer info */}
+        <div className="text-xs text-neutral-400 dark:text-neutral-500 text-center sm:text-left flex flex-wrap items-center justify-between gap-2 pt-4">
+          <span>© {new Date().getFullYear()} SendPilot Inc.</span>
+          <div className="flex gap-4">
+            <span className="hover:text-neutral-600 dark:hover:text-neutral-300">Privacy</span>
+            <span>•</span>
+            <span className="hover:text-neutral-600 dark:hover:text-neutral-300">Security</span>
+          </div>
+        </div>
+      </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
-              Email Address
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-3 h-4 w-4 text-neutral-400" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-4 py-2.5 text-sm outline-none transition-colors focus:border-neutral-900 dark:focus:border-white focus:bg-white dark:focus:bg-black"
-              />
+      {/* ── Right Column: Interactive 3D Globe Showcase ─────────────── */}
+      <div className="hidden lg:flex flex-1 relative flex-col justify-between p-10 xl:p-14 overflow-hidden bg-[#070809] select-none">
+        {/* Ambient radial glow background */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none" />
+        <div className="absolute -top-24 -right-24 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
+
+        {/* Subtle grid pattern overlay */}
+        <div
+          className="absolute inset-0 opacity-[0.03] pointer-events-none"
+          style={{
+            backgroundImage: `radial-gradient(circle, #fff 1px, transparent 1px)`,
+            backgroundSize: "28px 28px",
+          }}
+        />
+
+        {/* Top Header Badge & Tagline */}
+        <div className="relative z-10 space-y-3 max-w-md">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs font-semibold tracking-wide backdrop-blur-md">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Global Outreach Network
+          </div>
+
+          <h2 className="text-3xl xl:text-4xl font-semibold tracking-tight text-white leading-tight">
+            Reach verified leads across <span className="text-emerald-400">160+ countries</span>.
+          </h2>
+
+          <p className="text-sm text-neutral-400 leading-relaxed">
+            Automate personalized outreach with human-in-the-loop approvals, native CRM sync, and safe delivery pacing.
+          </p>
+        </div>
+
+        {/* Center: Interactive 3D Cobe Globe */}
+        <div className="relative z-10 my-auto py-4 flex flex-col items-center justify-center">
+          <div className="relative w-full max-w-[420px] xl:max-w-[480px] aspect-square flex items-center justify-center">
+            <Globe className="w-full h-full" />
+          </div>
+
+          <p className="text-xs text-neutral-500 tracking-wide mt-2 flex items-center gap-1.5">
+            <Globe2 className="h-3.5 w-3.5 text-emerald-500/80" />
+            <span>Click and drag to rotate the interactive globe</span>
+          </p>
+        </div>
+
+        {/* Bottom stats & trust strip */}
+        <div className="relative z-10 grid grid-cols-3 gap-4 pt-6 border-t border-neutral-800/80">
+          <div className="space-y-0.5">
+            <div className="text-xl xl:text-2xl font-bold text-white tracking-tight flex items-center gap-1">
+              <span>99.4%</span>
+            </div>
+            <div className="text-xs text-neutral-400 flex items-center gap-1">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              <span>Inbox Delivery</span>
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold uppercase tracking-wider text-neutral-600 dark:text-neutral-300">
-              Password
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-3 h-4 w-4 text-neutral-400" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-4 py-2.5 text-sm outline-none transition-colors focus:border-neutral-900 dark:focus:border-white focus:bg-white dark:focus:bg-black"
-              />
+          <div className="space-y-0.5">
+            <div className="text-xl xl:text-2xl font-bold text-white tracking-tight">12k+</div>
+            <div className="text-xs text-neutral-400 flex items-center gap-1">
+              <Zap className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+              <span>Active Leads</span>
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 py-2.5 text-sm font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Signing in...
-              </>
-            ) : (
-              "Sign In"
-            )}
-          </button>
-        </form>
-
-        <SocialAuthButtons disabled={isLoading} />
-
-        <p className="text-center text-xs text-neutral-500 dark:text-neutral-400 pt-2">
-          Don&apos;t have an account?{" "}
-          <Link
-            href="/register"
-            className="font-medium text-neutral-900 dark:text-neutral-100 underline hover:opacity-80"
-          >
-            Create one
-          </Link>
-        </p>
+          <div className="space-y-0.5">
+            <div className="text-xl xl:text-2xl font-bold text-white tracking-tight">&lt; 2 min</div>
+            <div className="text-xs text-neutral-400">Campaign Setup</div>
+          </div>
+        </div>
       </div>
     </div>
   );
