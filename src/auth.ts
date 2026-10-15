@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
+import LinkedIn from "next-auth/providers/linkedin";
 import connectDB from "@/lib/mongodb";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
@@ -49,6 +50,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       clientSecret: process.env.AUTH_GOOGLE_SECRET || process.env.GOOGLE_CLIENT_SECRET,
       allowDangerousEmailAccountLinking: true,
     }),
+    LinkedIn({
+      clientId: process.env.LINKEDIN_CLIENT_ID || process.env.Linkedin_Client_ID,
+      clientSecret: process.env.LINKEDIN_CLIENT_SECRET || process.env.Linkedin_Client_Secret,
+      issuer: "https://www.linkedin.com",
+      authorization: {
+        params: {
+          scope: "openid profile email",
+        },
+      },
+      profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+        };
+      },
+      allowDangerousEmailAccountLinking: true,
+    }),
     Credentials({
       name: "Credentials",
       credentials: {
@@ -90,11 +110,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     ...authConfig.callbacks,
     async signIn({ user, account }) {
-      if (account?.provider === "google") {
+      if (account?.provider === "google" || account?.provider === "linkedin") {
         try {
+          // If email is not granted or missing, fallback redirect to default login
           if (!user.email) {
-            console.error("Google OAuth signIn failed: user.email is missing");
-            return false;
+            console.error(`${account.provider} OAuth signIn failed: user.email is missing`);
+            return "/login?error=OAuthCallbackError";
           }
 
           await connectDB();
@@ -124,7 +145,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             }
           }
         } catch {
-          console.error("Error creating or updating Google OAuth user");
+          console.error(`Error creating or updating ${account?.provider} OAuth user`);
           return "/login?error=DatabaseError";
         }
       }
@@ -132,7 +153,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
     async jwt({ token, user, account }) {
       if (user) {
-        if (account?.provider === "google") {
+        if (account?.provider === "google" || account?.provider === "linkedin") {
           try {
             await connectDB();
             const dbUser = await User.findOne({ email: token.email?.toLowerCase() });

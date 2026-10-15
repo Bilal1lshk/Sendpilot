@@ -4,17 +4,34 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 
 interface SocialAuthButtonsProps {
   disabled?: boolean;
 }
 
 export function SocialAuthButtons({ disabled }: SocialAuthButtonsProps) {
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [loadingProvider, setLoadingProvider] = useState<"google" | "linkedin" | null>(null);
+
+  const handleLinkedInSignIn = async () => {
+    try {
+      setLoadingProvider("linkedin");
+      await signIn("linkedin", {
+        redirectTo: "/dashboard",
+        callbackUrl: "/dashboard",
+      });
+    } catch (err) {
+      console.error("Error during LinkedIn sign-in:", err);
+      toast.error("LinkedIn OpenID authentication failed. Redirecting to default sign-in...");
+      setLoadingProvider(null);
+      // Fallback: redirect to default sign-in method
+      window.location.href = "/login?error=OAuthSignin";
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     try {
-      setIsLoading(true);
+      setLoadingProvider("google");
       await signIn("google", {
         redirectTo: "/dashboard",
         callbackUrl: "/dashboard",
@@ -22,33 +39,39 @@ export function SocialAuthButtons({ disabled }: SocialAuthButtonsProps) {
     } catch (err) {
       console.error("Error during Google sign-in:", err);
       toast.error("Failed to initiate Google sign in. Please try again.");
-      setIsLoading(false);
+      setLoadingProvider(null);
     }
   };
 
-  const isDisabled = isLoading || disabled;
+  const isAnyLoading = loadingProvider !== null;
+  const isDisabled = isAnyLoading || disabled;
 
   return (
     <div className="space-y-4">
-      <div className="relative">
-        <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-neutral-200 dark:border-neutral-800" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-white dark:bg-neutral-900 px-3 text-neutral-500 dark:text-neutral-400 font-medium">
-            Or continue with
-          </span>
-        </div>
-      </div>
+      {/* LinkedIn Sign In (OpenID Connect default for LinkedIn CRM) */}
+      <button
+        type="button"
+        onClick={handleLinkedInSignIn}
+        disabled={isDisabled}
+        aria-label="Sign in with LinkedIn using OpenID Connect"
+        className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-[#0a66c2]/40 bg-[#0a66c2]/10 hover:bg-[#0a66c2]/20 dark:bg-[#0a66c2]/20 dark:hover:bg-[#0a66c2]/30 px-4 py-2.5 text-sm font-semibold text-[#0a66c2] dark:text-[#70b5f9] transition-colors shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+      >
+        {loadingProvider === "linkedin" ? (
+          <Loader2 className="h-4 w-4 animate-spin text-[#0a66c2]" />
+        ) : (
+          <LinkedInIcon className="h-4 w-4 shrink-0 fill-current text-[#0a66c2]" />
+        )}
+        <span>Sign In with LinkedIn (OpenID Connect)</span>
+      </button>
 
       <button
         type="button"
         onClick={handleGoogleSignIn}
         disabled={isDisabled}
         aria-label="Sign in with Google"
-        className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+        className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80 transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
-        {isLoading ? (
+        {loadingProvider === "google" ? (
           <Loader2 className="h-4 w-4 animate-spin text-neutral-500" />
         ) : (
           <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
@@ -72,6 +95,17 @@ export function SocialAuthButtons({ disabled }: SocialAuthButtonsProps) {
         )}
         <span>Continue with Google</span>
       </button>
+
+      <div className="relative pt-2">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t border-neutral-200 dark:border-neutral-800" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-white dark:bg-neutral-900 px-3 text-neutral-500 dark:text-neutral-400 font-medium">
+            Or sign in with email and password
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
