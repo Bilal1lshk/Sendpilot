@@ -23,9 +23,6 @@ export async function GET(req: Request) {
     : new URL(req.url).origin;
   const baseUrl = process.env.NEXTAUTH_URL || reqOrigin || "http://localhost:3000";
 
-  console.log("\n=======================================================");
-  console.log("➡️ [GET /api/auth/linkedin/callback] Incoming Request");
-
   const returnError = (errorMessage: string) => {
     const errorUrl = `${baseUrl}/dashboard/accounts?error=${encodeURIComponent(errorMessage)}`;
     const html = `<!DOCTYPE html>
@@ -127,9 +124,6 @@ export async function GET(req: Request) {
       return returnError("LinkedIn credentials missing in server environment (.env)");
     }
 
-    console.log("📡 Exchanging authorization code for access token…");
-    console.log("Redirect URI:", configuredRedirectUri);
-
     let tokenResponse = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -147,7 +141,6 @@ export async function GET(req: Request) {
     // Fallback: retry with dev redirect URI if configured and first attempt failed
     const devRedirectUri = process.env.LINKEDIN_DEV_REDIRECT_URI;
     if (!tokenResponse.ok && tokenData.error_description?.includes("redirect uri") && devRedirectUri) {
-      console.log("🔄 Retrying token exchange with LINKEDIN_DEV_REDIRECT_URI…");
       tokenResponse = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },

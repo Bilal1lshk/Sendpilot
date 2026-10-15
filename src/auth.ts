@@ -7,6 +7,21 @@ import bcrypt from "bcryptjs";
 import { authConfig } from "./auth.config";
 import { decodeOpaqueSession, encodeOpaqueSession, revokeOpaqueSession } from "@/lib/opaque-auth-session";
 
+// Guard against localhost NEXTAUTH_URL leaking into production on Vercel
+if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+  const currentUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL;
+  if (!currentUrl || currentUrl.includes("localhost")) {
+    const prodUrl =
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null) ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+      "https://sendpilot-gamma.vercel.app";
+
+    process.env.AUTH_URL = prodUrl;
+    process.env.NEXTAUTH_URL = prodUrl;
+    process.env.AUTH_TRUST_HOST = "true";
+  }
+}
+
 const useSecureCookies =
   process.env.NODE_ENV === "production" ||
   process.env.NEXTAUTH_URL?.startsWith("https://") ||
@@ -15,6 +30,7 @@ const cookiePrefix = useSecureCookies ? "__Host-" : "";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
+  basePath: "/api/auth",
   trustHost: true,
   cookies: {
     sessionToken: {

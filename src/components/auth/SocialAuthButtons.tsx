@@ -15,7 +15,10 @@ export function SocialAuthButtons({ disabled }: SocialAuthButtonsProps) {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true);
-      await signIn("google", { redirectTo: "/dashboard" });
+      await signIn("google", {
+        redirectTo: "/dashboard",
+        callbackUrl: "/dashboard",
+      });
     } catch (err) {
       console.error("Error during Google sign-in:", err);
       toast.error("Failed to initiate Google sign in. Please try again.");
