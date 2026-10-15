@@ -117,6 +117,63 @@ export async function verifyConnection(id: string, userId: string) {
   }
 }
 
+export async function disconnectOtherAccounts(userId: string, activeConnectionId: string) {
+  const otherConnections = await LinkedInConnection.find({
+    userId,
+    id: { $ne: activeConnectionId },
+    status: "active",
+  });
+
+  for (const conn of otherConnections) {
+    conn.status = "disconnected";
+    await conn.save();
+    await stopConnectionJobs(conn.id, userId);
+  }
+}
+
+export async function disconnectConnection(id: string, userId: string) {
+  const connection = await LinkedInConnection.findOne({ id, userId });
+  if (!connection) return null;
+
+  connection.status = "disconnected";
+  await connection.save();
+  await stopConnectionJobs(id, userId);
+  return toSafeConnection(connection);
+}
+
+export async function connectAccount(id: string, userId: string) {
+  const connection = await LinkedInConnection.findOne({ id, userId });
+  if (!connection) return null;
+
+  const result = await verifyConnection(id, userId);
+  if (!result || !result.verified) {
+    return {
+      success: false as const,
+      verified: false as const,
+      requiresAuth: true,
+      error: "LinkedIn authorization expired. Please reconnect.",
+      connection: result ? result.connection : toSafeConnection(connection),
+    };
+  }
+
+  // Ensure connection is active and confirmed
+  connection.status = "active";
+  connection.lastVerifiedAt = new Date();
+  if (!connection.confirmedAt) {
+    connection.confirmedAt = new Date();
+  }
+  await connection.save();
+
+  // Automatically disconnect any other active accounts for this user
+  await disconnectOtherAccounts(userId, id);
+
+  return {
+    success: true as const,
+    verified: true as const,
+    connection: toSafeConnection(connection),
+  };
+}
+
 export async function connectWithCredentials(userId: string, credentials: LinkedInCredentials) {
   const connection = await createConnection(userId, credentials);
   const result = await verifyConnection(connection.id, userId);
@@ -138,6 +195,7 @@ export async function connectWithCredentials(userId: string, credentials: Linked
         candidate.confirmedAt = candidate.confirmedAt || undefined;
         await candidate.save();
         await connection.deleteOne();
+        await disconnectOtherAccounts(userId, candidate.id);
         return { verified: true as const, alreadyConnected: true, connection: toSafeConnection(candidate) };
       } catch {
         continue;
@@ -150,6 +208,7 @@ export async function connectWithCredentials(userId: string, credentials: Linked
     connection.encryptedCredentials = encryptConnectionSecrets({ ...stored, linkedinMemberId: result.memberId });
     await connection.save();
   }
+  await disconnectOtherAccounts(userId, connection.id);
   return { verified: true as const, alreadyConnected: false, connection: result.connection };
 }
 

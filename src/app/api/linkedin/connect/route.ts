@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser, apiError } from "@/lib/crm";
 import { consumeRateLimit } from "@/lib/rate-limit";
-import { connectWithCredentials } from "@/lib/linkedin-connections";
+import { connectWithCredentials, disconnectOtherAccounts } from "@/lib/linkedin-connections";
 import LinkedInConnection from "@/models/LinkedInConnection";
 
 /**
@@ -68,9 +68,11 @@ export async function POST(req: Request) {
     const candidateUris = [
       detectedRedirectUri,
       customRedirectUri,
+      process.env.LINKEDIN_REDIRECT_URI,
+      process.env.NEXTAUTH_URL ? `${process.env.NEXTAUTH_URL.replace(/\/$/, "")}/api/auth/linkedin/callback` : null,
+      "https://sendpilot-gamma.vercel.app/api/auth/linkedin/callback",
       process.env.LINKEDIN_DEV_REDIRECT_URI,
       "https://www.linkedin.com/developers/tools/oauth/redirect",
-      process.env.LINKEDIN_REDIRECT_URI,
       "http://localhost:3000/api/auth/linkedin/callback",
     ].filter(Boolean) as string[];
 
@@ -133,8 +135,9 @@ export async function POST(req: Request) {
     // In the manual code paste path, the user explicitly chose and authorized this profile
     await LinkedInConnection.updateOne(
       { id: result.connection.id, userId: ctx.userId },
-      { $set: { confirmedAt: new Date() } }
+      { $set: { confirmedAt: new Date(), status: "active" } }
     );
+    await disconnectOtherAccounts(ctx.userId, result.connection.id);
 
     return NextResponse.json({
       success: true,

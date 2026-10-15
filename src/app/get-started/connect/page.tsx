@@ -70,10 +70,58 @@ export default function ConnectStepPage() {
     window.location.assign("/api/auth/linkedin/authorize");
   };
 
+  const handleDisconnect = async (id: string) => {
+    const response = await fetch("/api/linkedin/accounts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action: "disconnect" }),
+    });
+    if (!response.ok) {
+      toast.error("Could not disconnect LinkedIn account");
+      return;
+    }
+    const state = await fetchOnboardingState();
+    if (state.step2.data?.connectedAccounts) {
+      setConnectedAccounts(state.step2.data.connectedAccounts);
+    } else {
+      setConnectedAccounts((prev) =>
+        prev.map((acc) => (acc.id === id ? { ...acc, status: "Disconnected" } : acc))
+      );
+    }
+    toast.success("LinkedIn account disconnected successfully.");
+  };
+
+  const handleConnect = async (id: string) => {
+    const response = await fetch("/api/linkedin/accounts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action: "connect" }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      if (data?.requiresAuth) {
+        toast.error("LinkedIn authorization expired. Please reconnect.");
+        handleReconnect(id);
+        return;
+      }
+      toast.error(data?.error || "Could not connect LinkedIn account");
+      return;
+    }
+    const state = await fetchOnboardingState();
+    if (state.step2.data?.connectedAccounts) {
+      setConnectedAccounts(state.step2.data.connectedAccounts);
+    } else {
+      setConnectedAccounts((prev) =>
+        prev.map((acc) => (acc.id === id ? { ...acc, status: "Active" } : { ...acc, status: "Disconnected" }))
+      );
+    }
+    toast.success("LinkedIn account connected successfully. Other accounts disconnected.");
+  };
+
   const handleRemove = async (id: string) => {
     const response = await fetch(`/api/linkedin/accounts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     if (!response.ok) {
-      toast.error("Could not disconnect LinkedIn account");
+      toast.error("Could not delete LinkedIn account");
       return;
     }
 
@@ -82,7 +130,7 @@ export default function ConnectStepPage() {
     await saveOnboardingStep("step2", updated.length > 0 ? "completed" : "in_progress", {
       invitedTeammates,
     });
-    toast.success("LinkedIn account disconnected successfully.");
+    toast.success("LinkedIn account removed successfully.");
   };
 
   const handleInviteTeammate = async (e: React.FormEvent) => {
@@ -214,6 +262,8 @@ export default function ConnectStepPage() {
                   <ProfileCard
                     key={account.id}
                     account={account}
+                    onConnect={handleConnect}
+                    onDisconnect={handleDisconnect}
                     onReconnect={handleReconnect}
                     onRemove={handleRemove}
                   />

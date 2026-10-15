@@ -1,17 +1,21 @@
 "use client";
 
-import { RefreshCw, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
+import { RefreshCw, Trash2, CheckCircle2, AlertCircle, Power } from "lucide-react";
 import { LinkedInAccount } from "@/types/onboarding";
 
 interface ProfileCardProps {
   account: LinkedInAccount;
   onReconnect?: (id: string) => void;
+  onConnect?: (id: string) => void;
+  onDisconnect?: (id: string) => void;
   onRemove?: (id: string) => void;
 }
 
 export function ProfileCard({
   account,
   onReconnect,
+  onConnect,
+  onDisconnect,
   onRemove,
 }: ProfileCardProps) {
   const isActive = account.status === "Active";
@@ -73,6 +77,26 @@ export function ProfileCard({
       </div>
 
       <div className="flex items-center gap-2 self-end sm:self-center">
+        {isActive ? (
+          <button
+            type="button"
+            onClick={() => onDisconnect?.(account.id)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-950/20 px-3 py-1.5 text-xs font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors"
+          >
+            <Power className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+            <span>Disconnect</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onConnect?.(account.id)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 text-xs font-medium shadow-2xs transition-colors"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            <span>Connect</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => onReconnect?.(account.id)}

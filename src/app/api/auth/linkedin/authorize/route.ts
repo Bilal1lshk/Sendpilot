@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { randomBytes } from "crypto";
+import { randomBytes, createHmac } from "crypto";
 import { auth } from "@/auth";
 import connectDB from "@/lib/mongodb";
 import { migrateLegacyLinkedInConnections } from "@/lib/linkedin-connections";
@@ -34,9 +34,13 @@ export async function GET(req: Request) {
 
     const isManual = searchParams.get("mode") === "manual" || searchParams.get("dev") === "true";
     const clientId = process.env.LINKEDIN_CLIENT_ID || process.env.Linkedin_Client_ID;
+    const origin = req.headers.get("x-forwarded-host")
+      ? `${req.headers.get("x-forwarded-proto") || "https"}://${req.headers.get("x-forwarded-host")}`
+      : new URL(req.url).origin;
+    const defaultRedirect = process.env.LINKEDIN_REDIRECT_URI || `${origin}/api/auth/linkedin/callback`;
     const redirectUri = isManual
       ? (process.env.LINKEDIN_DEV_REDIRECT_URI || "https://www.linkedin.com/developers/tools/oauth/redirect")
-      : (process.env.LINKEDIN_REDIRECT_URI || "http://localhost:3000/api/auth/linkedin/callback");
+      : defaultRedirect;
     const scope = "openid profile email";
 
     if (!clientId || !redirectUri) {
@@ -47,8 +51,11 @@ export async function GET(req: Request) {
       );
     }
 
-    // 16-byte hex state — cryptographically random, cannot be guessed
-    const state = randomBytes(16).toString("hex");
+    // Cryptographically signed state containing userId and nonce
+    const statePayload = `${userId}:${Date.now()}:${randomBytes(8).toString("hex")}`;
+    const hmacSecret = process.env.COOKIE_ENC_KEY || process.env.AUTH_SECRET || "default_sendpilot_secret";
+    const signature = createHmac("sha256", hmacSecret).update(statePayload).digest("hex");
+    const state = `${Buffer.from(statePayload).toString("base64url")}.${signature}`;
 
     const authUrl =
       `https://www.linkedin.com/oauth/v2/authorization` +
@@ -59,7 +66,15 @@ export async function GET(req: Request) {
       `&state=${state}`;
 
     if (jsonMode) {
-      return NextResponse.json({ success: true, url: authUrl, redirectUri: redirectUri.trim() });
+      const jsonRes = NextResponse.json({ success: true, url: authUrl, redirectUri: redirectUri.trim() });
+      jsonRes.cookies.set("li_oauth_state", state, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 10,
+        path: "/",
+      });
+      return jsonRes;
     }
 
     // Set state in an httpOnly cookie so the callback can verify it

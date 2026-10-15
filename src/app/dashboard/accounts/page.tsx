@@ -13,11 +13,10 @@ import {
   Loader2,
   Info,
   ExternalLink,
-  Globe,
-  ArrowRight,
+  Power,
+  CheckCircle2,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
-import { ConnectLinkedInModal } from "@/components/dashboard/ConnectLinkedInModal";
 import { pageVariants, cardVariants, drawerVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
 import { toast } from "sonner";
@@ -52,7 +51,6 @@ export default function LinkedInAccountsPage() {
   const searchParams = useSearchParams();
 
   const [securityPanelOpen, setSecurityPanelOpen] = useState(false);
-  const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [accounts, setAccounts] = useState<ConnectedAccountData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -146,6 +144,32 @@ export default function LinkedInAccountsPage() {
     return () => window.clearTimeout(task);
   }, [searchParams]);
 
+  // ── Listen for popup completion events ─────────────────────────
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.data?.type === "LINKEDIN_AUTH_SUCCESS") {
+        toast.dismiss("li-connect");
+        const { status, id } = event.data;
+        await fetchAccounts();
+        if (status === "connected") {
+          if (id) {
+            await fetch(`/api/linkedin/accounts/${encodeURIComponent(id)}/confirm`, { method: "POST" });
+            await fetchAccounts();
+          }
+          toast.success("New LinkedIn account successfully added to workspace!");
+        } else if (status === "already_connected") {
+          toast.info("This LinkedIn account is already connected. Authorization refreshed.");
+        }
+      } else if (event.data?.type === "LINKEDIN_AUTH_ERROR") {
+        toast.dismiss("li-connect");
+        toast.error(event.data.error || "LinkedIn authorization failed");
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
   // ── Account actions ─────────────────────────────────────────────
   const verifyAccount = async (id: string) => {
     try {
@@ -168,27 +192,118 @@ export default function LinkedInAccountsPage() {
     window.location.href = "/api/auth/linkedin/authorize";
   };
 
-  const removeAccount = async (id: string) => {
-    if (!confirm("Are you sure you want to disconnect this LinkedIn account?")) return;
-
-    setAccounts((prev) => prev.filter((acc) => acc.id !== id));
-
+  const handleDisconnect = async (id: string, name: string) => {
     try {
-      const res = await fetch(`/api/linkedin/accounts?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to remove account");
-      toast.success("LinkedIn account disconnected successfully.");
-    } catch {
-      toast.error("Failed to disconnect account");
+      const res = await fetch("/api/linkedin/accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action: "disconnect" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to disconnect account");
+      }
+      toast.success(`${name} disconnected successfully.`);
+      await fetchAccounts();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to disconnect account";
+      toast.error(msg);
       fetchAccounts();
     }
   };
 
-  /** Directly opens the connect modal to add another LinkedIn account via redirect URL */
-  const handleAddAccount = () => {
-    setConnectModalOpen(true);
+  const handleConnect = async (id: string, name: string) => {
+    toast.loading(`Connecting ${name}...`, { id: `connect-${id}` });
+    try {
+      const res = await fetch("/api/linkedin/accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action: "connect" }),
+      });
+      toast.dismiss(`connect-${id}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data?.requiresAuth) {
+          toast.error("LinkedIn authorization expired. Please reconnect.");
+          reconnect(id);
+          return;
+        }
+        throw new Error(data?.error || "Failed to connect account");
+      }
+      toast.success(`Connected as ${name}. Other accounts have been disconnected.`);
+      await fetchAccounts();
+    } catch (err: unknown) {
+      toast.dismiss(`connect-${id}`);
+      const msg = err instanceof Error ? err.message : "Failed to connect account";
+      toast.error(msg);
+      fetchAccounts();
+    }
   };
 
-  const disconnectedAccount = accounts.find((a) => a.status !== "Active");
+  const removeAccount = async (id: string, name?: string) => {
+    const displayName = name || "this LinkedIn account";
+    if (!confirm(`Are you sure you want to delete ${displayName} from your workspace?`)) return;
+
+    setAccounts((prev) => prev.filter((acc) => acc.id !== id));
+
+    try {
+      const res = await fetch(`/api/linkedin/accounts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete account");
+      toast.success(`${displayName} removed successfully.`);
+      fetchAccounts();
+    } catch {
+      toast.error("Failed to delete account");
+      fetchAccounts();
+    }
+  };
+
+  /** Directly connects or adds another LinkedIn account without cookie collision */
+  const handleAddAccount = async () => {
+    try {
+      const res = await fetch("/api/auth/linkedin/authorize?json=true");
+      const data = await res.json();
+      if (!data?.url) {
+        window.location.href = "/api/auth/linkedin/authorize";
+        return;
+      }
+
+      const authUrl = data.url;
+      const width = 600;
+      const height = 750;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      const windowFeatures = `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`;
+
+      if (accounts.length > 0) {
+        toast.loading("Opening LinkedIn...", { id: "li-connect" });
+        // Clear active session in popup first so user can enter credentials for their other account
+        const authPopup = window.open("https://www.linkedin.com/m/logout", "linkedin_auth", windowFeatures);
+        if (!authPopup) {
+          window.location.href = authUrl;
+          return;
+        }
+        setTimeout(() => {
+          try {
+            authPopup.location.href = authUrl;
+            toast.dismiss("li-connect");
+          } catch {
+            window.location.href = authUrl;
+          }
+        }, 1200);
+      } else {
+        const authPopup = window.open(authUrl, "linkedin_auth", windowFeatures);
+        if (!authPopup) {
+          window.location.href = authUrl;
+        }
+      }
+    } catch {
+      window.location.href = "/api/auth/linkedin/authorize";
+    }
+  };
+
+  const activeAccount = accounts.find((a) => a.status === "Active");
+  const expiredAccount = accounts.find((a) => a.status === "Expired");
+  const hasNoActiveAccount = accounts.length > 0 && !activeAccount;
 
   return (
     <motion.div
@@ -230,8 +345,8 @@ export default function LinkedInAccountsPage() {
         </div>
       </motion.div>
 
-      {/* Disconnected account friendly banner */}
-      {disconnectedAccount && (
+      {/* Expired account notice */}
+      {expiredAccount && (
         <motion.div
           variants={cardVariants}
           className="rounded-2xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
@@ -242,7 +357,7 @@ export default function LinkedInAccountsPage() {
             </div>
             <div>
               <p className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
-                {microcopy.feedback.disconnectedNotice(disconnectedAccount.name)}
+                {microcopy.feedback.disconnectedNotice(expiredAccount.name)}
               </p>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
                 LinkedIn sessions expire periodically. Reconnect to resume scheduled steps.
@@ -252,12 +367,34 @@ export default function LinkedInAccountsPage() {
 
           <button
             type="button"
-            onClick={() => reconnect(disconnectedAccount.id)}
+            onClick={() => reconnect(expiredAccount.id)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 px-3 py-1 text-xs font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 shadow-2xs shrink-0 self-start sm:self-center cursor-pointer"
           >
             <RotateCw className="h-3 w-3 text-palm-leaf-600" />
             <span>Reconnect</span>
           </button>
+        </motion.div>
+      )}
+
+      {/* No active account notice */}
+      {!expiredAccount && hasNoActiveAccount && (
+        <motion.div
+          variants={cardVariants}
+          className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-900/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 flex items-center justify-center shrink-0">
+              <Info className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                No active LinkedIn account connected
+              </p>
+              <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                Click &ldquo;Connect&rdquo; on an account below to activate it for outreach campaigns.
+              </p>
+            </div>
+          </div>
         </motion.div>
       )}
 
@@ -403,31 +540,57 @@ export default function LinkedInAccountsPage() {
 
                   {/* Right: Actions */}
                   <div className="flex items-center gap-1.5 self-end md:self-center shrink-0">
-                    {acc.status !== "Active" ? (
-                      <button
-                        type="button"
-                        onClick={() => reconnect(acc.id)}
-                        className="inline-flex items-center gap-1 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-3 py-1.5 text-xs font-medium shadow-2xs transition-colors cursor-pointer"
-                      >
-                        <RotateCw className="h-3 w-3" />
-                        <span>Reconnect</span>
-                      </button>
+                    {acc.status === "Active" ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => verifyAccount(acc.id)}
+                          className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
+                          title="Verify token status with LinkedIn"
+                        >
+                          <RotateCw className="h-3 w-3 text-palm-leaf-600" />
+                          <span>Verify</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDisconnect(acc.id, acc.name)}
+                          className="inline-flex items-center gap-1 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/60 dark:bg-rose-950/20 px-3 py-1.5 text-xs font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors cursor-pointer"
+                          title="Disconnect account"
+                        >
+                          <Power className="h-3 w-3 text-rose-600 dark:text-rose-400" />
+                          <span>Disconnect</span>
+                        </button>
+                      </>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => verifyAccount(acc.id)}
-                        className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 transition-colors cursor-pointer"
-                      >
-                        <RotateCw className="h-3 w-3 text-palm-leaf-600" />
-                        <span>Verify</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleConnect(acc.id, acc.name)}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-3 py-1.5 text-xs font-medium shadow-2xs transition-colors cursor-pointer"
+                          title="Connect account (will disconnect other active accounts)"
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>Connect</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => reconnect(acc.id)}
+                          className="inline-flex items-center gap-1 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 px-2.5 py-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
+                          title="Re-authorize with LinkedIn"
+                        >
+                          <RotateCw className="h-3 w-3 text-palm-leaf-600" />
+                          <span>Reconnect</span>
+                        </button>
+                      </>
                     )}
 
                     <button
                       type="button"
-                      onClick={() => removeAccount(acc.id)}
+                      onClick={() => removeAccount(acc.id, acc.name)}
                       className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
-                      title="Remove profile"
+                      title="Delete profile from workspace"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -441,14 +604,7 @@ export default function LinkedInAccountsPage() {
 
 
 
-      {/* ── Connect LinkedIn Modal (Redirect URL / Code flow) ─────── */}
-      <ConnectLinkedInModal
-        isOpen={connectModalOpen}
-        onClose={() => setConnectModalOpen(false)}
-        onConnected={async () => {
-          await fetchAccounts();
-        }}
-      />
+
 
       {/* ── Security Side Panel ───────────────────────────────────── */}
       <AnimatePresence>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Upload,
   FileSpreadsheet,
@@ -13,8 +13,13 @@ import {
   Link as LinkIcon,
   Compass,
   FileText,
+  Ban,
+  Database,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { LeadItem, LeadsStepData } from "@/types/onboarding";
+import { parseCsvContent, CsvParseResult } from "@/lib/csv-parser";
 
 interface CsvImportWizardProps {
   onComplete: (data: LeadsStepData) => void;
@@ -143,6 +148,9 @@ export function CsvImportWizard({
     initialData?.importType || "csv"
   );
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [parsedData, setParsedData] = useState<CsvParseResult | null>(null);
+
   // CSV Tab states
   const [fileSelected, setFileSelected] = useState<string | null>(
     initialData?.leads && initialData.leads.length > 0 ? "leads-export-q4.csv" : null
@@ -183,18 +191,77 @@ export function CsvImportWizard({
 
   const handleSimulateUpload = () => {
     setFileSelected("q4_qualified_prospects.csv");
+    setParsedData(null);
+  };
+
+  const handleRealFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".csv") && !file.name.toLowerCase().endsWith(".txt")) {
+      toast.error("Please upload a .csv file");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        try {
+          const result = parseCsvContent(text, file.name);
+          setParsedData(result);
+          setFileSelected(file.name);
+          toast.success(`Parsed ${result.readyCount} leads from ${file.name}`);
+        } catch {
+          toast.error("Failed to parse CSV file format");
+        }
+      }
+    };
+    reader.onerror = () => {
+      toast.error("Error reading file from disk");
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDiscardCsv = () => {
+    setFileSelected(null);
+    setParsedData(null);
+    setIsMappingConfirmed(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    toast.info("CSV import discarded. No leads were saved to database.");
   };
 
   const handleConfirmMappingAndImport = () => {
     setIsMappingConfirmed(true);
+
+    const readyCount = parsedData ? parsedData.readyCount : 270;
+    const duplicateCount = parsedData ? parsedData.duplicateCount : 20;
+    const invalidCount = parsedData ? parsedData.invalidCount : 10;
+
+    const leadsToImport: LeadItem[] =
+      parsedData && parsedData.leads.length > 0
+        ? parsedData.leads.map((l) => ({
+            id: l.id,
+            firstName: l.firstName,
+            lastName: l.lastName,
+            jobTitle: l.title,
+            company: l.company,
+            email: l.email,
+            linkedinUrl: l.linkedinUrl,
+            icpScore: l.icpScore,
+            status: "ready" as const,
+          }))
+        : SAMPLE_PREVIEW_LEADS;
+
     onComplete({
       importType: activeTab,
-      readyCount: 270,
-      duplicateCount: 20,
-      invalidCount: 10,
+      readyCount,
+      duplicateCount,
+      invalidCount,
       suppressionCount: 4,
-      leads: SAMPLE_PREVIEW_LEADS,
+      leads: leadsToImport,
     });
+    toast.success(`Successfully saved ${readyCount} leads to your database!`);
   };
 
   const handleParseUrlsAndImport = () => {
@@ -297,11 +364,20 @@ export function CsvImportWizard({
       {/* TAB 1: CSV Upload */}
       {activeTab === "csv" && !isMappingConfirmed && (
         <div className="space-y-6">
+          {/* Hidden File Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv,.txt"
+            onChange={handleRealFileUpload}
+            className="hidden"
+          />
+
           {!fileSelected ? (
             <div className="space-y-4">
               {/* Drag and Drop Zone */}
               <div
-                onClick={handleSimulateUpload}
+                onClick={() => fileInputRef.current?.click()}
                 className="flex flex-col items-center justify-center p-8 sm:p-12 rounded-2xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 hover:border-emerald-500 bg-neutral-50/50 dark:bg-neutral-900/30 transition-colors cursor-pointer text-center"
               >
                 <div className="h-12 w-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-3">
@@ -313,12 +389,28 @@ export function CsvImportWizard({
                 <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 max-w-sm">
                   Supports .csv format with names, emails, job titles, and LinkedIn profile URLs.
                 </p>
-                <button
-                  type="button"
-                  className="mt-4 rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 shadow-2xs hover:bg-neutral-50"
-                >
-                  Select File
-                </button>
+                <div className="flex items-center gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                    className="rounded-xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 shadow-2xs hover:bg-neutral-50 cursor-pointer"
+                  >
+                    Select File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSimulateUpload();
+                    }}
+                    className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 px-3 py-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 cursor-pointer"
+                  >
+                    Load Sample Leads
+                  </button>
+                </div>
               </div>
 
               {/* Sample CSV link */}
@@ -514,15 +606,34 @@ export function CsvImportWizard({
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
                 <button
                   type="button"
-                  onClick={handleConfirmMappingAndImport}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  onClick={handleDiscardCsv}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 hover:bg-rose-100/60 px-4 py-2.5 text-xs font-semibold transition-colors cursor-pointer"
                 >
-                  <span>Confirm & Import 270 Leads</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
+                  <Ban className="h-3.5 w-3.5" />
+                  <span>Don&apos;t Save</span>
                 </button>
+
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleDiscardCsv}
+                    className="px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs font-semibold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmMappingAndImport}
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Database className="h-3.5 w-3.5" />
+                    <span>Store in Database ({parsedData ? parsedData.readyCount : 270} Leads)</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -553,14 +664,30 @@ export function CsvImportWizard({
             <span className="text-xs text-neutral-500 dark:text-neutral-400">
               {pastedUrls.split("\n").filter((l) => l.trim().length > 0).length} URL(s) detected
             </span>
-            <button
-              type="button"
-              onClick={handleParseUrlsAndImport}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-            >
-              <span>Import URLs</span>
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {pastedUrls.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPastedUrls("");
+                    toast.info("Cleared URLs without saving.");
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 text-xs font-semibold cursor-pointer"
+                >
+                  <Ban className="h-3 w-3" />
+                  <span>Don&apos;t Save</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleParseUrlsAndImport}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                <Database className="h-3.5 w-3.5" />
+                <span>Store in Database</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -7,14 +7,21 @@ import bcrypt from "bcryptjs";
 import { authConfig } from "./auth.config";
 import { decodeOpaqueSession, encodeOpaqueSession, revokeOpaqueSession } from "@/lib/opaque-auth-session";
 
+const useSecureCookies =
+  process.env.NODE_ENV === "production" ||
+  process.env.NEXTAUTH_URL?.startsWith("https://") ||
+  Boolean(process.env.VERCEL);
+const cookiePrefix = useSecureCookies ? "__Host-" : "";
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
+  trustHost: true,
   cookies: {
     sessionToken: {
-      name: "__Host-sendpilot.session",
+      name: `${cookiePrefix}sendpilot.session`,
       options: {
         httpOnly: true,
-        secure: true,
+        secure: useSecureCookies,
         sameSite: "lax",
         path: "/",
       },

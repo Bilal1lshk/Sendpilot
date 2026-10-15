@@ -440,6 +440,92 @@ test("connectWithCredentials supports connecting multiple different LinkedIn acc
     assert.ok(ids.includes(res1.connection.id));
     assert.ok(ids.includes(res2.connection.id));
     assert.notEqual(res1.connection.id, res2.connection.id);
+
+    // 4. Verify Account #1 is automatically disconnected when Account #2 connects
+    const acc1After = await LinkedInConnection.findOne({ id: res1.connection.id });
+    const acc2After = await LinkedInConnection.findOne({ id: res2.connection.id });
+    assert.equal(acc1After.status, "disconnected", "First account should be automatically disconnected");
+    assert.equal(acc2After.status, "active", "Second account should be active");
+  } finally {
+    globalThis.fetch = originalFetch;
+    await LinkedInConnection.deleteMany({ userId: testUserId });
+  }
+});
+
+test("disconnectConnection marks active account as disconnected without deleting it", async () => {
+  const { createConnection, disconnectConnection } = await import("../src/lib/linkedin-connections.ts");
+  const { default: LinkedInConnection } = await import("../src/models/LinkedInConnection.ts");
+
+  const testUserId = `test_user_${Date.now()}_disconnect`;
+  const conn = await createConnection(testUserId, { accessToken: "tok_disc" });
+  conn.status = "active";
+  conn.linkedinName = "Active Disconnect User";
+  await conn.save();
+
+  const discResult = await disconnectConnection(conn.id, testUserId);
+  assert.ok(discResult);
+  assert.equal(discResult.status, "disconnected");
+
+  // Verify DB record still exists and status is disconnected
+  const inDb = await LinkedInConnection.findOne({ id: conn.id, userId: testUserId });
+  assert.ok(inDb);
+  assert.equal(inDb.status, "disconnected");
+
+  await LinkedInConnection.deleteOne({ id: conn.id });
+});
+
+test("connectAccount activates a disconnected account and automatically disconnects any active account", async () => {
+  const { createConnection, connectAccount } = await import("../src/lib/linkedin-connections.ts");
+  const { default: LinkedInConnection } = await import("../src/models/LinkedInConnection.ts");
+
+  const testUserId = `test_user_${Date.now()}_switch`;
+  const subA = `sub_switch_a_${Date.now()}`;
+  const subB = `sub_switch_b_${Date.now()}`;
+
+  // Account A is active
+  const connA = await createConnection(testUserId, { accessToken: "token_a", linkedinMemberId: subA });
+  connA.status = "active";
+  connA.linkedinName = "Account A";
+  await connA.save();
+
+  // Account B is disconnected
+  const connB = await createConnection(testUserId, { accessToken: "token_b", linkedinMemberId: subB });
+  connB.status = "disconnected";
+  connB.linkedinName = "Account B";
+  await connB.save();
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes("/v2/userinfo")) {
+      const authHeader = opts?.headers?.Authorization || "";
+      if (authHeader.includes("token_b")) {
+        return {
+          ok: true,
+          json: async () => ({
+            sub: subB,
+            name: "Account B",
+            picture: "https://example.com/avatarB.jpg",
+          }),
+        };
+      }
+    }
+    return originalFetch(url, opts);
+  };
+
+  try {
+    // Connect Account B
+    const result = await connectAccount(connB.id, testUserId);
+    assert.equal(result.success, true);
+    assert.equal(result.verified, true);
+    assert.equal(result.connection.status, "active");
+
+    // Verify Account A was automatically disconnected
+    const updatedA = await LinkedInConnection.findOne({ id: connA.id });
+    assert.equal(updatedA.status, "disconnected", "Account A should have been automatically disconnected");
+
+    // Verify Account B is active
+    const updatedB = await LinkedInConnection.findOne({ id: connB.id });
+    assert.equal(updatedB.status, "active", "Account B should be active");
   } finally {
     globalThis.fetch = originalFetch;
     await LinkedInConnection.deleteMany({ userId: testUserId });

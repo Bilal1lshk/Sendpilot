@@ -23,6 +23,8 @@ import {
   Play,
   MapPin,
   Briefcase,
+  Ban,
+  X,
   ChevronDown,
   ChevronUp,
   FileText,
@@ -126,6 +128,7 @@ export default function LeadExtractorPage() {
   const [parsedCsvResult, setParsedCsvResult] = useState<CsvParseResult | null>(null);
   const [isSavingCsvToDb, setIsSavingCsvToDb] = useState(false);
   const [csvSavedSuccess, setCsvSavedSuccess] = useState(false);
+  const [showCsvSaveDecisionModal, setShowCsvSaveDecisionModal] = useState(false);
 
   // History list state
   const [importHistory, setImportHistory] = useState<
@@ -454,10 +457,12 @@ export default function LeadExtractorPage() {
           toast.error("Could not parse valid leads. Check that headers include name, title, or email.");
         } else {
           setParsedCsvResult(result);
+          setShowCsvSaveDecisionModal(true);
           toast.success(`Parsed ${result.readyCount} leads from ${filename}`);
         }
-      } catch (err: any) {
-        toast.error("Failed to parse CSV file: " + (err.message || "Invalid format"));
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Invalid format";
+        toast.error("Failed to parse CSV file: " + msg);
       } finally {
         setIsParsingCsv(false);
       }
@@ -509,6 +514,26 @@ export default function LeadExtractorPage() {
     processCsvText(sampleText, "sendpilot_sample_leads.csv");
   };
 
+  // Discard imported CSV without saving to database
+  const handleDiscardCsv = () => {
+    if (parsedCsvResult) {
+      setImportHistory((prev) => [
+        {
+          file: parsedCsvResult.fileName,
+          date: "Just now",
+          count: parsedCsvResult.readyCount,
+          status: "Not Saved (Discarded)",
+        },
+        ...prev,
+      ]);
+    }
+    setParsedCsvResult(null);
+    setCsvSavedSuccess(false);
+    setShowCsvSaveDecisionModal(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    toast.info("CSV file was not saved to database.");
+  };
+
   // Commit Parsed CSV Leads to Backend Database
   const handleConfirmAndImportCsv = async () => {
     if (!parsedCsvResult || parsedCsvResult.leads.length === 0) return;
@@ -527,13 +552,14 @@ export default function LeadExtractorPage() {
       const data = await res.json();
       if (data.success) {
         setCsvSavedSuccess(true);
-        toast.success(`Successfully imported ${data.importedCount} leads into your database!`);
+        setShowCsvSaveDecisionModal(false);
+        toast.success(`Successfully saved ${data.importedCount} leads directly into your database!`);
         setImportHistory((prev) => [
           {
             file: parsedCsvResult.fileName,
             date: "Just now",
             count: data.importedCount,
-            status: "Completed",
+            status: "Stored in Database",
           },
           ...prev,
         ]);
@@ -1528,6 +1554,121 @@ driver.quit()`;
             className="hidden"
           />
 
+          {/* Decision Modal: Store or Don't Save */}
+          <AnimatePresence>
+            {showCsvSaveDecisionModal && parsedCsvResult && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setShowCsvSaveDecisionModal(false)}
+                  className="fixed inset-0 bg-neutral-900/60 backdrop-blur-xs"
+                />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                  className="relative z-10 w-full max-w-lg rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-2xl space-y-5"
+                >
+                  <div className="flex items-start justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-palm-leaf-50 dark:bg-palm-leaf-950/60 text-palm-leaf-600 dark:text-palm-leaf-400 flex items-center justify-center shrink-0">
+                        <FileSpreadsheet className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-neutral-900 dark:text-neutral-100">
+                          CSV File Imported
+                        </h3>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                          {parsedCsvResult.fileName} • {parsedCsvResult.readyCount} valid leads detected
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowCsvSaveDecisionModal(false)}
+                      className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-xs text-neutral-600 dark:text-neutral-300">
+                      Would you like to store these leads in your SendPilot CRM database, or don&apos;t save them?
+                    </p>
+
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/50 dark:border-emerald-900/40">
+                        <div className="font-bold text-emerald-800 dark:text-emerald-300">{parsedCsvResult.readyCount}</div>
+                        <div className="text-[10px] text-emerald-600 dark:text-emerald-400">Ready Leads</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800">
+                        <div className="font-bold text-neutral-800 dark:text-neutral-200">{parsedCsvResult.duplicateCount}</div>
+                        <div className="text-[10px] text-neutral-500">Duplicates</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-900/40">
+                        <div className="font-bold text-amber-800 dark:text-amber-300">{parsedCsvResult.invalidCount}</div>
+                        <div className="text-[10px] text-amber-600 dark:text-amber-400">Skipped</div>
+                      </div>
+                    </div>
+
+                    {/* Quick lead preview */}
+                    <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/50 p-3 space-y-2">
+                      <div className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
+                        Sample Preview
+                      </div>
+                      <div className="space-y-1.5 text-xs">
+                        {parsedCsvResult.leads.slice(0, 3).map((l, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-neutral-700 dark:text-neutral-300 py-0.5">
+                            <span className="font-medium truncate max-w-[180px]">{l.name || "Contact"}</span>
+                            <span className="text-[11px] text-neutral-400 truncate max-w-[200px]">{l.title} {l.company ? `• ${l.company}` : ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-2.5 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                    <button
+                      type="button"
+                      onClick={handleDiscardCsv}
+                      className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-semibold cursor-pointer transition-colors"
+                    >
+                      <Ban className="h-3.5 w-3.5" />
+                      <span>Don&apos;t Save</span>
+                    </button>
+
+                    <div className="flex items-center gap-2 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowCsvSaveDecisionModal(false)}
+                        className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer"
+                      >
+                        <span>Preview Table</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isSavingCsvToDb}
+                        onClick={handleConfirmAndImportCsv}
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-50 transition-colors"
+                      >
+                        {isSavingCsvToDb ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Database className="h-3.5 w-3.5" />
+                        )}
+                        <span>Store in Database</span>
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+
           {/* Drag & Drop File Zone */}
           {!parsedCsvResult && (
             <div className="space-y-4">
@@ -1635,6 +1776,16 @@ driver.quit()`;
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={handleDiscardCsv}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100/60 cursor-pointer transition-colors"
+                      title="Discard without saving to database"
+                    >
+                      <Ban className="h-3 w-3" />
+                      <span>Don&apos;t Save</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => {
                         setParsedCsvResult(null);
                         setCsvSavedSuccess(false);
@@ -1660,8 +1811,8 @@ driver.quit()`;
                       )}
                       <span>
                         {csvSavedSuccess
-                          ? "Imported into Database"
-                          : `Import ${parsedCsvResult.readyCount} Leads into CRM`}
+                          ? "Stored in Database"
+                          : `Store ${parsedCsvResult.readyCount} Leads in Database`}
                       </span>
                     </button>
                   </div>
@@ -1803,6 +1954,42 @@ driver.quit()`;
                       ))}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Bottom Decision Bar */}
+                <div className="p-4 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <span className="text-xs text-neutral-500">
+                    {parsedCsvResult.readyCount} leads ready. Choose whether to store them in your CRM or discard.
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDiscardCsv}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100/60 cursor-pointer transition-colors"
+                    >
+                      <Ban className="h-3 w-3" />
+                      <span>Don&apos;t Save</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSavingCsvToDb || csvSavedSuccess}
+                      onClick={handleConfirmAndImportCsv}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-50 transition-colors"
+                    >
+                      {isSavingCsvToDb ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : csvSavedSuccess ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Database className="h-3.5 w-3.5" />
+                      )}
+                      <span>
+                        {csvSavedSuccess
+                          ? "Stored in Database"
+                          : `Store ${parsedCsvResult.readyCount} Leads in Database`}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>

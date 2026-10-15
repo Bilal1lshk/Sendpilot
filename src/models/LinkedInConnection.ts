@@ -1,6 +1,6 @@
 import mongoose, { Model, Schema } from "mongoose";
 
-export const CONNECTION_STATUSES = ["active", "expired", "revoked"] as const;
+export const CONNECTION_STATUSES = ["active", "expired", "revoked", "disconnected"] as const;
 export type ConnectionStatus = (typeof CONNECTION_STATUSES)[number];
 
 export interface ILinkedInConnection {
