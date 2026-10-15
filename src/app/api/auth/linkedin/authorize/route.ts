@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import connectDB from "@/lib/mongodb";
 import { migrateLegacyLinkedInConnections } from "@/lib/linkedin-connections";
 import { consumeRateLimit } from "@/lib/rate-limit";
+import { resolveLinkedInRedirectUri } from "@/lib/oauth-origin";
 
 /** GET /api/auth/linkedin/authorize
  *
@@ -34,13 +35,7 @@ export async function GET(req: Request) {
 
     const isManual = searchParams.get("mode") === "manual" || searchParams.get("dev") === "true";
     const clientId = process.env.LINKEDIN_CLIENT_ID || process.env.Linkedin_Client_ID;
-    const origin = req.headers.get("x-forwarded-host")
-      ? `${req.headers.get("x-forwarded-proto") || "https"}://${req.headers.get("x-forwarded-host")}`
-      : new URL(req.url).origin;
-    const defaultRedirect = process.env.LINKEDIN_REDIRECT_URI || `${origin}/api/auth/linkedin/callback`;
-    const redirectUri = isManual
-      ? (process.env.LINKEDIN_DEV_REDIRECT_URI || "https://www.linkedin.com/developers/tools/oauth/redirect")
-      : defaultRedirect;
+    const redirectUri = resolveLinkedInRedirectUri(req, { isManual });
     const scope = "openid profile email";
 
     if (!clientId || !redirectUri) {

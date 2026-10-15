@@ -6,6 +6,11 @@ import { cookies } from "next/headers";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { connectWithCredentials, migrateLegacyLinkedInConnections, disconnectOtherAccounts } from "@/lib/linkedin-connections";
 import LinkedInConnection from "@/models/LinkedInConnection";
+import {
+  resolveAppOrigin,
+  resolveLinkedInRedirectUri,
+  getLinkedInRedirectUriCandidates,
+} from "@/lib/oauth-origin";
 
 /**
  * GET /api/auth/linkedin/callback
@@ -18,10 +23,7 @@ export async function GET(req: Request) {
   const code = url.searchParams.get("code");
   const stateParam = url.searchParams.get("state");
   const error = url.searchParams.get("error");
-  const reqOrigin = req.headers.get("x-forwarded-host")
-    ? `${req.headers.get("x-forwarded-proto") || "https"}://${req.headers.get("x-forwarded-host")}`
-    : new URL(req.url).origin;
-  const baseUrl = process.env.NEXTAUTH_URL || reqOrigin || "http://localhost:3000";
+  const baseUrl = resolveAppOrigin(req);
 
   const returnError = (errorMessage: string) => {
     const errorUrl = `${baseUrl}/dashboard/accounts?error=${encodeURIComponent(errorMessage)}`;
@@ -117,45 +119,49 @@ export async function GET(req: Request) {
   try {
     const clientId = process.env.LINKEDIN_CLIENT_ID || process.env.Linkedin_Client_ID;
     const clientSecret = process.env.LINKEDIN_CLIENT_SECRET || process.env.Linkedin_Client_Secret;
-    const configuredRedirectUri =
-      process.env.LINKEDIN_REDIRECT_URI || `${baseUrl}/api/auth/linkedin/callback`;
+    const primaryRedirectUri = resolveLinkedInRedirectUri(req);
+    const candidateUris = getLinkedInRedirectUriCandidates(primaryRedirectUri, baseUrl);
 
     if (!clientId || !clientSecret) {
       return returnError("LinkedIn credentials missing in server environment (.env)");
     }
 
-    let tokenResponse = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: configuredRedirectUri,
-        client_id: clientId,
-        client_secret: clientSecret,
-      }),
-    });
+    let tokenResponse: Response | null = null;
+    let tokenData: any = null;
 
-    let tokenData = await tokenResponse.json();
+    for (const uri of candidateUris) {
+      try {
+        const resp = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            code,
+            redirect_uri: uri,
+            client_id: clientId.trim(),
+            client_secret: clientSecret.trim(),
+          }),
+        });
 
-    // Fallback: retry with dev redirect URI if configured and first attempt failed
-    const devRedirectUri = process.env.LINKEDIN_DEV_REDIRECT_URI;
-    if (!tokenResponse.ok && tokenData.error_description?.includes("redirect uri") && devRedirectUri) {
-      tokenResponse = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "authorization_code",
-          code,
-          redirect_uri: devRedirectUri,
-          client_id: clientId,
-          client_secret: clientSecret,
-        }),
-      });
-      tokenData = await tokenResponse.json();
+        const data = await resp.json().catch(() => ({}));
+        tokenResponse = resp;
+        tokenData = data;
+
+        if (resp.ok && data.access_token) {
+          break;
+        }
+
+        // If error is NOT a redirect uri mismatch, don't keep trying candidate URIs
+        const errDesc = String(data.error_description || data.error || "").toLowerCase();
+        if (!errDesc.includes("redirect_uri") && !errDesc.includes("redirect uri")) {
+          break;
+        }
+      } catch {
+        // try next candidate uri
+      }
     }
 
-    if (!tokenResponse.ok || !tokenData.access_token) {
+    if (!tokenResponse?.ok || !tokenData?.access_token) {
       return returnError("Failed to authorize LinkedIn connection. Code may have expired.");
     }
 
