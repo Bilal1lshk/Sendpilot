@@ -10,6 +10,7 @@ async function safeWorkspaceResponse(workspace: IWorkspace, userId: string) {
   return {
     id: String(workspace._id),
     name: value.name,
+    onboardingCompleted: Boolean(value.onboardingCompleted),
     step1: value.step1,
     step2: {
       status: value.step2?.status || "not_started",
@@ -94,6 +95,12 @@ export async function POST(req: Request) {
     }
     if (body.step4) {
       workspace.step4 = { ...workspace.step4, ...body.step4 };
+    }
+    if (typeof body.name === "string" && body.name.trim()) {
+      workspace.name = body.name.trim();
+    }
+    if (body.onboardingCompleted !== undefined) {
+      workspace.onboardingCompleted = Boolean(body.onboardingCompleted);
     }
 
     await workspace.save();

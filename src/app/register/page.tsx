@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { UserPlus, Loader2, Mail, Lock, User } from "lucide-react";
@@ -30,8 +31,21 @@ export default function RegisterPage() {
       if (!res.ok) {
         toast.error(data.error || "Failed to create account");
       } else {
-        toast.success("Account created! Please sign in.");
-        router.push("/login");
+        // Automatically sign in the new user immediately
+        const signInResult = await signIn("credentials", {
+          email,
+          password,
+          redirect: false,
+        });
+
+        if (signInResult?.error) {
+          toast.success("Account created! Please sign in.");
+          router.push("/login");
+        } else {
+          toast.success("Account created! Let's set up your first campaign.");
+          router.push("/get-started");
+          router.refresh();
+        }
       }
     } catch {
       toast.error("An error occurred during registration");

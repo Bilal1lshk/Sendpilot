@@ -51,6 +51,22 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
       setCollapsed(saved === "true");
     }
 
+    // Load active workspace name
+    const cachedWs = localStorage.getItem("sendpilot_current_workspace");
+    if (cachedWs) {
+      setCurrentWorkspace(cachedWs);
+    }
+
+    fetch("/api/workspace/onboarding")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.workspace?.name) {
+          setCurrentWorkspace(data.workspace.name);
+          localStorage.setItem("sendpilot_current_workspace", data.workspace.name);
+        }
+      })
+      .catch(() => {});
+
     // Fetch dynamic live metrics
     fetch("/api/dashboard/overview")
       .then((res) => (res.ok ? res.json() : null))
@@ -220,7 +236,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
                       ))}
                       <div className="my-1 border-t border-neutral-100 dark:border-neutral-800" />
                       <Link
-                        href="/get-started"
+                        href="/get-started/workspace"
                         onClick={() => setSwitcherOpen(false)}
                         className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                       >

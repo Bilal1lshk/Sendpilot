@@ -11,7 +11,7 @@ import {
   fetchOnboardingState,
   saveOnboardingStep,
 } from "@/lib/onboarding-client";
-import { OnboardingState, StepStatus } from "@/types/onboarding";
+import { OnboardingState, StepStatus, OnboardingStepKey } from "@/types/onboarding";
 import { pageVariants, cardVariants } from "@/lib/motion";
 
 export default function GetStartedPage() {
@@ -58,21 +58,21 @@ export default function GetStartedPage() {
     description: string;
     status: StepStatus;
     href: string;
-    key: keyof OnboardingState;
+    key: string;
   }> = [
     {
       stepNumber: 1,
-      title: "Create Your Account",
+      title: "Set Up Your Profile",
       description:
-        "Your workspace is set up. Add your details so outreach looks like you.",
+        "Add your sender details so outreach copy matches your voice.",
       status: state.step1.status,
       href: "/get-started/account",
       key: "step1",
     },
     {
       stepNumber: 2,
-      title: "Connect Your LinkedIn Profiles",
-      description: "Add yours and your teammates' profiles in seconds.",
+      title: "Connect Your LinkedIn Profile",
+      description: "Connect your sender profile to deliver outreach safely.",
       status: state.step2.status,
       href: "/get-started/connect",
       key: "step2",
@@ -88,29 +88,42 @@ export default function GetStartedPage() {
     {
       stepNumber: 4,
       title: "Start Your First Campaign",
-      description: "Automate outreach, manage channels and track replies.",
+      description: "Automate outreach, manage sequence channels and review AI copy.",
       status: state.step4.status,
       href: "/get-started/campaign",
       key: "step4",
     },
+    {
+      stepNumber: 5,
+      title: "Create Your Workspace",
+      description: "Name and activate the dedicated workspace you will work in.",
+      status: (state.onboardingCompleted
+        ? "completed"
+        : state.step4.status === "completed"
+        ? "in_progress"
+        : "not_started") as StepStatus,
+      href: "/get-started/workspace",
+      key: "workspace",
+    },
   ];
 
   const completedCount = stepsList.filter((s) => s.status === "completed").length;
-  const allFinishedOrSkipped = stepsList.every(
-    (s) => s.status === "completed" || s.status === "skipped"
-  );
+  const isWorkspaceReady = Boolean(state.onboardingCompleted);
+  const campaignLaunched = state.step4.status === "completed";
 
   const firstUnfinishedIndex = stepsList.findIndex(
     (s) => s.status !== "completed" && s.status !== "skipped"
   );
 
-  const handleResumeStep = async (key: keyof OnboardingState) => {
-    const updated = await saveOnboardingStep(key, "not_started");
+  const handleResumeStep = async (key: string) => {
+    if (key === "workspace") return;
+    const updated = await saveOnboardingStep(key as OnboardingStepKey, "not_started");
     setState(updated);
   };
 
-  const handleSkipStep = async (key: keyof OnboardingState) => {
-    const updated = await saveOnboardingStep(key, "skipped");
+  const handleSkipStep = async (key: string) => {
+    if (key === "workspace") return;
+    const updated = await saveOnboardingStep(key as OnboardingStepKey, "skipped");
     setState(updated);
   };
 
@@ -130,12 +143,12 @@ export default function GetStartedPage() {
                 Get started
               </h1>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                Four quick steps to activate your LinkedIn outreach workspace.
+                Five steps to launch your first campaign and set up your workspace.
               </p>
             </div>
 
             <Link
-              href="/dashboard"
+              href={isWorkspaceReady ? "/dashboard" : "/get-started/workspace"}
               className="inline-flex items-center gap-1.5 text-xs text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 transition-colors"
             >
               <LayoutDashboard className="h-3.5 w-3.5" />
@@ -143,13 +156,47 @@ export default function GetStartedPage() {
             </Link>
           </div>
 
-          {/* Progress Bar Component with smooth 500ms fill */}
-          <ProgressBar currentStep={completedCount} totalSteps={4} />
+          {/* Progress Bar Component */}
+          <ProgressBar currentStep={completedCount} totalSteps={5} />
         </motion.div>
 
-        {/* All Set Card: "You're all set, {firstName}." with single button to dashboard */}
+        {/* Campaign Done, Workspace Required Banner */}
         <AnimatePresence>
-          {allFinishedOrSkipped && (
+          {campaignLaunched && !isWorkspaceReady && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.25 }}
+              className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 dark:bg-emerald-950/20 p-6 shadow-xs"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-2xs">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                      Campaign launched! Final Step: Create Your Workspace
+                    </h3>
+                    <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5">
+                      Name and create your workspace to unlock your dashboard and monitor real-time campaign replies.
+                    </p>
+                  </div>
+                </div>
+
+                <Link
+                  href="/get-started/workspace"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white px-5 py-2.5 text-xs font-semibold shadow-xs transition-all shrink-0 cursor-pointer"
+                >
+                  <span>Create Workspace</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+            </motion.div>
+          )}
+
+          {isWorkspaceReady && (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -167,7 +214,7 @@ export default function GetStartedPage() {
                       You&apos;re all set, {firstName}.
                     </h3>
                     <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5">
-                      Your workspace is ready. You can now monitor campaigns and daily tasks.
+                      Your workspace &quot;{state.workspaceName || "SendPilot"}&quot; is active. Your first campaign is ready.
                     </p>
                   </div>
                 </div>
@@ -197,10 +244,16 @@ export default function GetStartedPage() {
                 status={step.status}
                 isCurrent={isCurrent}
                 actionHref={step.href}
-                actionLabel={step.stepNumber === 1 ? "Set up account" : "Continue"}
+                actionLabel={
+                  step.stepNumber === 1
+                    ? "Set up account"
+                    : step.stepNumber === 5
+                    ? "Create workspace"
+                    : "Continue"
+                }
                 onResume={() => handleResumeStep(step.key)}
                 onSkip={
-                  step.status !== "completed" && step.status !== "skipped"
+                  step.stepNumber !== 5 && step.status !== "completed" && step.status !== "skipped"
                     ? () => handleSkipStep(step.key)
                     : undefined
                 }

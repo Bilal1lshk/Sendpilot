@@ -1,4 +1,4 @@
-import { OnboardingState, StepStatus } from "@/types/onboarding";
+import { OnboardingState, StepStatus, OnboardingStepKey } from "@/types/onboarding";
 
 interface OnboardingConnection {
   id: string;
@@ -99,6 +99,8 @@ export async function fetchOnboardingState(): Promise<OnboardingState> {
       const json = await res.json();
       if (json.workspace) {
         const merged = sanitizeOnboardingState({
+          workspaceName: json.workspace.name,
+          onboardingCompleted: Boolean(json.workspace.onboardingCompleted),
           step1: json.workspace.step1 || DEFAULT_ONBOARDING_STATE.step1,
           step2: json.workspace.step2 || DEFAULT_ONBOARDING_STATE.step2,
           step3: json.workspace.step3 || DEFAULT_ONBOARDING_STATE.step3,
@@ -106,6 +108,9 @@ export async function fetchOnboardingState(): Promise<OnboardingState> {
         });
         if (typeof window !== "undefined") {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+          if (json.workspace.name) {
+            localStorage.setItem("sendpilot_current_workspace", json.workspace.name);
+          }
         }
         return merged;
       }
@@ -131,7 +136,33 @@ export async function fetchOnboardingState(): Promise<OnboardingState> {
   return DEFAULT_ONBOARDING_STATE;
 }
 
-export async function saveOnboardingStep<K extends keyof OnboardingState>(
+export async function saveWorkspaceSetup(name: string): Promise<OnboardingState> {
+  const current = await fetchOnboardingState();
+  const updatedState: OnboardingState = {
+    ...current,
+    workspaceName: name.trim(),
+    onboardingCompleted: true,
+  };
+
+  if (typeof window !== "undefined") {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedState));
+    localStorage.setItem("sendpilot_current_workspace", name.trim());
+  }
+
+  try {
+    await fetch("/api/workspace/onboarding", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), onboardingCompleted: true }),
+    });
+  } catch {
+    // Non-blocking sync failure fallback handled in client cache
+  }
+
+  return updatedState;
+}
+
+export async function saveOnboardingStep<K extends OnboardingStepKey>(
   stepKey: K,
   status: StepStatus,
   data?: Partial<OnboardingState[K]["data"]>

@@ -52,7 +52,7 @@ export default function CampaignStepPage() {
     toast.success("First outreach campaign launched!");
   };
 
-  const handleFinishOnboarding = async () => {
+  const handleProceedToWorkspace = async () => {
     setIsSaving(true);
     try {
       if (!campaignData || campaignData.status !== "launched") {
@@ -61,8 +61,8 @@ export default function CampaignStepPage() {
           status: "launched",
         });
       }
-      toast.success("Onboarding complete! Welcome to SendPilot.");
-      router.push("/dashboard");
+      toast.success("Campaign configured! Now create your workspace.");
+      router.push("/get-started/workspace");
     } finally {
       setIsSaving(false);
     }
@@ -134,18 +134,18 @@ export default function CampaignStepPage() {
             <button
               type="button"
               disabled={isSaving}
-              onClick={handleFinishOnboarding}
+              onClick={handleProceedToWorkspace}
               className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
             >
               {isSaving ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Completing...</span>
+                  <span>Saving...</span>
                 </>
               ) : (
                 <>
-                  <LayoutDashboard className="h-3.5 w-3.5" />
-                  <span>Go to Dashboard</span>
+                  <span>Next: Create Workspace</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
                 </>
               )}
             </button>

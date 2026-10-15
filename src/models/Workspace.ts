@@ -85,6 +85,7 @@ export interface IWorkspace extends Document {
   };
   /** Set once legacy step3/step4 data has been copied into Lead/Campaign collections */
   crmMigratedAt?: Date;
+  onboardingCompleted?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -93,6 +94,7 @@ const WorkspaceSchema: Schema<IWorkspace> = new Schema(
   {
     userId: { type: String, index: true },
     name: { type: String, default: "Default Workspace" },
+    onboardingCompleted: { type: Boolean, default: false },
     step1: {
       status: { type: String, default: "not_started" },
       data: {

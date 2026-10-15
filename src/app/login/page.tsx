@@ -224,10 +224,7 @@ export default function LoginPage() {
 
         {/* Top Header Badge & Tagline */}
         <div className="relative z-10 space-y-3 max-w-md">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs font-semibold tracking-wide backdrop-blur-md">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Global Outreach Network
-          </div>
+         
 
           <h2 className="text-3xl xl:text-4xl font-semibold tracking-tight text-white leading-tight">
             Reach verified leads across <span className="text-emerald-400">160+ countries</span>.

@@ -73,7 +73,11 @@ export interface CampaignStepData {
   };
 }
 
+export type OnboardingStepKey = "step1" | "step2" | "step3" | "step4";
+
 export interface OnboardingState {
+  workspaceName?: string;
+  onboardingCompleted?: boolean;
   step1: {
     status: StepStatus;
     data: AccountStepData;
