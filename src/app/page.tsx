@@ -5,6 +5,7 @@ import { ProblemSection } from "@/components/landing/ProblemSection";
 import { SolutionSection } from "@/components/landing/SolutionSection";
 import { FeaturesSection } from "@/components/landing/FeaturesSection";
 import { AiAssistantSection } from "@/components/landing/AiAssistantSection";
+import { ProgressiveBlurShowcase } from "@/components/landing/ProgressiveBlurShowcase";
 import { HowItWorksSection } from "@/components/landing/HowItWorksSection";
 import { LeadProfileShowcase } from "@/components/landing/LeadProfileShowcase";
 import { PricingSection } from "@/components/landing/PricingSection";
@@ -35,6 +36,9 @@ export default function HomePage() {
 
         {/* AI Sales Copilot Showcase */}
         <AiAssistantSection />
+
+        {/* Live Outbound Stream with Progressive Blur & Motion */}
+        <ProgressiveBlurShowcase />
 
         {/* How It Works 4-Step Timeline */}
         <HowItWorksSection />

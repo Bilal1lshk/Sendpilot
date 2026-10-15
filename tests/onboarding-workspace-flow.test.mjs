@@ -38,3 +38,4 @@ test("Workspace model initializes with onboardingCompleted false", async () => {
   assert.equal(reloaded?.name, "Acme Outbound HQ");
   assert.equal(reloaded?.onboardingCompleted, true);
 });
+

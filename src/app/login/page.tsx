@@ -5,7 +5,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2, Mail, Lock, AlertCircle, Eye, EyeOff, Globe2, ShieldCheck, Zap } from "lucide-react";
+import { Loader2, Mail, Lock, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
 import { Globe } from "@/components/ui/globe";
 
@@ -70,9 +70,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-neutral-50 dark:bg-[#0c0d0e] text-neutral-900 dark:text-neutral-50 selection:bg-neutral-900 selection:text-white dark:selection:bg-white dark:selection:text-black">
+    <div className="h-screen max-h-screen w-full flex overflow-hidden bg-neutral-50 dark:bg-[#0c0d0e] text-neutral-900 dark:text-neutral-50 selection:bg-neutral-900 selection:text-white dark:selection:bg-white dark:selection:text-black">
       {/* ── Left Column: Clean & Unobstructed Sign In Form ─────────────── */}
-      <div className="w-full lg:w-[48%] xl:w-[44%] min-h-screen flex flex-col justify-between p-6 sm:p-10 lg:p-12 xl:p-16 z-10 bg-white dark:bg-[#0f1112] border-r border-neutral-200/80 dark:border-neutral-800/80">
+      <div className="w-full lg:w-[48%] xl:w-[44%] h-full flex flex-col justify-between p-6 sm:p-8 lg:p-10 xl:p-12 z-10 bg-white dark:bg-[#0f1112] border-r border-neutral-200/80 dark:border-neutral-800/80 overflow-y-auto lg:overflow-hidden">
         {/* Top bar: Brand */}
         <div className="flex items-center justify-between">
           <Link
@@ -208,10 +208,10 @@ export default function LoginPage() {
       </div>
 
       {/* ── Right Column: Interactive 3D Globe Showcase ─────────────── */}
-      <div className="hidden lg:flex flex-1 relative flex-col justify-between p-10 xl:p-14 overflow-hidden bg-[#070809] select-none">
+      <div className="hidden lg:flex flex-1 h-full relative flex-col justify-between p-8 xl:p-12 overflow-hidden bg-[#070809] select-none">
         {/* Ambient radial glow background */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none" />
-        <div className="absolute -top-24 -right-24 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] bg-emerald-500/10 rounded-full blur-[130px] pointer-events-none" />
+        <div className="absolute -top-24 -right-24 w-80 h-80 bg-cyan-500/10 rounded-full blur-[110px] pointer-events-none" />
 
         {/* Subtle grid pattern overlay */}
         <div
@@ -223,53 +223,20 @@ export default function LoginPage() {
         />
 
         {/* Top Header Badge & Tagline */}
-        <div className="relative z-10 space-y-3 max-w-md">
-         
-
-          <h2 className="text-3xl xl:text-4xl font-semibold tracking-tight text-white leading-tight">
+        <div className="relative z-10 space-y-2.5 max-w-md shrink-0">
+          <h2 className="text-2xl xl:text-3xl font-semibold tracking-tight text-white leading-tight">
             Reach verified leads across <span className="text-emerald-400">160+ countries</span>.
           </h2>
 
-          <p className="text-sm text-neutral-400 leading-relaxed">
+          <p className="text-xs xl:text-sm text-neutral-400 leading-relaxed">
             Automate personalized outreach with human-in-the-loop approvals, native CRM sync, and safe delivery pacing.
           </p>
         </div>
 
         {/* Center: Interactive 3D Cobe Globe */}
-        <div className="relative z-10 my-auto py-4 flex flex-col items-center justify-center">
-          <div className="relative w-full max-w-[420px] xl:max-w-[480px] aspect-square flex items-center justify-center">
+        <div className="relative z-10 flex-1 min-h-0 flex items-center justify-center py-2">
+          <div className="relative w-full max-w-[340px] xl:max-w-[420px] aspect-square flex items-center justify-center">
             <Globe className="w-full h-full" />
-          </div>
-
-          <p className="text-xs text-neutral-500 tracking-wide mt-2 flex items-center gap-1.5">
-            <Globe2 className="h-3.5 w-3.5 text-emerald-500/80" />
-            <span>Click and drag to rotate the interactive globe</span>
-          </p>
-        </div>
-
-        {/* Bottom stats & trust strip */}
-        <div className="relative z-10 grid grid-cols-3 gap-4 pt-6 border-t border-neutral-800/80">
-          <div className="space-y-0.5">
-            <div className="text-xl xl:text-2xl font-bold text-white tracking-tight flex items-center gap-1">
-              <span>99.4%</span>
-            </div>
-            <div className="text-xs text-neutral-400 flex items-center gap-1">
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-              <span>Inbox Delivery</span>
-            </div>
-          </div>
-
-          <div className="space-y-0.5">
-            <div className="text-xl xl:text-2xl font-bold text-white tracking-tight">12k+</div>
-            <div className="text-xs text-neutral-400 flex items-center gap-1">
-              <Zap className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-              <span>Active Leads</span>
-            </div>
-          </div>
-
-          <div className="space-y-0.5">
-            <div className="text-xl xl:text-2xl font-bold text-white tracking-tight">&lt; 2 min</div>
-            <div className="text-xs text-neutral-400">Campaign Setup</div>
           </div>
         </div>
       </div>
