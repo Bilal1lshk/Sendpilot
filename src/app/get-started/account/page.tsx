@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -46,7 +46,7 @@ const WORKING_HOURS_OPTIONS = [
 
 export default function AccountStepPage() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -62,34 +62,62 @@ export default function AccountStepPage() {
   });
 
   const [isAlreadyCompleted, setIsAlreadyCompleted] = useState<boolean>(false);
+  const isInitializedRef = useRef(false);
 
   useEffect(() => {
+    if (isInitializedRef.current) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    if (sessionStatus === "loading") {
+      timeoutId = setTimeout(() => {
+        if (!isInitializedRef.current) {
+          isInitializedRef.current = true;
+          init();
+        }
+      }, 2500);
+      return () => clearTimeout(timeoutId);
+    }
+
+    isInitializedRef.current = true;
+    init();
+
     async function init() {
       try {
         const state = await fetchOnboardingState();
         setIsAlreadyCompleted(state.step1.status === "completed");
 
-        // Prefill from existing step data, or fallback to session
-        setFormData({
+        // Prefill from existing step data, or fallback to session - never overwrite user typing
+        setFormData((prev) => ({
           fullName:
-            state.step1.data?.fullName || session?.user?.name || "",
-          jobTitle: state.step1.data?.jobTitle || "",
-          companyName: state.step1.data?.companyName || "",
-          companyWebsite: state.step1.data?.companyWebsite || "",
-          offer: state.step1.data?.offer || "",
+            prev.fullName ||
+            state.step1.data?.fullName ||
+            session?.user?.name ||
+            "",
+          jobTitle: prev.jobTitle || state.step1.data?.jobTitle || "",
+          companyName:
+            prev.companyName || state.step1.data?.companyName || "",
+          companyWebsite:
+            prev.companyWebsite || state.step1.data?.companyWebsite || "",
+          offer: prev.offer || state.step1.data?.offer || "",
           timezone:
-            state.step1.data?.timezone ||
-            "America/New_York (Eastern Time - US)",
+            prev.timezone &&
+            prev.timezone !== "America/New_York (Eastern Time - US)"
+              ? prev.timezone
+              : state.step1.data?.timezone ||
+                "America/New_York (Eastern Time - US)",
           workingHours:
-            state.step1.data?.workingHours ||
-            "9:00 AM - 5:00 PM (Monday - Friday)",
-        });
+            prev.workingHours &&
+            prev.workingHours !== "9:00 AM - 5:00 PM (Monday - Friday)"
+              ? prev.workingHours
+              : state.step1.data?.workingHours ||
+                "9:00 AM - 5:00 PM (Monday - Friday)",
+        }));
       } finally {
         setIsLoading(false);
       }
     }
-    init();
-  }, [session]);
+  }, [sessionStatus, session]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,7 +195,7 @@ export default function AccountStepPage() {
                     required
                     value={formData.fullName}
                     onChange={(e) =>
-                      setFormData({ ...formData, fullName: e.target.value })
+                      setFormData((prev) => ({ ...prev, fullName: e.target.value }))
                     }
                     placeholder="e.g. Alex Morgan"
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-9 pr-3 py-2 text-xs outline-none focus:border-emerald-500 transition-colors"
@@ -186,7 +214,7 @@ export default function AccountStepPage() {
                     required
                     value={formData.jobTitle}
                     onChange={(e) =>
-                      setFormData({ ...formData, jobTitle: e.target.value })
+                      setFormData((prev) => ({ ...prev, jobTitle: e.target.value }))
                     }
                     placeholder="e.g. VP of Business Development"
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-9 pr-3 py-2 text-xs outline-none focus:border-emerald-500 transition-colors"
@@ -208,7 +236,7 @@ export default function AccountStepPage() {
                     required
                     value={formData.companyName}
                     onChange={(e) =>
-                      setFormData({ ...formData, companyName: e.target.value })
+                      setFormData((prev) => ({ ...prev, companyName: e.target.value }))
                     }
                     placeholder="e.g. SendPilot Technologies"
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-9 pr-3 py-2 text-xs outline-none focus:border-emerald-500 transition-colors"
@@ -226,10 +254,10 @@ export default function AccountStepPage() {
                     type="url"
                     value={formData.companyWebsite}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
+                      setFormData((prev) => ({
+                        ...prev,
                         companyWebsite: e.target.value,
-                      })
+                      }))
                     }
                     placeholder="https://sendpilot.com"
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-9 pr-3 py-2 text-xs outline-none focus:border-emerald-500 transition-colors"
@@ -257,7 +285,7 @@ export default function AccountStepPage() {
                 maxLength={160}
                 value={formData.offer}
                 onChange={(e) =>
-                  setFormData({ ...formData, offer: e.target.value })
+                  setFormData((prev) => ({ ...prev, offer: e.target.value }))
                 }
                 placeholder="We help B2B software companies turn LinkedIn connections into qualified demos through human-assisted outreach."
                 className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-3 text-xs outline-none focus:border-emerald-500 transition-colors leading-relaxed"
@@ -276,7 +304,7 @@ export default function AccountStepPage() {
                 <select
                   value={formData.timezone}
                   onChange={(e) =>
-                    setFormData({ ...formData, timezone: e.target.value })
+                    setFormData((prev) => ({ ...prev, timezone: e.target.value }))
                   }
                   className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-3 py-2 text-xs outline-none focus:border-emerald-500"
                 >
@@ -297,7 +325,7 @@ export default function AccountStepPage() {
                   <select
                     value={formData.workingHours}
                     onChange={(e) =>
-                      setFormData({ ...formData, workingHours: e.target.value })
+                      setFormData((prev) => ({ ...prev, workingHours: e.target.value }))
                     }
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-9 pr-3 py-2 text-xs outline-none focus:border-emerald-500"
                   >

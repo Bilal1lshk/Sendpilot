@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -46,7 +46,7 @@ const GOAL_OPTIONS = [
 
 export default function WorkspaceStepPage() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,8 +56,26 @@ export default function WorkspaceStepPage() {
   const [teamSize, setTeamSize] = useState("solo");
   const [primaryGoal, setPrimaryGoal] = useState("Book sales calls & demos");
   const [companyName, setCompanyName] = useState("");
+  const isInitializedRef = useRef(false);
 
   useEffect(() => {
+    if (isInitializedRef.current) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    if (sessionStatus === "loading") {
+      timeoutId = setTimeout(() => {
+        if (!isInitializedRef.current) {
+          isInitializedRef.current = true;
+          init();
+        }
+      }, 2500);
+      return () => clearTimeout(timeoutId);
+    }
+
+    isInitializedRef.current = true;
+    init();
+
     async function init() {
       try {
         const state = await fetchOnboardingState();
@@ -65,22 +83,24 @@ export default function WorkspaceStepPage() {
         const userName = session?.user?.name || state.step1?.data?.fullName || "";
         setCompanyName(compName);
 
-        // Prepopulate workspace name
-        if (state.workspaceName && state.workspaceName !== "Default Workspace") {
-          setWorkspaceName(state.workspaceName);
-        } else if (compName) {
-          setWorkspaceName(`${compName} Outbound`);
-        } else if (userName) {
-          setWorkspaceName(`${userName.split(" ")[0]}'s Workspace`);
-        } else {
-          setWorkspaceName("Growth Engine");
-        }
+        // Prepopulate workspace name only if not already typed
+        setWorkspaceName((prev) => {
+          if (prev.trim()) return prev;
+          if (state.workspaceName && state.workspaceName !== "Default Workspace") {
+            return state.workspaceName;
+          } else if (compName) {
+            return `${compName} Outbound`;
+          } else if (userName) {
+            return `${userName.split(" ")[0]}'s Workspace`;
+          } else {
+            return "Growth Engine";
+          }
+        });
       } finally {
         setIsLoading(false);
       }
     }
-    init();
-  }, [session]);
+  }, [sessionStatus, session]);
 
   const handleSuggestionClick = (suggested: string) => {
     setWorkspaceName(suggested);
