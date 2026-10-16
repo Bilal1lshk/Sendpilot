@@ -5,6 +5,7 @@ import LinkedInConnection from "@/models/LinkedInConnection";
 import Lead from "@/models/Lead";
 import Campaign from "@/models/Campaign";
 import { requireUser, apiError } from "@/lib/crm";
+import { getDbCache, setDbCache, invalidateDbCache } from "@/lib/db-cache";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_ROLES = ["Admin", "Member", "Viewer"] as const;
@@ -178,8 +179,13 @@ export async function GET() {
   if (ctx instanceof NextResponse) return ctx;
 
   try {
+    const cached = getDbCache(ctx.userId, "settings");
+    if (cached) {
+      return NextResponse.json({ success: true, settings: cached });
+    }
     const workspace = await ensureWorkspace(ctx.userId, ctx.userName);
     const settings = await buildSettingsPayload(workspace, ctx.userId);
+    setDbCache(ctx.userId, "settings", settings);
     return NextResponse.json({ success: true, settings });
   } catch (error) {
     return apiError(error, "Failed to load workspace settings");
@@ -243,7 +249,7 @@ export async function PUT(req: Request) {
         step1Changed = true;
       }
       if (typeof p.companyWebsite === "string") {
-        nextStep1Data.companyWebsite = p.companyWebsite.trim().slice(0, 200);
+        nextStep1Data.companyWebsite = p.companyWebsite.trim().slice(0, 160);
         step1Changed = true;
       }
       if (typeof p.offer === "string") {
@@ -261,7 +267,9 @@ export async function PUT(req: Request) {
     }
 
     await workspace.save();
+    invalidateDbCache(ctx.userId, ["settings", "overview", "onboarding"]);
     const settings = await buildSettingsPayload(workspace, ctx.userId);
+    setDbCache(ctx.userId, "settings", settings);
     return NextResponse.json({ success: true, settings });
   } catch (error) {
     return apiError(error, "Failed to save workspace settings");
@@ -336,7 +344,9 @@ export async function POST(req: Request) {
     workspace.markModified("step2");
     await workspace.save();
 
+    invalidateDbCache(ctx.userId, ["settings", "overview", "onboarding"]);
     const settings = await buildSettingsPayload(workspace, ctx.userId);
+    setDbCache(ctx.userId, "settings", settings);
     return NextResponse.json({ success: true, settings });
   } catch (error) {
     return apiError(error, "Failed to invite workspace member");
@@ -370,7 +380,9 @@ export async function PATCH(req: Request) {
       };
       workspace.markModified("step1");
       await workspace.save();
+      invalidateDbCache(ctx.userId, ["settings", "overview", "onboarding"]);
       const settings = await buildSettingsPayload(workspace, ctx.userId);
+      setDbCache(ctx.userId, "settings", settings);
       return NextResponse.json({ success: true, settings });
     }
 
@@ -418,7 +430,9 @@ export async function PATCH(req: Request) {
     workspace.markModified("step2");
     await workspace.save();
 
+    invalidateDbCache(ctx.userId, ["settings", "overview", "onboarding"]);
     const settings = await buildSettingsPayload(workspace, ctx.userId);
+    setDbCache(ctx.userId, "settings", settings);
     return NextResponse.json({ success: true, settings });
   } catch (error) {
     return apiError(error, "Failed to update workspace member");
@@ -466,7 +480,9 @@ export async function DELETE(req: Request) {
     workspace.markModified("step2");
     await workspace.save();
 
+    invalidateDbCache(ctx.userId, ["settings", "overview", "onboarding"]);
     const settings = await buildSettingsPayload(workspace, ctx.userId);
+    setDbCache(ctx.userId, "settings", settings);
     return NextResponse.json({ success: true, settings });
   } catch (error) {
     return apiError(error, "Failed to remove workspace member");

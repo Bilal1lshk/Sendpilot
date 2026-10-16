@@ -1,6 +1,10 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 
-export type VerificationPurpose = "login_otp" | "reset_password";
+export type VerificationPurpose =
+  | "login_otp"
+  | "reset_password"
+  | "verification"
+  | "email_verification";
 
 export interface IVerificationToken extends Document {
   email: string;
@@ -18,7 +22,7 @@ const VerificationTokenSchema: Schema<IVerificationToken> = new Schema(
     purpose: {
       type: String,
       required: true,
-      enum: ["login_otp", "reset_password"],
+      enum: ["login_otp", "reset_password", "verification", "email_verification"],
       index: true,
     },
     codeHash: { type: String, required: true },

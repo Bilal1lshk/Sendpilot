@@ -3,12 +3,18 @@ import Workspace from "@/models/Workspace";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import { requireUser, apiError } from "@/lib/crm";
 import { toSafeConnection } from "@/lib/linkedin-connection-dto";
+import { getDbCache, setDbCache } from "@/lib/db-cache";
 
 export async function GET() {
   const ctx = await requireUser();
   if (ctx instanceof NextResponse) return ctx;
 
   try {
+    const cached = getDbCache<Record<string, unknown>>(ctx.userId, "overview");
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+
     const [workspace, connectionRows] = await Promise.all([
       Workspace.findOne({ userId: ctx.userId }),
       LinkedInConnection.find({ userId: ctx.userId }),
@@ -55,7 +61,7 @@ export async function GET() {
     const acceptRate = sent > 0 ? Math.round((accepted / sent) * 100) : (totalLeads > 0 ? 45 : 0);
     const replyRate = accepted > 0 ? Math.round((replied / accepted) * 100) : (totalLeads > 0 ? 28 : 0);
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       hasRealData: totalLeads > 0 || connectedAccountsCount > 0,
       metrics: {
@@ -74,7 +80,10 @@ export async function GET() {
       tasks: realTasks,
       accounts,
       recentLeads: leads.slice(0, 5),
-    });
+    };
+
+    setDbCache(ctx.userId, "overview", payload);
+    return NextResponse.json(payload);
   } catch (error) {
     return apiError(error, "Failed to fetch dashboard metrics");
   }

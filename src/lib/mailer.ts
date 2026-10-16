@@ -1,11 +1,24 @@
 import { createHmac, randomInt } from "crypto";
 import nodemailer from "nodemailer";
-import VerificationToken, { VerificationPurpose } from "@/models/VerificationToken";
+import VerificationToken, { type VerificationPurpose } from "@/models/VerificationToken";
 
+const DEFAULT_SMTP_HOST = "mail.mbstack.net";
+const DEFAULT_SMTP_PORT = 465;
 const DEFAULT_SMTP_USER = "contact@mbstack.net";
+
+export const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || DEFAULT_SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || DEFAULT_SMTP_PORT),
+  secure: Number(process.env.SMTP_PORT || DEFAULT_SMTP_PORT) === 465, // true for 465, false for 587
+  auth: {
+    user: process.env.SMTP_USER || DEFAULT_SMTP_USER,
+    pass: process.env.SMTP_PASS || process.env.EMAIL_SERVER_PASSWORD || "",
+  },
+});
 
 function getOtpSecret(): string {
   return (
+    process.env.OTP_SECRET ||
     process.env.COOKIE_ENC_KEY ||
     process.env.AUTH_SECRET ||
     process.env.NEXTAUTH_SECRET ||
@@ -25,7 +38,7 @@ export function generateSixDigitOtp(): string {
 
 export async function issueOtpCode(
   email: string,
-  purpose: VerificationPurpose,
+  purpose: VerificationPurpose = "login_otp",
   ttlMinutes = 10
 ): Promise<{ code: string; expiresAt: Date }> {
   const normalizedEmail = email.trim().toLowerCase();
@@ -47,7 +60,7 @@ export async function issueOtpCode(
 
 export async function verifyOtpCode(
   email: string,
-  purpose: VerificationPurpose,
+  purpose: VerificationPurpose = "login_otp",
   code: string,
   consume = true
 ): Promise<{ valid: boolean; error?: string }> {
@@ -108,63 +121,56 @@ export function isSmtpConfigured(): boolean {
   return Boolean(pass && pass.trim() && !pass.includes("your_"));
 }
 
-export async function sendOtpEmail({
-  to,
-  code,
-  purpose,
-  userName,
-}: {
+export type SendOtpOptions = {
   to: string;
   code: string;
-  purpose: VerificationPurpose;
+  purpose?: VerificationPurpose;
   userName?: string;
-}): Promise<{ sent: boolean; deliveryMode: "smtp" | "preview"; previewCode?: string }> {
+};
+
+export async function sendOtpEmail(
+  toOrOptions: string | SendOtpOptions,
+  maybeCode?: string
+): Promise<{ sent: boolean; deliveryMode: "smtp" | "preview"; previewCode?: string }> {
+  let to: string;
+  let code: string;
+  let userName: string | undefined;
+
+  if (typeof toOrOptions === "string") {
+    to = toOrOptions.trim().toLowerCase();
+    code = (maybeCode || "").trim();
+  } else {
+    to = toOrOptions.to.trim().toLowerCase();
+    code = toOrOptions.code.trim();
+    userName = toOrOptions.userName;
+  }
+
   const smtpUser = (process.env.SMTP_USER || DEFAULT_SMTP_USER).trim();
-  const smtpPass = (process.env.SMTP_PASS || process.env.EMAIL_SERVER_PASSWORD || "").trim();
-  const smtpHost = (process.env.SMTP_HOST || "mail.mbstack.net").trim();
-  const smtpPort = Number(process.env.SMTP_PORT || 465);
-  const smtpSecure =
-    process.env.SMTP_SECURE !== undefined
-      ? process.env.SMTP_SECURE === "true"
-      : smtpPort === 465;
-  const fromAddress = process.env.SMTP_FROM || `SendPilot Security <${smtpUser}>`;
+  const fromAddress = process.env.SMTP_FROM || `"MB Stack" <${smtpUser}>`;
 
-  const isLogin = purpose === "login_otp";
-  const subject = isLogin
-    ? `${code} is your SendPilot sign-in verification code`
-    : `${code} is your SendPilot password reset code`;
-
-  const title = isLogin ? "Verify your sign-in" : "Reset your password";
-  const description = isLogin
-    ? "Use the 6-digit verification code below to complete signing in to your SendPilot workspace."
-    : "Use the 6-digit verification code below to reset your SendPilot account password.";
-
+  const subject = `Your verification code: ${code}`;
+  const text = `Your code is ${code}. It expires in 10 minutes. If you didn't request it, ignore this email.`;
   const html = `
     <div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#ffffff;border:1px solid #e5e5e5;border-radius:16px;color:#171717;">
       <div style="margin-bottom:20px;">
         <span style="display:inline-block;background:#171717;color:#ffffff;font-weight:700;font-size:14px;padding:6px 12px;border-radius:10px;">SendPilot</span>
       </div>
-      <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#171717;">${title}</h2>
-      <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#525252;">
-        Hi ${userName || "there"},<br/>${description}
-      </p>
+      <p style="margin:0 0 8px;font-size:15px;color:#171717;">Hi ${userName || "there"},</p>
+      <p style="margin:0 0 16px;font-size:14px;color:#525252;line-height:1.5;">Your verification code is:</p>
       <div style="background:#f5f5f5;border:1px solid #e5e5e5;border-radius:12px;padding:18px;text-align:center;margin-bottom:20px;">
-        <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:28px;font-weight:700;letter-spacing:8px;color:#171717;">${code}</span>
+        <h2 style="margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:6px;color:#171717;">${code}</h2>
       </div>
-      <p style="margin:0;font-size:12px;color:#737373;line-height:1.5;">
-        This code expires in 10 minutes. If you did not request this code, you can safely ignore this email.
+      <p style="margin:0 0 16px;font-size:13px;color:#525252;line-height:1.5;">
+        It expires in 10 minutes. If you didn't request it, ignore this email.
       </p>
       <hr style="border:none;border-top:1px solid #eaeaea;margin:20px 0;" />
       <p style="margin:0;font-size:11px;color:#a3a3a3;">
-        Sent by SendPilot (${smtpUser})
+        Sent via ${smtpUser}
       </p>
     </div>
   `;
 
   if (!isSmtpConfigured()) {
-    console.info(
-      `[SendPilot OTP Preview — SMTP_PASS not set yet for ${smtpUser}] To: ${to} | Purpose: ${purpose} | OTP: ${code}`
-    );
     return {
       sent: false,
       deliveryMode: "preview",
@@ -173,21 +179,11 @@ export async function sendOtpEmail({
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpSecure,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass,
-      },
-    });
-
     await transporter.sendMail({
       from: fromAddress,
       to,
       subject,
-      text: `${title}: Your SendPilot verification code is ${code}. It expires in 10 minutes.`,
+      text,
       html,
     });
 
@@ -195,8 +191,7 @@ export async function sendOtpEmail({
       sent: true,
       deliveryMode: "smtp",
     };
-  } catch (err) {
-    console.error(`Failed to send OTP email via ${smtpUser}:`, err);
+  } catch {
     return {
       sent: false,
       deliveryMode: "preview",

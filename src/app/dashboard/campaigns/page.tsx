@@ -71,18 +71,34 @@ const SAMPLE_DEMO_CAMPAIGNS: CampaignItem[] = [
   },
 ];
 
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchCampaignsIfNeeded,
+  fetchOverviewIfNeeded,
+  updateCampaignStatusState,
+  setCampaignDetailState,
+} from "@/store/slices/databaseSlice";
+
 export default function CampaignsPage() {
+  const dispatch = useAppDispatch();
+  const {
+    items: storeCampaigns,
+    availableLeadsCount,
+    availableAccountsCount,
+    detailsById,
+    loading: storeLoading,
+    loaded: storeLoaded,
+  } = useAppSelector((state) => state.database.campaigns);
+
   const [activeTab, setActiveTab] = useState<"list" | "wizard" | "detail">("list");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(true);
   const [isLaunching, setIsLaunching] = useState(false);
-  const [availableLeadsCount, setAvailableLeadsCount] = useState(0);
-  const [availableAccountsCount, setAvailableAccountsCount] = useState(0);
-
-  // Real campaigns from database
-  const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
+  const [demoCampaignsOverride, setDemoCampaignsOverride] = useState<CampaignItem[] | null>(null);
   const [campaignDetail, setCampaignDetail] = useState<CampaignDetail | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+
+  const isLoading = storeLoading && !storeLoaded;
+  const campaigns = demoCampaignsOverride ?? storeCampaigns;
 
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
@@ -91,38 +107,23 @@ export default function CampaignsPage() {
   const [creditsRequired, setCreditsRequired] = useState(120);
   const creditsRemaining = 300;
 
-  const fetchCampaigns = async () => {
-    try {
-      setIsLoading(true);
-      const res = await fetch("/api/campaigns");
-      const data = await res.json();
-      if (data.success && Array.isArray(data.campaigns)) {
-        setCampaigns(data.campaigns);
-        if (data.campaigns.length > 0 && !selectedCampaignId) {
-          setSelectedCampaignId(data.campaigns[0].id);
-        }
-        if (typeof data.availableLeadsCount === "number") setAvailableLeadsCount(data.availableLeadsCount);
-        if (typeof data.availableAccountsCount === "number") setAvailableAccountsCount(data.availableAccountsCount);
-      }
-    } catch (err) {
-      console.warn("Could not fetch campaigns:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchCampaigns();
-  }, []);
+    dispatch(fetchCampaignsIfNeeded());
+  }, [dispatch]);
 
   const toggleStatus = async (id: string) => {
     const target = campaigns.find((c) => c.id === id);
     if (!target) return;
     const nextStatus = target.status === "Active" ? "Paused" : "Active";
 
-    setCampaigns((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, status: nextStatus } : c))
-    );
+    if (demoCampaignsOverride) {
+      setDemoCampaignsOverride((prev) =>
+        prev ? prev.map((c) => (c.id === id ? { ...c, status: nextStatus } : c)) : null
+      );
+      return;
+    }
+
+    dispatch(updateCampaignStatusState({ id, status: nextStatus }));
 
     try {
       await fetch(`/api/campaigns/${id}`, {
@@ -133,18 +134,23 @@ export default function CampaignsPage() {
       toast.success(`Campaign marked as ${nextStatus}`);
     } catch {
       toast.error("Failed to update campaign status");
-      fetchCampaigns();
+      dispatch(fetchCampaignsIfNeeded({ force: true }));
     }
   };
 
   const fetchCampaignDetail = async (id: string) => {
+    const cached = detailsById[id];
+    if (cached) {
+      setCampaignDetail(cached);
+      return;
+    }
     setIsLoadingDetail(true);
     setCampaignDetail(null);
     try {
       const res = await fetch(`/api/campaigns/${id}`);
       const data = await res.json();
       if (data.success) {
-        setCampaignDetail({
+        const detail: CampaignDetail = {
           id,
           name: data.campaign.name,
           status: data.campaign.status,
@@ -152,7 +158,9 @@ export default function CampaignsPage() {
           sentToday: data.sentToday ?? 0,
           remainingToday: data.remainingToday ?? 0,
           funnel: data.funnel || [],
-        });
+        };
+        setCampaignDetail(detail);
+        dispatch(setCampaignDetailState(detail));
       } else {
         toast.error(data.error || "Failed to load campaign details");
       }
@@ -179,7 +187,9 @@ export default function CampaignsPage() {
       const data = await res.json();
       if (data.success) {
         toast.success("Campaign launched successfully!");
-        fetchCampaigns();
+        setDemoCampaignsOverride(null);
+        await dispatch(fetchCampaignsIfNeeded({ force: true }));
+        dispatch(fetchOverviewIfNeeded({ force: true }));
         setActiveTab("list");
       } else {
         toast.error(data.error || "Failed to launch campaign");
@@ -192,7 +202,7 @@ export default function CampaignsPage() {
   };
 
   const handleLoadDemoCampaigns = () => {
-    setCampaigns(SAMPLE_DEMO_CAMPAIGNS);
+    setDemoCampaignsOverride(SAMPLE_DEMO_CAMPAIGNS);
     setSelectedCampaignId(SAMPLE_DEMO_CAMPAIGNS[0].id);
     toast.success("Loaded sample demo campaigns for preview");
   };

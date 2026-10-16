@@ -78,7 +78,15 @@ export async function POST(req: Request) {
 
     const uniqueUris = Array.from(new Set(candidateUris.map((u) => u.trim())));
 
-    let tokenData: any = null;
+    interface LinkedInTokenResponse {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      error?: string;
+      error_description?: string;
+    }
+
+    let tokenData: LinkedInTokenResponse | null = null;
     let tokenOk = false;
 
     for (const uri of uniqueUris) {
@@ -95,7 +103,7 @@ export async function POST(req: Request) {
           }),
         });
 
-        const data = await tokenResponse.json().catch(() => ({}));
+        const data = (await tokenResponse.json().catch(() => ({}))) as LinkedInTokenResponse;
         if (tokenResponse.ok && data.access_token) {
           tokenData = data;
           tokenOk = true;

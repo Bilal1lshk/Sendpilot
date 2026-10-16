@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   User,
   Building,
-  ShieldAlert,
   Check,
   AlertTriangle,
   X,
@@ -60,6 +59,16 @@ interface WorkspaceStats {
   activeAccounts: number;
 }
 
+interface WorkspaceSettingsPayload {
+  workspaceName?: string;
+  defaultDailyCap?: number;
+  timezone?: string;
+  workingHours?: string;
+  profile?: Partial<MemberProfile>;
+  members?: WorkspaceMember[];
+  stats?: Partial<WorkspaceStats>;
+}
+
 const TIMEZONE_OPTIONS = [
   "America/New_York (Eastern Time - US)",
   "America/Chicago (Central Time - US)",
@@ -82,12 +91,24 @@ const WORKING_HOURS_OPTIONS = [
   "Flexible / Custom Hours",
 ];
 
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchWorkspaceSettingsIfNeeded,
+  setWorkspaceSettingsData,
+  clearLeadsState,
+} from "@/store/slices/databaseSlice";
+
 export default function WorkspaceSettingsPage() {
+  const dispatch = useAppDispatch();
+  const { data: cachedSettings, loading: storeLoading, loaded: storeLoaded } = useAppSelector(
+    (state) => state.database.settings
+  );
+
   const [activeTab, setActiveTab] = useState<"general" | "team" | "danger">("general");
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<boolean>(false);
   const [dangerModalOpen, setDangerModalOpen] = useState<boolean>(false);
+  const isLoading = storeLoading && !storeLoaded;
 
   // Invite / Edit Member modal states
   const [inviteModalOpen, setInviteModalOpen] = useState<boolean>(false);
@@ -105,87 +126,99 @@ export default function WorkspaceSettingsPage() {
   const [isUpdatingMember, setIsUpdatingMember] = useState<boolean>(false);
   const [removingEmail, setRemovingEmail] = useState<string | null>(null);
 
-  // Workspace & Profile states synced with MongoDB
-  const [workspaceName, setWorkspaceName] = useState<string>("");
-  const [defaultDailyCap, setDefaultDailyCap] = useState<number>(20);
-  const [timezone, setTimezone] = useState<string>("America/New_York (Eastern Time - US)");
-  const [workingHours, setWorkingHours] = useState<string>("9:00 AM - 5:00 PM (Monday - Friday)");
-  const [profile, setProfile] = useState<MemberProfile>({
-    fullName: "",
-    email: "",
-    image: null,
-    jobTitle: "",
-    companyName: "",
-    companyWebsite: "",
-    offer: "",
-  });
-  const [members, setMembers] = useState<WorkspaceMember[]>([]);
-  const [stats, setStats] = useState<WorkspaceStats>({
-    totalLeads: 0,
-    totalCampaigns: 0,
-    connectedAccounts: 0,
-    activeAccounts: 0,
-  });
+  // Workspace & Profile states synced with Redux + MongoDB
+  const [workspaceName, setWorkspaceName] = useState<string>(
+    () => cachedSettings?.workspaceName || ""
+  );
+  const [defaultDailyCap, setDefaultDailyCap] = useState<number>(
+    () => Number(cachedSettings?.defaultDailyCap ?? 20)
+  );
+  const [timezone, setTimezone] = useState<string>(
+    () => cachedSettings?.timezone || "America/New_York (Eastern Time - US)"
+  );
+  const [workingHours, setWorkingHours] = useState<string>(
+    () => cachedSettings?.workingHours || "9:00 AM - 5:00 PM (Monday - Friday)"
+  );
+  const [profile, setProfile] = useState<MemberProfile>(() => ({
+    fullName: cachedSettings?.profile?.fullName || "",
+    email: cachedSettings?.profile?.email || "",
+    image: cachedSettings?.profile?.image || null,
+    jobTitle: cachedSettings?.profile?.jobTitle || "",
+    companyName: cachedSettings?.profile?.companyName || "",
+    companyWebsite: cachedSettings?.profile?.companyWebsite || "",
+    offer: cachedSettings?.profile?.offer || "",
+  }));
+  const [members, setMembers] = useState<WorkspaceMember[]>(
+    () => cachedSettings?.members || []
+  );
+  const [stats, setStats] = useState<WorkspaceStats>(() => ({
+    totalLeads: cachedSettings?.stats?.totalLeads ?? 0,
+    totalCampaigns: cachedSettings?.stats?.totalCampaigns ?? 0,
+    connectedAccounts: cachedSettings?.stats?.connectedAccounts ?? 0,
+    activeAccounts: cachedSettings?.stats?.activeAccounts ?? 0,
+  }));
 
-  const applySettingsPayload = useCallback((settings: any) => {
-    if (!settings) return;
-    setWorkspaceName(settings.workspaceName || "My Workspace");
-    setDefaultDailyCap(Number(settings.defaultDailyCap ?? 20));
-    setTimezone(settings.timezone || "America/New_York (Eastern Time - US)");
-    setWorkingHours(settings.workingHours || "9:00 AM - 5:00 PM (Monday - Friday)");
-    if (settings.profile) {
-      setProfile({
-        fullName: settings.profile.fullName || "",
-        email: settings.profile.email || "",
-        image: settings.profile.image || null,
-        jobTitle: settings.profile.jobTitle || "",
-        companyName: settings.profile.companyName || "",
-        companyWebsite: settings.profile.companyWebsite || "",
-        offer: settings.profile.offer || "",
-      });
-    }
-    if (Array.isArray(settings.members)) {
-      setMembers(settings.members);
-    }
-    if (settings.stats) {
-      setStats({
-        totalLeads: settings.stats.totalLeads ?? 0,
-        totalCampaigns: settings.stats.totalCampaigns ?? 0,
-        connectedAccounts: settings.stats.connectedAccounts ?? 0,
-        activeAccounts: settings.stats.activeAccounts ?? 0,
-      });
-    }
-    if (typeof window !== "undefined" && settings.workspaceName) {
-      localStorage.setItem("sendpilot_current_workspace", settings.workspaceName);
-      window.dispatchEvent(
-        new CustomEvent("sendpilot:workspace-updated", {
-          detail: { name: settings.workspaceName },
-        })
-      );
-    }
-  }, []);
-
-  const loadSettings = useCallback(async () => {
-    try {
-      const res = await fetch("/api/workspace/settings", { cache: "no-store" });
-      if (!res.ok) {
-        toast.error("Failed to load workspace settings from database.");
-        return;
+  const applySettingsPayload = useCallback(
+    (settings: WorkspaceSettingsPayload | null | undefined, syncRedux = true) => {
+      if (!settings) return;
+      if (syncRedux) {
+        dispatch(setWorkspaceSettingsData(settings));
       }
-      const data = await res.json();
-      if (data?.success && data.settings) {
-        applySettingsPayload(data.settings);
+      setWorkspaceName(settings.workspaceName || "My Workspace");
+      setDefaultDailyCap(Number(settings.defaultDailyCap ?? 20));
+      setTimezone(settings.timezone || "America/New_York (Eastern Time - US)");
+      setWorkingHours(settings.workingHours || "9:00 AM - 5:00 PM (Monday - Friday)");
+      if (settings.profile) {
+        setProfile({
+          fullName: settings.profile.fullName || "",
+          email: settings.profile.email || "",
+          image: settings.profile.image || null,
+          jobTitle: settings.profile.jobTitle || "",
+          companyName: settings.profile.companyName || "",
+          companyWebsite: settings.profile.companyWebsite || "",
+          offer: settings.profile.offer || "",
+        });
       }
-    } catch {
-      toast.error("Error connecting to server.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [applySettingsPayload]);
+      if (Array.isArray(settings.members)) {
+        setMembers(settings.members);
+      }
+      if (settings.stats) {
+        setStats({
+          totalLeads: settings.stats.totalLeads ?? 0,
+          totalCampaigns: settings.stats.totalCampaigns ?? 0,
+          connectedAccounts: settings.stats.connectedAccounts ?? 0,
+          activeAccounts: settings.stats.activeAccounts ?? 0,
+        });
+      }
+      if (typeof window !== "undefined" && settings.workspaceName) {
+        localStorage.setItem("sendpilot_current_workspace", settings.workspaceName);
+        window.dispatchEvent(
+          new CustomEvent("sendpilot:workspace-updated", {
+            detail: { name: settings.workspaceName },
+          })
+        );
+      }
+    },
+    [dispatch]
+  );
 
   useEffect(() => {
-    loadSettings();
-  }, [loadSettings]);
+    let active = true;
+    dispatch(fetchWorkspaceSettingsIfNeeded())
+      .unwrap()
+      .then((settings) => {
+        if (active && settings) {
+          applySettingsPayload(settings, false);
+        }
+      })
+      .catch(() => {
+        // Ignore condition abort when already cached in Redux
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [dispatch, applySettingsPayload]);
 
   const handleSave = async () => {
     if (!workspaceName.trim()) {
@@ -1208,6 +1241,7 @@ export default function WorkspaceSettingsPage() {
                     try {
                       const res = await fetch("/api/leads", { method: "DELETE" });
                       if (res.ok) {
+                        dispatch(clearLeadsState());
                         setStats((prev) => ({ ...prev, totalLeads: 0 }));
                         toast.success("Lead database wiped successfully.");
                       } else {

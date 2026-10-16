@@ -55,59 +55,37 @@ const SAMPLE_DEMO_TASKS = [
   },
 ];
 
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchOverviewIfNeeded,
+  setOverviewTasks,
+  toggleOverviewTaskDone,
+} from "@/store/slices/databaseSlice";
+
 export default function DashboardOverviewPage() {
   const { data: session } = useSession();
+  const dispatch = useAppDispatch();
   const firstName = session?.user?.name ? session.user.name.split(" ")[0] : "there";
   const greeting = microcopy.greetings.getTimeAwareGreeting(firstName);
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [metrics, setMetrics] = useState({
-    totalLeads: 0,
-    connectedAccountsCount: 0,
-    activeAccountsCount: 0,
-    campaignsCount: 0,
-    sentCount: 0,
-    acceptedCount: 0,
-    repliedCount: 0,
-    meetingsBooked: 0,
-    acceptRate: 0,
-    replyRate: 0,
-    dailyCap: 25,
-  });
-
-  // Real outreach tasks from database leads
-  const [tasks, setTasks] = useState<any[]>([]);
+  const { metrics, tasks, loading, loaded } = useAppSelector(
+    (state) => state.database.overview
+  );
+  const isLoading = loading && !loaded;
 
   useEffect(() => {
-    async function loadOverview() {
-      try {
-        setIsLoading(true);
-        const res = await fetch("/api/dashboard/overview");
-        const data = await res.json();
-        if (data.success) {
-          if (data.metrics) setMetrics(data.metrics);
-          if (Array.isArray(data.tasks)) setTasks(data.tasks);
-        }
-      } catch (err) {
-        console.warn("Could not fetch dashboard overview:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadOverview();
-  }, []);
+    dispatch(fetchOverviewIfNeeded());
+  }, [dispatch]);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const completedCount = tasks.filter((t) => t.done).length;
   const totalCount = metrics.dailyCap || 25;
-  const progressRatio = totalCount > 0 ? (completedCount / totalCount) : 0;
+  const progressRatio = totalCount > 0 ? completedCount / totalCount : 0;
   const allTasksDone = tasks.length > 0 && completedCount === tasks.length;
 
   const toggleTask = (id: string) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
-    );
+    dispatch(toggleOverviewTaskDone(id));
   };
 
   const copyMessage = (id: string, text: string) => {
@@ -117,7 +95,7 @@ export default function DashboardOverviewPage() {
   };
 
   const handleLoadDemoTasks = () => {
-    setTasks(SAMPLE_DEMO_TASKS);
+    dispatch(setOverviewTasks(SAMPLE_DEMO_TASKS));
   };
 
   // SVG circular progress calculation

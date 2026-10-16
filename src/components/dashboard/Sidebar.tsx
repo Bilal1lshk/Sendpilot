@@ -24,6 +24,11 @@ import {
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { signOut } from "next-auth/react";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchOverviewIfNeeded,
+  fetchWorkspaceSettingsIfNeeded,
+} from "@/store/slices/databaseSlice";
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -37,59 +42,52 @@ interface SidebarProps {
 
 export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
-  const [switcherOpen, setSwitcherOpen] = useState(false);
-  const [currentWorkspace, setCurrentWorkspace] = useState("SendPilot HQ");
+  const dispatch = useAppDispatch();
+  const overviewMetrics = useAppSelector((state) => state.database.overview.metrics);
+  const storeWorkspaceName = useAppSelector((state) => state.database.settings.data?.workspaceName);
 
-  const [totalLeads, setTotalLeads] = useState<number>(0);
-  const [accountsCount, setAccountsCount] = useState<number>(0);
-  const [campaignsCount, setCampaignsCount] = useState<number>(0);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sendpilot_sidebar_collapsed") === "true";
+    }
+    return false;
+  });
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [localWorkspaceOverride, setLocalWorkspaceOverride] = useState<string | null>(null);
+
+  const currentWorkspace =
+    localWorkspaceOverride ||
+    storeWorkspaceName ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("sendpilot_current_workspace") || "SendPilot HQ"
+      : "SendPilot HQ");
+
+  const setCurrentWorkspace = (name: string) => {
+    setLocalWorkspaceOverride(name);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("sendpilot_current_workspace", name);
+    }
+  };
+
+  const totalLeads = overviewMetrics.totalLeads;
+  const accountsCount = overviewMetrics.connectedAccountsCount;
+  const campaignsCount = overviewMetrics.campaignsCount;
 
   useEffect(() => {
-    const saved = localStorage.getItem("sendpilot_sidebar_collapsed");
-    if (saved !== null) {
-      setCollapsed(saved === "true");
-    }
-
-    // Load active workspace name
-    const cachedWs = localStorage.getItem("sendpilot_current_workspace");
-    if (cachedWs) {
-      setCurrentWorkspace(cachedWs);
-    }
-
-    fetch("/api/workspace/onboarding")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.workspace?.name) {
-          setCurrentWorkspace(data.workspace.name);
-          localStorage.setItem("sendpilot_current_workspace", data.workspace.name);
-        }
-      })
-      .catch(() => {});
-
-    // Fetch dynamic live metrics
-    fetch("/api/dashboard/overview")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.metrics) {
-          setTotalLeads(data.metrics.totalLeads ?? 0);
-          setAccountsCount(data.metrics.connectedAccountsCount ?? 0);
-          setCampaignsCount(data.metrics.campaignsCount ?? 0);
-        }
-      })
-      .catch(() => {});
+    dispatch(fetchOverviewIfNeeded());
+    dispatch(fetchWorkspaceSettingsIfNeeded());
 
     const handleWorkspaceUpdated = (event: Event) => {
       const custom = event as CustomEvent<{ name?: string }>;
       if (custom.detail?.name) {
-        setCurrentWorkspace(custom.detail.name);
+        setLocalWorkspaceOverride(custom.detail.name);
       }
     };
     window.addEventListener("sendpilot:workspace-updated", handleWorkspaceUpdated);
     return () => {
       window.removeEventListener("sendpilot:workspace-updated", handleWorkspaceUpdated);
     };
-  }, []);
+  }, [dispatch]);
 
   const navItems = [
     {

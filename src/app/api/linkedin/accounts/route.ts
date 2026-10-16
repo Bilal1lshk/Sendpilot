@@ -3,6 +3,7 @@ import LinkedInConnection from "@/models/LinkedInConnection";
 import { requireUser, apiError } from "@/lib/crm";
 import { toSafeConnection } from "@/lib/linkedin-connection-dto";
 import { stopConnectionJobs, disconnectConnection, connectAccount } from "@/lib/linkedin-connections";
+import { invalidateDbCache } from "@/lib/db-cache";
 
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 
@@ -43,6 +44,7 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
       }
 
+      invalidateDbCache(ctx.userId, ["accounts", "overview", "settings", "campaigns"]);
       const accounts = await LinkedInConnection.find({ userId: ctx.userId }).sort({ createdAt: -1 });
       return NextResponse.json(
         {
@@ -73,6 +75,7 @@ export async function PATCH(req: Request) {
         );
       }
 
+      invalidateDbCache(ctx.userId, ["accounts", "overview", "settings", "campaigns"]);
       const accounts = await LinkedInConnection.find({ userId: ctx.userId }).sort({ createdAt: -1 });
       return NextResponse.json(
         {
@@ -110,6 +113,7 @@ export async function DELETE(req: Request) {
     if (!exists) return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
     await stopConnectionJobs(id, ctx.userId);
     await LinkedInConnection.deleteOne({ id, userId: ctx.userId });
+    invalidateDbCache(ctx.userId, ["accounts", "overview", "settings", "campaigns"]);
     const accounts = await LinkedInConnection.find({ userId: ctx.userId }).sort({ createdAt: -1 });
     return NextResponse.json(
       {

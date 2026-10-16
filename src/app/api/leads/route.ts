@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Lead, { LEAD_STATUSES, LEAD_SOURCES } from "@/models/Lead";
 import CampaignLead from "@/models/CampaignLead";
 import { requireUser, importLeads, serializeLead, toLeadSource, apiError, isValidObjectId } from "@/lib/crm";
+import { getDbCache, setDbCache, invalidateDbCache } from "@/lib/db-cache";
 
 function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -16,6 +17,12 @@ export async function GET(req: Request) {
 
   try {
     const { searchParams } = new URL(req.url);
+    const cacheSubKey = searchParams.toString() || "default";
+    const cached = getDbCache<Record<string, unknown>>(ctx.userId, "leads", cacheSubKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+
     const q = (searchParams.get("q") || "").trim();
     const status = searchParams.get("status");
     const source = searchParams.get("source");
@@ -60,7 +67,7 @@ export async function GET(req: Request) {
       counts.all += s.n;
     }
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       leads: items.map((l) => ({ ...serializeLead(l), campaigns: byLead.get(String(l._id)) || [] })),
       total,
@@ -69,7 +76,10 @@ export async function GET(req: Request) {
       totalPages: Math.max(1, Math.ceil(total / limit)),
       counts,
       tags: (tags as string[]).sort(),
-    });
+    };
+
+    setDbCache(ctx.userId, "leads", payload, cacheSubKey);
+    return NextResponse.json(payload);
   } catch (error) {
     return apiError(error, "Failed to fetch leads");
   }
@@ -92,6 +102,7 @@ export async function POST(req: Request) {
 
     const result = await importLeads(ctx.userId, leads, toLeadSource(body.importType || body.source));
     const totalCount = await Lead.countDocuments({ userId: ctx.userId });
+    invalidateDbCache(ctx.userId, ["leads", "overview", "settings", "campaigns"]);
 
     return NextResponse.json({
       success: true,
@@ -137,6 +148,7 @@ export async function DELETE(req: Request) {
       targetIds ? { userId: ctx.userId, leadId: { $in: targetIds } } : { userId: ctx.userId }
     );
     const remainingCount = await Lead.countDocuments({ userId: ctx.userId });
+    invalidateDbCache(ctx.userId, ["leads", "overview", "settings", "campaigns"]);
 
     return NextResponse.json({ success: true, deletedCount, remainingCount });
   } catch (error) {

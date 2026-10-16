@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   X,
@@ -12,10 +12,6 @@ import {
   Check,
   ShieldCheck,
   Globe,
-  Sparkles,
-  Lock,
-  Layers,
-  AlertTriangle,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { toast } from "sonner";
@@ -33,6 +29,14 @@ export interface ConnectedAccountData {
   warmupStage: number;
 }
 
+interface SafeAccountItem {
+  id: string;
+  linkedinName?: string;
+  linkedinAvatar?: string;
+  status?: string;
+  lastVerifiedAt?: string | null;
+}
+
 interface ConnectLinkedInModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -48,7 +52,7 @@ export function ConnectLinkedInModal({
 }: ConnectLinkedInModalProps) {
   const [connectMode, setConnectMode] = useState<"isolated" | "direct">("isolated");
   const [authCode, setAuthCode] = useState("");
-  const [profileName, setProfileName] = useState(defaultUserName);
+  const profileName = defaultUserName;
   const [accountType, setAccountType] = useState<"Sales Navigator" | "LinkedIn Premium" | "LinkedIn Free">("Sales Navigator");
   const [dailyCap, setDailyCap] = useState(25);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -56,12 +60,11 @@ export function ConnectLinkedInModal({
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccountData | null>(null);
   const [copied, setCopied] = useState(false);
   const [manualAuthUrl, setManualAuthUrl] = useState<string | null>(null);
-  const [openedAt, setOpenedAt] = useState<number>(0);
+  const openedAtRef = useRef<number>(0);
 
   useEffect(() => {
     if (isOpen) {
-      setOpenedAt(Date.now());
-      setManualAuthUrl(null);
+      openedAtRef.current = Date.now();
     }
   }, [isOpen]);
 
@@ -79,17 +82,17 @@ export function ConnectLinkedInModal({
 
   // Poll /api/linkedin/accounts while modal is open so Incognito callback completion is detected automatically
   useEffect(() => {
-    if (!isOpen || step !== "form" || !openedAt) return;
+    if (!isOpen || step !== "form") return;
     const interval = setInterval(async () => {
       try {
         const res = await fetch("/api/linkedin/accounts", { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json().catch(() => null);
-        const accounts: any[] = data?.accounts || [];
+        const accounts: SafeAccountItem[] = data?.accounts || [];
         const newlyVerified = accounts.find((acc) => {
           if (acc.status !== "active" || !acc.lastVerifiedAt) return false;
           const verifiedMs = new Date(acc.lastVerifiedAt).getTime();
-          return verifiedMs >= openedAt - 2000;
+          return verifiedMs >= openedAtRef.current - 2000;
         });
         if (newlyVerified) {
           const mappedAccount: ConnectedAccountData = {
@@ -114,7 +117,7 @@ export function ConnectLinkedInModal({
       }
     }, 2500);
     return () => clearInterval(interval);
-  }, [isOpen, step, openedAt, onConnected, profileName, accountType, dailyCap]);
+  }, [isOpen, step, onConnected, profileName, accountType, dailyCap]);
 
   // Listen for popup callback messages if direct popup flow is used
   useEffect(() => {
@@ -123,7 +126,8 @@ export function ConnectLinkedInModal({
         try {
           const res = await fetch("/api/linkedin/accounts");
           const data = await res.json().catch(() => null);
-          const matched = data?.accounts?.find((a: any) => a.id === event.data?.id) || data?.accounts?.[0];
+          const accounts: SafeAccountItem[] = data?.accounts || [];
+          const matched = accounts.find((a) => a.id === event.data?.id) || accounts[0];
           if (matched) {
             onConnected({
               id: matched.id,
@@ -454,7 +458,14 @@ export function ConnectLinkedInModal({
                       </label>
                       <select
                         value={accountType}
-                        onChange={(e) => setAccountType(e.target.value as any)}
+                        onChange={(e) =>
+                          setAccountType(
+                            e.target.value as
+                              | "Sales Navigator"
+                              | "LinkedIn Premium"
+                              | "LinkedIn Free"
+                          )
+                        }
                         className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white"
                       >
                         <option value="Sales Navigator">Sales Navigator</option>

@@ -45,14 +45,41 @@ const SAMPLE_DEMO_DRAFTS: AIDraft[] = [
   },
 ];
 
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { fetchLeadsIfNeeded, RawLeadPayload } from "@/store/slices/databaseSlice";
+
+function buildInitialDrafts(leads: RawLeadPayload[]): AIDraft[] {
+  return leads.slice(0, 3).map((l, idx) => {
+    const name = `${l.firstName || ""} ${l.lastName || ""}`.trim() || l.name || "Prospect";
+    const title = l.jobTitle || l.title || "Decision Maker";
+    const company = l.company || "Enterprise";
+
+    return {
+      id: `draft_${l.id || idx}`,
+      leadName: name,
+      leadTitle: `${title} @ ${company}`,
+      content: `Hi ${l.firstName || name.split(" ")[0]}, noticed your impressive engineering and product execution as ${title} at ${company}. We automated LinkedIn prospect scoring and lightweight follow-ups—curious if you're exploring ways to scale outbound pipeline?`,
+      approved: false,
+    };
+  });
+}
+
 export default function AIAssistantPage() {
+  const dispatch = useAppDispatch();
+  const { items: realLeads, loading: storeLoading, loaded: storeLoaded } = useAppSelector(
+    (state) => state.database.leads
+  );
+  const isLoading = storeLoading && !storeLoaded;
+
   const [prompt, setPrompt] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [approvedDraftId, setApprovedDraftId] = useState<string | null>(null);
-  const [realLeads, setRealLeads] = useState<any[]>([]);
-  const [selectedLeadId, setSelectedLeadId] = useState<string>("");
-  const [drafts, setDrafts] = useState<AIDraft[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [selectedLeadId, setSelectedLeadId] = useState<string>(
+    () => realLeads[0]?.id || ""
+  );
+  const [customDrafts, setCustomDrafts] = useState<AIDraft[] | null>(null);
+
+  const drafts = customDrafts ?? buildInitialDrafts(realLeads);
 
   // Suggested prompts as soft chips
   const SUGGESTED_CHIPS = [
@@ -62,39 +89,8 @@ export default function AIAssistantPage() {
   ];
 
   useEffect(() => {
-    async function loadRealLeads() {
-      try {
-        setIsLoading(true);
-        const res = await fetch("/api/leads");
-        const data = await res.json();
-        if (data.success && Array.isArray(data.leads) && data.leads.length > 0) {
-          setRealLeads(data.leads);
-          setSelectedLeadId(data.leads[0].id);
-
-          // Build personalized initial drafts for the user's real leads
-          const initialDrafts: AIDraft[] = data.leads.slice(0, 3).map((l: any, idx: number) => {
-            const name = `${l.firstName || ""} ${l.lastName || ""}`.trim() || l.name || "Prospect";
-            const title = l.jobTitle || l.title || "Decision Maker";
-            const company = l.company || "Enterprise";
-
-            return {
-              id: `draft_${l.id || idx}`,
-              leadName: name,
-              leadTitle: `${title} @ ${company}`,
-              content: `Hi ${l.firstName || name.split(" ")[0]}, noticed your impressive engineering and product execution as ${title} at ${company}. We automated LinkedIn prospect scoring and lightweight follow-ups—curious if you're exploring ways to scale outbound pipeline?`,
-              approved: false,
-            };
-          });
-          setDrafts(initialDrafts);
-        }
-      } catch (err) {
-        console.warn("Could not load real leads in AI page:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadRealLeads();
-  }, []);
+    dispatch(fetchLeadsIfNeeded());
+  }, [dispatch]);
 
   const handleSendPrompt = (text: string) => {
     if (!text.trim()) return;
@@ -108,7 +104,7 @@ export default function AIAssistantPage() {
 
     setTimeout(() => {
       setIsThinking(false);
-      setDrafts((prev) => [
+      setCustomDrafts((prev) => [
         {
           id: `d_${Date.now()}`,
           leadName: name,
@@ -116,7 +112,7 @@ export default function AIAssistantPage() {
           content: `Hi ${firstName}, saw the work ${company} is doing in this space. ${text.includes("follow") ? "Following up on my note earlier to share a quick 2-minute overview." : `Loved your focus on ${title.toLowerCase()}. Thought I'd connect and share our outbound pipeline benchmark.`}`,
           approved: false,
         },
-        ...prev,
+        ...(prev ?? buildInitialDrafts(realLeads)),
       ]);
       setPrompt("");
       toast.success(`Generated personalized message for ${name}!`);
@@ -124,8 +120,10 @@ export default function AIAssistantPage() {
   };
 
   const handleApprove = (id: string) => {
-    setDrafts((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, approved: true } : d))
+    setCustomDrafts((prev) =>
+      (prev ?? buildInitialDrafts(realLeads)).map((d) =>
+        d.id === id ? { ...d, approved: true } : d
+      )
     );
     setApprovedDraftId(id);
     toast.success("Draft approved and ready for queue!");
@@ -133,7 +131,7 @@ export default function AIAssistantPage() {
   };
 
   const handleLoadSampleDrafts = () => {
-    setDrafts(SAMPLE_DEMO_DRAFTS);
+    setCustomDrafts(SAMPLE_DEMO_DRAFTS);
     toast.success("Loaded demo sample drafts");
   };
 

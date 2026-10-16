@@ -16,6 +16,7 @@ import {
   nextActionable,
   sanitizeSteps,
 } from "@/lib/crm";
+import { getDbCache, setDbCache, invalidateDbCache } from "@/lib/db-cache";
 
 /** GET /api/campaigns — every campaign for the user with live aggregated stats */
 export async function GET() {
@@ -23,6 +24,11 @@ export async function GET() {
   if (ctx instanceof NextResponse) return ctx;
 
   try {
+    const cached = getDbCache<Record<string, unknown>>(ctx.userId, "campaigns");
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+
     const [campaigns, availableLeadsCount, connectionRows] = await Promise.all([
       Campaign.find({ userId: ctx.userId }).sort({ createdAt: -1 }).lean(),
       Lead.countDocuments({ userId: ctx.userId, isSample: { $ne: true } }),
@@ -36,13 +42,16 @@ export async function GET() {
 
     const accounts = connectionRows.map(toSafeConnection);
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       campaigns: campaigns.map((c) => serializeCampaign(c, stats.get(String(c._id)))),
       availableLeadsCount,
       availableAccountsCount: accounts.length,
       accounts,
-    });
+    };
+
+    setDbCache(ctx.userId, "campaigns", payload);
+    return NextResponse.json(payload);
   } catch (error) {
     return apiError(error, "Failed to fetch campaigns");
   }
@@ -128,6 +137,7 @@ export async function POST(req: Request) {
       }
     }
 
+    invalidateDbCache(ctx.userId, ["campaigns", "overview", "settings"]);
     const stats = await getCampaignStats(ctx.userId, [campaign._id as Types.ObjectId]);
     return NextResponse.json(
       { success: true, enrolled, campaign: serializeCampaign(campaign.toObject(), stats.get(String(campaign._id))) },

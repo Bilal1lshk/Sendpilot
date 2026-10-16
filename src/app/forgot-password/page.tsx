@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -22,7 +22,7 @@ function ForgotPasswordForm() {
   const searchParams = useSearchParams();
 
   const [step, setStep] = useState<"request" | "reset" | "done">("request");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => searchParams.get("email") || "");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -31,11 +31,6 @@ function ForgotPasswordForm() {
   const [isResending, setIsResending] = useState(false);
   const [senderEmail, setSenderEmail] = useState("contact@mbstack.net");
   const [previewCode, setPreviewCode] = useState<string | null>(null);
-
-  useEffect(() => {
-    const prefilled = searchParams.get("email");
-    if (prefilled) setEmail(prefilled);
-  }, [searchParams]);
 
   const handleRequestCode = async (e: React.FormEvent) => {
     e.preventDefault();

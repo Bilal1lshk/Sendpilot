@@ -35,63 +35,39 @@ export interface ConnectedAccountData {
   warmupStage: number;
 }
 
-interface SafeConnectionPayload {
-  id: string;
-  linkedinName: string;
-  linkedinAvatar: string;
-  status: "active" | "expired" | "revoked";
-  lastVerifiedAt: string | null;
-}
-
 /** Toast message shown when the same LinkedIn member is reconnected. */
 const ALREADY_CONNECTED_MSG =
   "This LinkedIn account is already connected. Authorization refreshed successfully.";
 
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchAccountsIfNeeded,
+  fetchOverviewIfNeeded,
+  removeAccountState,
+} from "@/store/slices/databaseSlice";
+
 export default function LinkedInAccountsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const dispatch = useAppDispatch();
+  const { items: accounts, loading: storeLoading, loaded: storeLoaded } = useAppSelector(
+    (state) => state.database.accounts
+  );
+  const isLoading = storeLoading && !storeLoaded;
 
   const [securityPanelOpen, setSecurityPanelOpen] = useState(false);
   const [connectModalOpen, setConnectModalOpen] = useState(false);
-  const [accounts, setAccounts] = useState<ConnectedAccountData[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
-  // ── Fetch accounts ──────────────────────────────────────────────
-  const fetchAccounts = async (): Promise<ConnectedAccountData[]> => {
+  // ── Fetch accounts (cached via Redux unless force=true) ─────────
+  const fetchAccounts = async (force = false): Promise<ConnectedAccountData[]> => {
     try {
-      const res = await fetch("/api/linkedin/accounts");
-      if (res.status === 401) {
-        router.replace("/login");
-        return [];
+      const result = await dispatch(fetchAccountsIfNeeded({ force })).unwrap();
+      if (force) {
+        dispatch(fetchOverviewIfNeeded({ force: true }));
       }
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        toast.error(data?.error || "Failed to load accounts from database");
-        return [];
-      }
-      if (data?.accounts) {
-        const mapped = data.accounts.map((account: SafeConnectionPayload) => ({
-          id: account.id,
-          name: account.linkedinName,
-          headline: "LinkedIn profile",
-          type: "LinkedIn OAuth",
-          photo: account.linkedinAvatar,
-          status: account.status === "active" ? "Active" : account.status === "expired" ? "Expired" : "Disconnected",
-          connectedDate: account.lastVerifiedAt ? new Date(account.lastVerifiedAt).toLocaleDateString() : "Not verified",
-          usedToday: 0,
-          dailyCap: 25,
-          warmupStage: 1,
-        } satisfies ConnectedAccountData));
-        setAccounts(mapped);
-        return mapped;
-      }
-      return [];
-    } catch (err) {
-      console.error("Failed to load accounts:", err);
-      toast.error("Failed to load accounts from database");
-      return [];
-    } finally {
-      setIsLoading(false);
+      return result;
+    } catch {
+      return accounts;
     }
   };
 
@@ -101,7 +77,8 @@ export default function LinkedInAccountsPage() {
     connectionId: string | null,
     error: string | null
   ) => {
-    const loadedAccounts = await fetchAccounts();
+    const hasOAuthParams = Boolean(status || connectionId || error);
+    const loadedAccounts = await fetchAccounts(hasOAuthParams);
     if (status === "connected") {
       const connectedAccount = loadedAccounts.find((account) => account.id === connectionId);
       if (!connectedAccount) {
@@ -119,7 +96,7 @@ export default function LinkedInAccountsPage() {
         else toast.error("Could not confirm this LinkedIn account");
       } else {
         await fetch(`/api/linkedin/accounts?id=${encodeURIComponent(connectedAccount.id)}`, { method: "DELETE" });
-        await fetchAccounts();
+        await fetchAccounts(true);
         toast.info("Account removed.");
       }
       router.replace("/dashboard/accounts");
@@ -152,11 +129,11 @@ export default function LinkedInAccountsPage() {
       if (event.data?.type === "LINKEDIN_AUTH_SUCCESS") {
         toast.dismiss("li-connect");
         const { status, id } = event.data;
-        await fetchAccounts();
+        await fetchAccounts(true);
         if (status === "connected") {
           if (id) {
             await fetch(`/api/linkedin/accounts/${encodeURIComponent(id)}/confirm`, { method: "POST" });
-            await fetchAccounts();
+            await fetchAccounts(true);
           }
           toast.success("New LinkedIn account successfully added to workspace!");
         } else if (status === "already_connected") {
@@ -170,7 +147,7 @@ export default function LinkedInAccountsPage() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
+  });
 
   // ── Account actions ─────────────────────────────────────────────
   const verifyAccount = async (id: string) => {
@@ -178,12 +155,12 @@ export default function LinkedInAccountsPage() {
       const res = await fetch(`/api/linkedin/accounts/${encodeURIComponent(id)}/verify`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json();
-        await fetchAccounts();
+        await fetchAccounts(true);
         toast.error(data.error || "LinkedIn authorization expired. Reconnect this account.");
         return;
       }
       toast.success("LinkedIn account verified");
-      await fetchAccounts();
+      await fetchAccounts(true);
     } catch {
       toast.error("Could not verify LinkedIn account");
     }
@@ -206,11 +183,11 @@ export default function LinkedInAccountsPage() {
         throw new Error(data?.error || "Failed to disconnect account");
       }
       toast.success(`${name} disconnected successfully.`);
-      await fetchAccounts();
+      await fetchAccounts(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to disconnect account";
       toast.error(msg);
-      fetchAccounts();
+      fetchAccounts(true);
     }
   };
 
@@ -233,12 +210,12 @@ export default function LinkedInAccountsPage() {
         throw new Error(data?.error || "Failed to connect account");
       }
       toast.success(`Connected as ${name}. Other accounts have been disconnected.`);
-      await fetchAccounts();
+      await fetchAccounts(true);
     } catch (err: unknown) {
       toast.dismiss(`connect-${id}`);
       const msg = err instanceof Error ? err.message : "Failed to connect account";
       toast.error(msg);
-      fetchAccounts();
+      fetchAccounts(true);
     }
   };
 
@@ -246,16 +223,16 @@ export default function LinkedInAccountsPage() {
     const displayName = name || "this LinkedIn account";
     if (!confirm(`Are you sure you want to delete ${displayName} from your workspace?`)) return;
 
-    setAccounts((prev) => prev.filter((acc) => acc.id !== id));
+    dispatch(removeAccountState(id));
 
     try {
       const res = await fetch(`/api/linkedin/accounts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete account");
       toast.success(`${displayName} removed successfully.`);
-      fetchAccounts();
+      fetchAccounts(true);
     } catch {
       toast.error("Failed to delete account");
-      fetchAccounts();
+      fetchAccounts(true);
     }
   };
 
@@ -671,7 +648,7 @@ export default function LinkedInAccountsPage() {
         isOpen={connectModalOpen}
         onClose={() => setConnectModalOpen(false)}
         onConnected={() => {
-          fetchAccounts();
+          fetchAccounts(true);
         }}
       />
     </motion.div>

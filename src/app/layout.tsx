@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono, Manrope } from "next/font/google";
 import { Toaster } from "sonner";
 import AuthProvider from "@/components/providers/AuthProvider";
+import { ReduxProvider } from "@/components/providers/ReduxProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,8 +37,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${manrope.variable} antialiased min-h-screen bg-white text-black`}
       >
         <AuthProvider>
-          {children}
-          <Toaster position="top-right" richColors />
+          <ReduxProvider>
+            {children}
+            <Toaster position="top-right" richColors />
+          </ReduxProvider>
         </AuthProvider>
       </body>
     </html>

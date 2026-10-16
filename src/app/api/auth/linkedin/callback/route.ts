@@ -131,8 +131,16 @@ export async function GET(req: Request) {
       return returnError("LinkedIn credentials missing in server environment (.env)");
     }
 
+    interface LinkedInTokenResponse {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      error?: string;
+      error_description?: string;
+    }
+
     let tokenResponse: Response | null = null;
-    let tokenData: any = null;
+    let tokenData: LinkedInTokenResponse | null = null;
 
     for (const uri of candidateUris) {
       try {
@@ -148,7 +156,7 @@ export async function GET(req: Request) {
           }),
         });
 
-        const data = await resp.json().catch(() => ({}));
+        const data = (await resp.json().catch(() => ({}))) as LinkedInTokenResponse;
         tokenResponse = resp;
         tokenData = data;
 

@@ -42,35 +42,65 @@ const SAMPLE_DEMO_REPLIES: ReplySuggestionItem[] = [
   },
 ];
 
-export default function InboundAutomationPage() {
-  const [loading, setLoading] = useState(true);
-  const [realLeadsCount, setRealLeadsCount] = useState(0);
-  const [replySuggestions, setReplySuggestions] = useState<ReplySuggestionItem[]>([]);
-  const [isDemoMode, setIsDemoMode] = useState(false);
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { fetchLeadsIfNeeded } from "@/store/slices/databaseSlice";
 
-  const [automations, setAutomations] = useState([
+export default function InboundAutomationPage() {
+  const dispatch = useAppDispatch();
+  const { items: leads, loading: storeLoading, loaded: storeLoaded } = useAppSelector(
+    (state) => state.database.leads
+  );
+  const loading = storeLoading && !storeLoaded;
+  const realLeadsCount = leads.length;
+
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [disabledAutomationIds, setDisabledAutomationIds] = useState<string[]>(["a3"]);
+
+  useEffect(() => {
+    dispatch(fetchLeadsIfNeeded());
+  }, [dispatch]);
+
+  const repliedLeads = leads.filter(
+    (l) => l.status === "replied" || l.status === "interested"
+  );
+
+  const realReplySuggestions: ReplySuggestionItem[] = repliedLeads.map((l, idx) => ({
+    id: l._id || l.id || `rep_${idx}`,
+    prospect: `${l.fullName || l.name || "Prospect"} (${l.company || l.title || "Target Lead"})`,
+    replyText:
+      l.notes ||
+      "Thanks for reaching out! Could you share more details on how SendPilot integrates with our CRM?",
+    aiSuggestion: `Hi ${
+      l.fullName ? l.fullName.split(" ")[0] : "there"
+    }, glad to hear from you! We support direct 1-click webhook & CSV exports. Let's set up a quick 10-min overview call this week.`,
+    isNew: idx === 0,
+  }));
+
+  const replySuggestions = isDemoMode ? SAMPLE_DEMO_REPLIES : realReplySuggestions;
+
+  const automations = [
     {
       id: "a1",
       title: "Profile Visit Follow-up",
       description: "When a target persona views your profile, queue a soft connection invite within 4 hours.",
       icon: Eye,
-      enabled: true,
-      liveStat: "Active",
+      enabled: !disabledAutomationIds.includes("a1"),
+      liveStat: leads.length > 0 ? `${leads.length} leads eligible` : "0 leads queued",
     },
     {
       id: "a2",
       title: "Post Engagement Auto-Capture",
       description: "Capture everyone who likes or comments on your industry thought leadership posts.",
       icon: ThumbsUp,
-      enabled: true,
-      liveStat: "Monitoring",
+      enabled: !disabledAutomationIds.includes("a2"),
+      liveStat: leads.length > 0 ? `${Math.round(leads.length * 0.4)} captured` : "0 captured",
     },
     {
       id: "a3",
       title: "Instant Acceptance Welcome",
       description: "Send a friendly greeting within 30 minutes of a prospect accepting your connection.",
       icon: UserCheck,
-      enabled: false,
+      enabled: !disabledAutomationIds.includes("a3"),
       liveStat: "Paused",
     },
     {
@@ -78,83 +108,27 @@ export default function InboundAutomationPage() {
       title: "Meeting Scheduler Linker",
       description: "Detect calendar interest in replies and automatically present your booking link.",
       icon: Calendar,
-      enabled: true,
+      enabled: !disabledAutomationIds.includes("a4"),
       liveStat: "Active",
     },
-  ]);
-
-  const fetchRealData = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/leads");
-      if (res.ok) {
-        const data = await res.json();
-        const leads = Array.isArray(data) ? data : (data.leads || []);
-        setRealLeadsCount(leads.length);
-
-        // Find leads that have replied or were recently contacted
-        const repliedLeads = leads.filter((l: any) => l.status === "replied" || l.status === "interested");
-        
-        if (repliedLeads.length > 0) {
-          const suggestions: ReplySuggestionItem[] = repliedLeads.map((l: any, idx: number) => ({
-            id: l._id || l.id || `rep_${idx}`,
-            prospect: `${l.fullName || l.name || "Prospect"} (${l.company || l.title || "Target Lead"})`,
-            replyText: l.notes || "Thanks for reaching out! Could you share more details on how SendPilot integrates with our CRM?",
-            aiSuggestion: `Hi ${l.fullName ? l.fullName.split(" ")[0] : "there"}, glad to hear from you! We support direct 1-click webhook & CSV exports. Let's set up a quick 10-min overview call this week.`,
-            isNew: idx === 0,
-          }));
-          setReplySuggestions(suggestions);
-          setIsDemoMode(false);
-        } else {
-          setReplySuggestions([]);
-          setIsDemoMode(false);
-        }
-
-        // Update automation live stats with real metrics
-        setAutomations((prev) =>
-          prev.map((a) => {
-            if (a.id === "a1") {
-              return { ...a, liveStat: leads.length > 0 ? `${leads.length} leads eligible` : "0 leads queued" };
-            }
-            if (a.id === "a2") {
-              return { ...a, liveStat: leads.length > 0 ? `${Math.round(leads.length * 0.4)} captured` : "0 captured" };
-            }
-            return a;
-          })
-        );
-      }
-    } catch (err) {
-      console.error("Failed to load leads for inbound", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRealData();
-  }, []);
+  ];
 
   const toggleAutomation = (id: string) => {
-    setAutomations((prev) =>
-      prev.map((a) => {
-        if (a.id === id) {
-          const nextState = !a.enabled;
-          toast.success(`${a.title} ${nextState ? "activated" : "paused"}`);
-          return { ...a, enabled: nextState };
-        }
-        return a;
-      })
+    const target = automations.find((a) => a.id === id);
+    if (!target) return;
+    const nextEnabled = !target.enabled;
+    toast.success(`${target.title} ${nextEnabled ? "activated" : "paused"}`);
+    setDisabledAutomationIds((prev) =>
+      nextEnabled ? prev.filter((item) => item !== id) : [...prev, id]
     );
   };
 
   const handleToggleDemo = () => {
     if (isDemoMode) {
       setIsDemoMode(false);
-      setReplySuggestions([]);
       toast.info("Cleared demo suggestions. Displaying real database data.");
     } else {
       setIsDemoMode(true);
-      setReplySuggestions(SAMPLE_DEMO_REPLIES);
       toast.success("Loaded sample reply suggestions for preview.");
     }
   };
@@ -189,7 +163,7 @@ export default function InboundAutomationPage() {
             {isDemoMode ? "Exit Demo Preview" : "Preview Demo Suggestions"}
           </button>
           <button
-            onClick={fetchRealData}
+            onClick={() => dispatch(fetchLeadsIfNeeded({ force: true }))}
             disabled={loading}
             className="p-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
             title="Refresh database records"

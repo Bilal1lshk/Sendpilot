@@ -110,52 +110,59 @@ const SAMPLE_DEMO_LEADS: LeadItem[] = [
   },
 ];
 
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchLeadsIfNeeded,
+  fetchOverviewIfNeeded,
+  clearLeadsState,
+  RawLeadPayload,
+} from "@/store/slices/databaseSlice";
+
+function mapRawLeadToLeadItem(l: RawLeadPayload): LeadItem {
+  return {
+    id: l.id,
+    name: `${l.firstName || ""} ${l.lastName || ""}`.trim() || l.name || "Prospect",
+    title: l.jobTitle || l.title || "Decision Maker",
+    company: l.company || "Enterprise",
+    email: l.email || "",
+    linkedinUrl: l.linkedinUrl || "",
+    score: (Number(l.icpScore) >= 90 ? "High" : Number(l.icpScore) >= 75 ? "Medium" : "Low") as
+      | "High"
+      | "Medium"
+      | "Low",
+    icpScore: Number(l.icpScore) || 85,
+    icpReason: l.source
+      ? `Imported via ${l.source}`
+      : "Matches pipeline ICP qualification criteria.",
+    pipeline: (l.status === "contacted"
+      ? "Contacted"
+      : l.status === "Accepted"
+      ? "Accepted"
+      : "New") as LeadItem["pipeline"],
+    campaign: l.campaign || "Direct Import / LinkedIn",
+    timeline: [{ time: "Recently", event: "Saved to database" }],
+  };
+}
+
 export default function LeadDatabasePage() {
+  const dispatch = useAppDispatch();
+  const { items: rawLeads, loading: storeLoading, loaded: storeLoaded } = useAppSelector(
+    (state) => state.database.leads
+  );
+
   const [viewMode, setViewMode] = useState<"table" | "pipeline">("table");
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
+  const [demoLeadsOverride, setDemoLeadsOverride] = useState<LeadItem[] | null>(null);
 
-  // Real database leads
-  const [leads, setLeads] = useState<LeadItem[]>([]);
-
-  const fetchDatabaseLeads = async () => {
-    try {
-      setIsLoading(true);
-      const res = await fetch("/api/leads");
-      const data = await res.json();
-      if (data.success && Array.isArray(data.leads)) {
-        const freshLeads: LeadItem[] = data.leads.map((l: any) => ({
-          id: l.id,
-          name: `${l.firstName || ""} ${l.lastName || ""}`.trim() || l.name || "Prospect",
-          title: l.jobTitle || l.title || "Decision Maker",
-          company: l.company || "Enterprise",
-          email: l.email || "",
-          linkedinUrl: l.linkedinUrl || "",
-          score: (Number(l.icpScore) >= 90 ? "High" : Number(l.icpScore) >= 75 ? "Medium" : "Low") as "High" | "Medium" | "Low",
-          icpScore: Number(l.icpScore) || 85,
-          icpReason: l.source ? `Imported via ${l.source}` : "Matches pipeline ICP qualification criteria.",
-          pipeline: (l.status === "contacted" ? "Contacted" : l.status === "Accepted" ? "Accepted" : "New") as any,
-          campaign: l.campaign || "Direct Import / LinkedIn",
-          timeline: [
-            { time: "Recently", event: "Saved to database" },
-          ],
-        }));
-        setLeads(freshLeads);
-      }
-    } catch (err) {
-      console.warn("Could not fetch database leads:", err);
-      toast.error("Failed to load leads from database");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const isLoading = storeLoading && !storeLoaded;
+  const leads: LeadItem[] = demoLeadsOverride ?? rawLeads.map(mapRawLeadToLeadItem);
 
   useEffect(() => {
-    fetchDatabaseLeads();
-  }, []);
+    dispatch(fetchLeadsIfNeeded());
+  }, [dispatch]);
 
   const handleClearAllLeads = async () => {
     if (!confirm("Are you sure you want to clear all leads from your database?")) return;
@@ -164,7 +171,8 @@ export default function LeadDatabasePage() {
       const res = await fetch("/api/leads", { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
-        setLeads([]);
+        setDemoLeadsOverride(null);
+        dispatch(clearLeadsState());
         setSelectedIds([]);
         setSelectedLead(null);
         toast.success("All leads removed from database");
@@ -177,7 +185,7 @@ export default function LeadDatabasePage() {
   };
 
   const handleLoadSampleLeads = () => {
-    setLeads(SAMPLE_DEMO_LEADS);
+    setDemoLeadsOverride(SAMPLE_DEMO_LEADS);
     toast.success("Loaded sample demo leads for preview");
   };
 
@@ -243,8 +251,10 @@ export default function LeadDatabasePage() {
         toast.success(`Successfully saved ${data.importedCount} leads directly into your database!`);
         setShowCsvDecisionModal(false);
         setParsedCsvResult(null);
+        setDemoLeadsOverride(null);
         if (csvFileInputRef.current) csvFileInputRef.current.value = "";
-        await fetchDatabaseLeads();
+        await dispatch(fetchLeadsIfNeeded({ force: true }));
+        dispatch(fetchOverviewIfNeeded({ force: true }));
       } else {
         toast.error(data.error || "Failed to save leads to database");
       }

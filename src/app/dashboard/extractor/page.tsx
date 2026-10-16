@@ -78,7 +78,11 @@ export interface ScrapedProfile {
   authwall_detected?: boolean;
 }
 
+import { useAppDispatch } from "@/store/hooks";
+import { fetchLeadsIfNeeded, fetchOverviewIfNeeded } from "@/store/slices/databaseSlice";
+
 export default function LeadExtractorPage() {
+  const dispatch = useAppDispatch();
   const [activeSource, setActiveSource] = useState<string>("LinkedIn Profile URL");
 
   // Single Profile Scraping State
@@ -252,6 +256,8 @@ export default function LeadExtractorPage() {
       const data = await res.json();
       if (data.success && data.savedToWorkspace) {
         setProfileSavedSuccess(true);
+        dispatch(fetchLeadsIfNeeded({ force: true }));
+        dispatch(fetchOverviewIfNeeded({ force: true }));
         toast.success(`Saved ${scrapedProfile.name} to your Leads database!`);
       } else {
         toast.error(data.error || "Could not save profile to database");
@@ -432,6 +438,8 @@ export default function LeadExtractorPage() {
 
       const data = await res.json();
       if (data.success) {
+        dispatch(fetchLeadsIfNeeded({ force: true }));
+        dispatch(fetchOverviewIfNeeded({ force: true }));
         toast.success(`Saved ${data.importedCount} leads directly into your database!`);
       } else {
         toast.error(data.error || "Failed to save leads");
@@ -553,6 +561,8 @@ export default function LeadExtractorPage() {
       if (data.success) {
         setCsvSavedSuccess(true);
         setShowCsvSaveDecisionModal(false);
+        dispatch(fetchLeadsIfNeeded({ force: true }));
+        dispatch(fetchOverviewIfNeeded({ force: true }));
         toast.success(`Successfully saved ${data.importedCount} leads directly into your database!`);
         setImportHistory((prev) => [
           {
