@@ -3,18 +3,37 @@ import nodemailer from "nodemailer";
 import VerificationToken, { type VerificationPurpose } from "@/models/VerificationToken";
 
 const DEFAULT_SMTP_HOST = "mail.mbstack.net";
-const DEFAULT_SMTP_PORT = 465;
+const DEFAULT_SMTP_PORT = 587;
 const DEFAULT_SMTP_USER = "contact@mbstack.net";
 
-export const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || DEFAULT_SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || DEFAULT_SMTP_PORT),
-  secure: Number(process.env.SMTP_PORT || DEFAULT_SMTP_PORT) === 465, // true for 465, false for 587
-  auth: {
-    user: process.env.SMTP_USER || DEFAULT_SMTP_USER,
-    pass: process.env.SMTP_PASS || process.env.EMAIL_SERVER_PASSWORD || "",
-  },
-});
+export function getTransporter() {
+  const host = (process.env.SMTP_HOST || DEFAULT_SMTP_HOST).trim();
+  const port = Number(process.env.SMTP_PORT || DEFAULT_SMTP_PORT);
+  const secure =
+    process.env.SMTP_SECURE === "true"
+      ? true
+      : process.env.SMTP_SECURE === "false"
+      ? false
+      : port === 465;
+  const user = (process.env.SMTP_USER || DEFAULT_SMTP_USER).trim();
+  const pass = (process.env.SMTP_PASS || process.env.EMAIL_SERVER_PASSWORD || "").trim();
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: {
+      user,
+      pass,
+    },
+    tls: {
+      // Allows connection to self-signed or cPanel/Exim server certificates
+      rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED === "true",
+    },
+  });
+}
+
+export const transporter = getTransporter();
 
 function getOtpSecret(): string {
   return (
@@ -117,8 +136,10 @@ export async function verifyOtpCode(
 }
 
 export function isSmtpConfigured(): boolean {
+  const host = process.env.SMTP_HOST || DEFAULT_SMTP_HOST;
+  const user = process.env.SMTP_USER || DEFAULT_SMTP_USER;
   const pass = process.env.SMTP_PASS || process.env.EMAIL_SERVER_PASSWORD;
-  return Boolean(pass && pass.trim() && !pass.includes("your_"));
+  return Boolean(host && user && pass && pass.trim() && !pass.includes("your-"));
 }
 
 export type SendOtpOptions = {
@@ -128,10 +149,17 @@ export type SendOtpOptions = {
   userName?: string;
 };
 
+export type SendOtpResult = {
+  sent: boolean;
+  deliveryMode: "smtp";
+  error?: string;
+  messageId?: string;
+};
+
 export async function sendOtpEmail(
   toOrOptions: string | SendOtpOptions,
   maybeCode?: string
-): Promise<{ sent: boolean; deliveryMode: "smtp" | "preview"; previewCode?: string }> {
+): Promise<SendOtpResult> {
   let to: string;
   let code: string;
   let userName: string | undefined;
@@ -148,8 +176,16 @@ export async function sendOtpEmail(
   const smtpUser = (process.env.SMTP_USER || DEFAULT_SMTP_USER).trim();
   const fromAddress = process.env.SMTP_FROM || `"MB Stack" <${smtpUser}>`;
 
+  if (!isSmtpConfigured()) {
+    return {
+      sent: false,
+      deliveryMode: "smtp",
+      error: "SMTP server is not configured. Please configure SMTP credentials in .env.",
+    };
+  }
+
   const subject = `Your verification code: ${code}`;
-  const text = `Your code is ${code}. It expires in 10 minutes. If you didn't request it, ignore this email.`;
+  const text = `Your verification code is ${code}. It expires in 10 minutes. If you didn't request it, ignore this email.`;
   const html = `
     <div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#ffffff;border:1px solid #e5e5e5;border-radius:16px;color:#171717;">
       <div style="margin-bottom:20px;">
@@ -170,16 +206,9 @@ export async function sendOtpEmail(
     </div>
   `;
 
-  if (!isSmtpConfigured()) {
-    return {
-      sent: false,
-      deliveryMode: "preview",
-      previewCode: code,
-    };
-  }
-
   try {
-    await transporter.sendMail({
+    const activeTransporter = getTransporter();
+    const info = await activeTransporter.sendMail({
       from: fromAddress,
       to,
       subject,
@@ -190,12 +219,14 @@ export async function sendOtpEmail(
     return {
       sent: true,
       deliveryMode: "smtp",
+      messageId: info.messageId,
     };
-  } catch {
+  } catch (error: any) {
+    const errorMsg = error?.message || "Failed to deliver email via SMTP";
     return {
       sent: false,
-      deliveryMode: "preview",
-      previewCode: code,
+      deliveryMode: "smtp",
+      error: errorMsg,
     };
   }
 }

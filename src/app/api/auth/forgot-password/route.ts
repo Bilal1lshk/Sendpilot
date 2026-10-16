@@ -43,16 +43,25 @@ export async function POST(req: Request) {
       userName: user.name,
     });
 
+    if (!mailResult.sent) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: mailResult.error || "Failed to deliver reset code to your email address.",
+        },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       senderEmail: process.env.SMTP_USER || "contact@mbstack.net",
-      deliveryMode: mailResult.deliveryMode,
-      previewCode: mailResult.previewCode,
+      deliveryMode: "smtp",
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Forgot password OTP error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to send password reset code." },
+      { success: false, error: error?.message || "Failed to send password reset code." },
       { status: 500 }
     );
   }

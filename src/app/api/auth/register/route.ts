@@ -51,13 +51,22 @@ export async function POST(req: Request) {
       userName: newUser.name,
     });
 
+    if (!mailResult.sent) {
+      await User.deleteOne({ _id: newUser._id });
+      return NextResponse.json(
+        {
+          error: mailResult.error || "Failed to send verification email. Please check your email address or SMTP configuration.",
+        },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json(
       {
         message: "User registered successfully. Please verify the OTP sent to your email.",
         otpRequired: true,
         senderEmail: process.env.SMTP_USER || "contact@mbstack.net",
-        deliveryMode: mailResult.deliveryMode,
-        previewCode: mailResult.previewCode,
+        deliveryMode: "smtp",
         user: {
           id: newUser._id.toString(),
           name: newUser.name,
@@ -66,10 +75,10 @@ export async function POST(req: Request) {
       },
       { status: 201 }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("Registration error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: error?.message || "Internal server error" },
       { status: 500 }
     );
   }
