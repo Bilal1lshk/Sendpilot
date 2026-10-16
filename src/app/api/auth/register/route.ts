@@ -42,9 +42,22 @@ export async function POST(req: Request) {
       password: hashedPassword,
     });
 
+    const { issueOtpCode, sendOtpEmail } = await import("@/lib/mailer");
+    const { code } = await issueOtpCode(newUser.email, "login_otp", 10);
+    const mailResult = await sendOtpEmail({
+      to: newUser.email,
+      code,
+      purpose: "login_otp",
+      userName: newUser.name,
+    });
+
     return NextResponse.json(
       {
-        message: "User registered successfully",
+        message: "User registered successfully. Please verify the OTP sent to your email.",
+        otpRequired: true,
+        senderEmail: process.env.SMTP_USER || "contact@mbstack.net",
+        deliveryMode: mailResult.deliveryMode,
+        previewCode: mailResult.previewCode,
         user: {
           id: newUser._id.toString(),
           name: newUser.name,

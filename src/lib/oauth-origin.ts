@@ -60,11 +60,7 @@ export function resolveAppOrigin(req?: Request): string {
  * In production, it actively ignores any misconfigured LINKEDIN_REDIRECT_URI
  * pointing to localhost and forces the production origin callback.
  */
-export function resolveLinkedInRedirectUri(req: Request, options?: { isManual?: boolean }): string {
-  if (options?.isManual) {
-    return process.env.LINKEDIN_DEV_REDIRECT_URI || "https://www.linkedin.com/developers/tools/oauth/redirect";
-  }
-
+export function resolveLinkedInRedirectUri(req: Request, _options?: { isManual?: boolean }): string {
   const origin = resolveAppOrigin(req);
   const isProd =
     Boolean(process.env.VERCEL) ||

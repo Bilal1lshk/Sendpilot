@@ -76,12 +76,17 @@ export async function GET(req: Request) {
   if (stateParam && stateParam.includes(".")) {
     try {
       const [payloadB64, signature] = stateParam.split(".");
-      const hmacSecret = process.env.COOKIE_ENC_KEY || process.env.AUTH_SECRET || "default_sendpilot_secret";
-      const expectedSig = createHmac("sha256", hmacSecret).update(payloadB64).digest("hex");
-      if (signature === expectedSig) {
-        const payload = Buffer.from(payloadB64, "base64url").toString("utf8");
+      const payload = Buffer.from(payloadB64, "base64url").toString("utf8");
+      const hmacSecret =
+        process.env.COOKIE_ENC_KEY ||
+        process.env.AUTH_SECRET ||
+        process.env.NEXTAUTH_SECRET ||
+        "default_sendpilot_secret";
+      const expectedSigB64 = createHmac("sha256", hmacSecret).update(payloadB64).digest("hex");
+      const expectedSigRaw = createHmac("sha256", hmacSecret).update(payload).digest("hex");
+      if (signature === expectedSigB64 || signature === expectedSigRaw) {
         const [uId, timestamp] = payload.split(":");
-        if (Date.now() - Number(timestamp) < 15 * 60 * 1000) {
+        if (uId && Number(timestamp) && Date.now() - Number(timestamp) < 30 * 60 * 1000) {
           stateValid = true;
           hmacUserId = uId;
         }
@@ -111,7 +116,7 @@ export async function GET(req: Request) {
   } catch (migErr) {
     console.warn("Legacy migration warning in callback:", migErr);
   }
-  if (!(await consumeRateLimit(userId, "linkedin-callback", 5, 15 * 60 * 1000))) {
+  if (!(await consumeRateLimit(userId, "linkedin-callback", 30, 15 * 60 * 1000))) {
     return returnError("Too many connection attempts. Please wait a few minutes.");
   }
 
@@ -184,26 +189,36 @@ export async function GET(req: Request) {
 
     const statusParam = result.alreadyConnected ? "already_connected" : "connected";
     const redirectUrl = `${baseUrl}/dashboard/accounts?status=${statusParam}&id=${encodeURIComponent(result.connection.id)}`;
+    const hasBrowserSession = Boolean(session?.user?.id);
+    const connectedName = (result.connection.linkedinName || "LinkedIn Profile").replace(/[<>"'&]/g, "");
 
-    // Return HTML that notifies window.opener if in popup, or redirects full page
+    // Return HTML that notifies window.opener if in popup, redirects if logged in, or shows Incognito completion card
     const html = `<!DOCTYPE html>
 <html>
 <head><title>LinkedIn Connected</title></head>
 <body style="font-family:system-ui,-apple-system,sans-serif;background:#121415;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-  <div style="text-align:center;">
-    <h3 style="margin-bottom:8px;">LinkedIn Connected!</h3>
-    <p style="color:#a3a3a3;font-size:14px;">Updating accounts dashboard...</p>
+  <div style="text-align:center;max-width:420px;padding:24px;border:1px solid #262626;border-radius:16px;background:#17191a;">
+    <div style="width:48px;height:48px;border-radius:12px;background:rgba(16,185,129,0.15);color:#10b981;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;font-weight:bold;">✓</div>
+    <h3 style="margin:0 0 8px;color:#10b981;">LinkedIn Connected!</h3>
+    <p style="color:#d4d4d4;font-size:14px;margin:0 0 8px;"><strong>${connectedName}</strong> is now connected to your SendPilot workspace.</p>
+    <p id="subtext" style="color:#a3a3a3;font-size:12px;margin:0;">${
+      hasBrowserSession
+        ? "Updating accounts dashboard..."
+        : "You can now close this Incognito window and return to your main SendPilot tab."
+    }</p>
   </div>
   <script>
     try {
       if (window.opener && window.opener !== window) {
         window.opener.postMessage({ type: "LINKEDIN_AUTH_SUCCESS", status: "${statusParam}", id: "${result.connection.id}" }, "*");
         setTimeout(function() { window.close(); }, 350);
-      } else {
+      } else if (${hasBrowserSession ? "true" : "false"}) {
         window.location.href = "${redirectUrl}";
       }
     } catch(e) {
-      window.location.href = "${redirectUrl}";
+      if (${hasBrowserSession ? "true" : "false"}) {
+        window.location.href = "${redirectUrl}";
+      }
     }
   </script>
 </body>

@@ -20,9 +20,13 @@ export interface LinkedInAccount {
 }
 
 export interface TeammateInvite {
+  id?: string;
+  name?: string;
   email: string;
+  jobTitle?: string;
+  role?: "Owner" | "Admin" | "Member" | "Viewer";
   invitedAt: string;
-  status: "Pending" | "Joined";
+  status: "Pending" | "Joined" | "Active";
 }
 
 export interface ConnectStepData {

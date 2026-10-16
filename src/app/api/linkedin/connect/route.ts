@@ -108,6 +108,22 @@ export async function POST(req: Request) {
     }
 
     if (!tokenOk || !tokenData?.access_token) {
+      // Check if /api/auth/linkedin/callback already consumed this single-use code moments ago in Incognito
+      const recentConn = await LinkedInConnection.findOne({
+        userId: ctx.userId,
+        status: "active",
+        lastVerifiedAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) },
+      }).sort({ lastVerifiedAt: -1 });
+
+      if (recentConn) {
+        const { toSafeConnection } = await import("@/lib/linkedin-connection-dto");
+        return NextResponse.json({
+          success: true,
+          alreadyConnected: false,
+          account: toSafeConnection(recentConn),
+        });
+      }
+
       console.error("LinkedIn token exchange failure:", tokenData);
       return NextResponse.json(
         {

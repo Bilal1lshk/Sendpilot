@@ -29,7 +29,7 @@ export async function GET(req: Request) {
     } catch (migErr) {
       console.warn("Legacy migration warning in authorize:", migErr);
     }
-    if (!(await consumeRateLimit(userId, "linkedin-authorize", 5, 15 * 60 * 1000))) {
+    if (!(await consumeRateLimit(userId, "linkedin-authorize", 30, 15 * 60 * 1000))) {
       return NextResponse.json({ success: false, error: "Too many connection attempts" }, { status: 429 });
     }
 
@@ -48,9 +48,19 @@ export async function GET(req: Request) {
 
     // Cryptographically signed state containing userId and nonce
     const statePayload = `${userId}:${Date.now()}:${randomBytes(8).toString("hex")}`;
-    const hmacSecret = process.env.COOKIE_ENC_KEY || process.env.AUTH_SECRET || "default_sendpilot_secret";
-    const signature = createHmac("sha256", hmacSecret).update(statePayload).digest("hex");
-    const state = `${Buffer.from(statePayload).toString("base64url")}.${signature}`;
+    const payloadB64 = Buffer.from(statePayload).toString("base64url");
+    const hmacSecret =
+      process.env.COOKIE_ENC_KEY ||
+      process.env.AUTH_SECRET ||
+      process.env.NEXTAUTH_SECRET ||
+      "default_sendpilot_secret";
+    const signature = createHmac("sha256", hmacSecret).update(payloadB64).digest("hex");
+    const state = `${payloadB64}.${signature}`;
+
+    const isSecure =
+      process.env.NODE_ENV === "production" ||
+      Boolean(process.env.VERCEL) ||
+      req.url.startsWith("https://");
 
     const authUrl =
       `https://www.linkedin.com/oauth/v2/authorization` +
@@ -58,15 +68,15 @@ export async function GET(req: Request) {
       `&redirect_uri=${encodeURIComponent(redirectUri.trim())}` +
       `&scope=${encodeURIComponent(scope.trim())}` +
       `&response_type=code` +
-      `&state=${state}`;
+      `&state=${encodeURIComponent(state)}`;
 
     if (jsonMode) {
       const jsonRes = NextResponse.json({ success: true, url: authUrl, redirectUri: redirectUri.trim() });
       jsonRes.cookies.set("li_oauth_state", state, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: isSecure,
         sameSite: "lax",
-        maxAge: 60 * 10,
+        maxAge: 60 * 30,
         path: "/",
       });
       return jsonRes;
@@ -76,9 +86,9 @@ export async function GET(req: Request) {
     const response = NextResponse.redirect(authUrl);
     response.cookies.set("li_oauth_state", state, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isSecure,
       sameSite: "lax",
-      maxAge: 60 * 10, // 10 minutes
+      maxAge: 60 * 30, // 30 minutes
       path: "/",
     });
 

@@ -32,7 +32,11 @@ export interface IWorkspace extends Document {
         type?: string;
       }>;
       invitedTeammates: Array<{
+        id?: string;
+        name?: string;
         email: string;
+        jobTitle?: string;
+        role?: string;
         invitedAt: string;
         status: string;
       }>;

@@ -56,47 +56,121 @@ export function ConnectLinkedInModal({
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccountData | null>(null);
   const [copied, setCopied] = useState(false);
   const [manualAuthUrl, setManualAuthUrl] = useState<string | null>(null);
-  const [directAuthUrl, setDirectAuthUrl] = useState<string | null>(null);
+  const [openedAt, setOpenedAt] = useState<number>(0);
 
   useEffect(() => {
     if (isOpen) {
-      // Fetch pre-signed manual authorization URL for isolated Incognito flow
+      setOpenedAt(Date.now());
+      setManualAuthUrl(null);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && connectMode === "isolated" && !manualAuthUrl) {
+      // Fetch pre-signed authorization URL with real callback URI
       fetch("/api/auth/linkedin/authorize?mode=manual&json=true")
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (data?.url) setManualAuthUrl(data.url);
         })
         .catch(() => {});
-
-      // Fetch pre-signed direct authorization URL
-      fetch("/api/auth/linkedin/authorize?json=true")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data?.url) setDirectAuthUrl(data.url);
-        })
-        .catch(() => {});
     }
-  }, [isOpen]);
+  }, [isOpen, connectMode, manualAuthUrl]);
+
+  // Poll /api/linkedin/accounts while modal is open so Incognito callback completion is detected automatically
+  useEffect(() => {
+    if (!isOpen || step !== "form" || !openedAt) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/linkedin/accounts", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json().catch(() => null);
+        const accounts: any[] = data?.accounts || [];
+        const newlyVerified = accounts.find((acc) => {
+          if (acc.status !== "active" || !acc.lastVerifiedAt) return false;
+          const verifiedMs = new Date(acc.lastVerifiedAt).getTime();
+          return verifiedMs >= openedAt - 2000;
+        });
+        if (newlyVerified) {
+          const mappedAccount: ConnectedAccountData = {
+            id: newlyVerified.id,
+            name: newlyVerified.linkedinName || profileName || "LinkedIn Account",
+            headline: "LinkedIn Profile",
+            type: accountType,
+            photo: newlyVerified.linkedinAvatar || "",
+            status: "Active",
+            connectedDate: new Date().toLocaleDateString(),
+            usedToday: 0,
+            dailyCap,
+            warmupStage: 1,
+          };
+          setConnectedAccount(mappedAccount);
+          setStep("success");
+          onConnected(mappedAccount);
+          toast.success(`${mappedAccount.name} connected successfully!`);
+        }
+      } catch {
+        // ignore polling error
+      }
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [isOpen, step, openedAt, onConnected, profileName, accountType, dailyCap]);
 
   // Listen for popup callback messages if direct popup flow is used
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
+    const handleMessage = async (event: MessageEvent) => {
       if (event.data?.type === "LINKEDIN_AUTH_SUCCESS") {
+        try {
+          const res = await fetch("/api/linkedin/accounts");
+          const data = await res.json().catch(() => null);
+          const matched = data?.accounts?.find((a: any) => a.id === event.data?.id) || data?.accounts?.[0];
+          if (matched) {
+            onConnected({
+              id: matched.id,
+              name: matched.linkedinName || profileName || "LinkedIn Account",
+              headline: "LinkedIn Profile",
+              type: accountType,
+              photo: matched.linkedinAvatar || "",
+              status: "Active",
+              connectedDate: new Date().toLocaleDateString(),
+              usedToday: 0,
+              dailyCap,
+              warmupStage: 1,
+            });
+          }
+        } catch {
+          // ignore fallback
+        }
         toast.success("LinkedIn account connected successfully!");
         onClose();
+      } else if (event.data?.type === "LINKEDIN_AUTH_ERROR") {
+        toast.error(event.data?.error || "LinkedIn authorization failed.");
       }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [onClose]);
+  }, [onClose, onConnected, profileName, accountType, dailyCap]);
 
   if (!isOpen) return null;
 
   const handleCopyLink = async () => {
-    const targetUrl =
-      manualAuthUrl || `${window.location.origin}/api/auth/linkedin/authorize?mode=manual`;
+    let targetUrl = manualAuthUrl;
+    if (!targetUrl) {
+      try {
+        const r = await fetch("/api/auth/linkedin/authorize?mode=manual&json=true");
+        const data = await r.json().catch(() => null);
+        if (data?.url) {
+          targetUrl = data.url;
+          setManualAuthUrl(data.url);
+        }
+      } catch {
+        // fallback below
+      }
+    }
+    const finalUrl =
+      targetUrl || `${window.location.origin}/api/auth/linkedin/authorize?mode=manual`;
     try {
-      await navigator.clipboard.writeText(targetUrl);
+      await navigator.clipboard.writeText(finalUrl);
       setCopied(true);
       toast.success("Authorization link copied! Open in an Incognito window to protect your personal LinkedIn session.");
       setTimeout(() => setCopied(false), 3000);
@@ -106,7 +180,8 @@ export function ConnectLinkedInModal({
   };
 
   const handleOpenDirectPopup = () => {
-    const targetUrl = directAuthUrl || "/api/auth/linkedin/authorize";
+    // Open /api/auth/linkedin/authorize directly in the popup so it sets a fresh li_oauth_state cookie and redirects cleanly
+    const targetUrl = "/api/auth/linkedin/authorize";
     const width = 600;
     const height = 750;
     const left = window.screenX + (window.outerWidth - width) / 2;
@@ -307,16 +382,21 @@ export function ConnectLinkedInModal({
                   <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-white uppercase tracking-wider">
-                        1. Copy Link &amp; Open in Incognito
+                        1. Sign In &amp; Paste Link in Incognito
                       </span>
                       <span className="text-[10px] font-mono text-neutral-400">
                         Ctrl+Shift+N / ⌘+Shift+N
                       </span>
                     </div>
 
-                    <p className="text-xs text-neutral-300 leading-relaxed">
-                      Copy this link, open a new <strong className="text-white">Incognito / Private window</strong>, paste it into the address bar, and sign in to the LinkedIn account you want to connect:
-                    </p>
+                    <ol className="text-xs text-neutral-300 leading-relaxed space-y-1.5 list-decimal list-inside">
+                      <li>
+                        Open an <strong className="text-white">Incognito window</strong> and sign in to <strong className="text-white">linkedin.com</strong> first (until you see your LinkedIn feed).
+                      </li>
+                      <li>
+                        Copy the authorization link below and paste it into that <strong className="text-white">same Incognito tab&apos;s address bar</strong>:
+                      </li>
+                    </ol>
 
                     <button
                       type="button"
@@ -326,33 +406,43 @@ export function ConnectLinkedInModal({
                       {copied ? (
                         <>
                           <Check className="h-3.5 w-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">Copied to Clipboard! Open in Incognito</span>
+                          <span className="text-emerald-400">Copied! Paste in your signed-in Incognito tab</span>
                         </>
                       ) : (
                         <>
                           <Copy className="h-3.5 w-3.5 text-neutral-300" />
-                          <span>Copy Link for Incognito Window</span>
+                          <span>Copy Authorization Link for Incognito</span>
                         </>
                       )}
                     </button>
+
+                    <p className="text-[11px] text-amber-300/90 bg-amber-950/30 border border-amber-800/40 rounded-lg px-2.5 py-1.5 leading-relaxed">
+                      <strong>Why did it go to linkedin.com/feed?</strong> LinkedIn drops OAuth redirects if you log in from a cold Incognito tab. Now that you&apos;re on <code className="font-mono">linkedin.com/feed</code> in Incognito, paste the copied link into that address bar once more and press Enter — it will connect automatically!
+                    </p>
                   </div>
 
-                  {/* Step 2: Paste Code */}
+                  {/* Step 2: Auto-detect or Paste Code */}
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-white uppercase tracking-wider block">
-                      2. Paste Redirect URL or Code
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-white uppercase tracking-wider block">
+                        2. Auto-Detecting Connection (or Paste Callback URL)
+                      </label>
+                      <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Listening for authorization...
+                      </span>
+                    </div>
 
                     <textarea
                       rows={2}
                       value={authCode}
                       onChange={(e) => setAuthCode(e.target.value)}
-                      placeholder="Paste the redirect URL or authorization code here..."
+                      placeholder="Optional fallback: paste the callback URL or code here if not auto-detected..."
                       className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 font-mono focus:outline-hidden focus:border-emerald-500 transition-colors"
                       required
                     />
                     <p className="text-[11px] text-neutral-400">
-                      After authorizing on LinkedIn, copy the URL from the browser bar (or the <code className="text-emerald-400 font-mono">code</code> parameter) and paste it here.
+                      This window will automatically detect your account as soon as you approve on LinkedIn, or you can paste the callback URL above.
                     </p>
                   </div>
 

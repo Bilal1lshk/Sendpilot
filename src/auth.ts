@@ -54,16 +54,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        otp: { label: "OTP", type: "text" },
       },
       authorize: async (credentials) => {
-        if (!credentials?.email || !credentials?.password) {
+        if (!credentials?.email || !credentials?.password || !credentials?.otp) {
           return null;
         }
 
+        const email = (credentials.email as string).trim().toLowerCase();
+        const otp = (credentials.otp as string).trim();
+
         await connectDB();
-        const user = await User.findOne({
-          email: (credentials.email as string).toLowerCase(),
-        }).select("+password");
+        const user = await User.findOne({ email }).select("+password");
 
         if (!user || !user.password) {
           return null;
@@ -75,6 +77,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         );
 
         if (!isMatch) {
+          return null;
+        }
+
+        const { verifyOtpCode } = await import("@/lib/mailer");
+        const otpResult = await verifyOtpCode(email, "login_otp", otp, true);
+        if (!otpResult.valid) {
           return null;
         }
 

@@ -78,6 +78,17 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
         }
       })
       .catch(() => {});
+
+    const handleWorkspaceUpdated = (event: Event) => {
+      const custom = event as CustomEvent<{ name?: string }>;
+      if (custom.detail?.name) {
+        setCurrentWorkspace(custom.detail.name);
+      }
+    };
+    window.addEventListener("sendpilot:workspace-updated", handleWorkspaceUpdated);
+    return () => {
+      window.removeEventListener("sendpilot:workspace-updated", handleWorkspaceUpdated);
+    };
   }, []);
 
   const navItems = [
