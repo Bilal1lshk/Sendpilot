@@ -44,6 +44,19 @@ export default function ConnectStepPage() {
   useEffect(() => {
     async function load() {
       try {
+        if (typeof window !== "undefined") {
+          const params = new URLSearchParams(window.location.search);
+          const status = params.get("status");
+          const err = params.get("error");
+          if (status === "connected" || status === "already_connected") {
+            toast.success("LinkedIn account connected successfully!");
+            window.history.replaceState({}, "", "/get-started/connect");
+          } else if (err) {
+            toast.error(decodeURIComponent(err));
+            window.history.replaceState({}, "", "/get-started/connect");
+          }
+        }
+
         const state = await fetchOnboardingState();
         if (state.step2.data?.connectedAccounts?.length) {
           setConnectedAccounts(state.step2.data.connectedAccounts);

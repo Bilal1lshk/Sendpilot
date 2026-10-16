@@ -57,6 +57,9 @@ export async function GET(req: Request) {
     const signature = createHmac("sha256", hmacSecret).update(payloadB64).digest("hex");
     const state = `${payloadB64}.${signature}`;
 
+    const returnToParam = searchParams.get("returnTo") || (req.headers.get("referer")?.includes("/get-started") ? "/get-started/connect" : "/dashboard/accounts");
+    const returnTo = returnToParam.startsWith("/") ? returnToParam : "/dashboard/accounts";
+
     const isSecure =
       process.env.NODE_ENV === "production" ||
       Boolean(process.env.VERCEL) ||
@@ -79,6 +82,13 @@ export async function GET(req: Request) {
         maxAge: 60 * 30,
         path: "/",
       });
+      jsonRes.cookies.set("li_oauth_return_to", returnTo, {
+        httpOnly: true,
+        secure: isSecure,
+        sameSite: "lax",
+        maxAge: 60 * 30,
+        path: "/",
+      });
       return jsonRes;
     }
 
@@ -89,6 +99,13 @@ export async function GET(req: Request) {
       secure: isSecure,
       sameSite: "lax",
       maxAge: 60 * 30, // 30 minutes
+      path: "/",
+    });
+    response.cookies.set("li_oauth_return_to", returnTo, {
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: "lax",
+      maxAge: 60 * 30,
       path: "/",
     });
 

@@ -3,6 +3,7 @@ import { requireUser, apiError } from "@/lib/crm";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { connectWithCredentials, disconnectOtherAccounts } from "@/lib/linkedin-connections";
 import LinkedInConnection from "@/models/LinkedInConnection";
+import Workspace from "@/models/Workspace";
 
 /**
  * POST /api/linkedin/connect
@@ -116,7 +117,7 @@ export async function POST(req: Request) {
     }
 
     if (!tokenOk || !tokenData?.access_token) {
-      // Check if /api/auth/linkedin/callback already consumed this single-use code moments ago in Incognito
+      // Check if /api/auth/linkedin/callback already verified and connected this account moments ago
       const recentConn = await LinkedInConnection.findOne({
         userId: ctx.userId,
         status: "active",
@@ -162,6 +163,12 @@ export async function POST(req: Request) {
       { $set: { confirmedAt: new Date(), status: "active" } }
     );
     await disconnectOtherAccounts(ctx.userId, result.connection.id);
+
+    // Automatically mark onboarding Step 2 as completed
+    await Workspace.updateOne(
+      { userId: ctx.userId },
+      { $set: { "step2.status": "completed" } }
+    );
 
     return NextResponse.json({
       success: true,

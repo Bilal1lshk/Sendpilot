@@ -6,6 +6,7 @@ import { toSafeConnection } from "@/lib/linkedin-connection-dto";
 
 async function safeWorkspaceResponse(workspace: IWorkspace, userId: string) {
   const connections = await LinkedInConnection.find({ userId }).sort({ createdAt: -1 });
+  const hasActiveConnection = connections.some((c) => c.status === "active");
   const value = workspace.toObject();
   return {
     id: String(workspace._id),
@@ -13,7 +14,7 @@ async function safeWorkspaceResponse(workspace: IWorkspace, userId: string) {
     onboardingCompleted: Boolean(value.onboardingCompleted),
     step1: value.step1,
     step2: {
-      status: value.step2?.status || "not_started",
+      status: hasActiveConnection ? "completed" : value.step2?.status || "not_started",
       data: {
         connectedAccounts: connections.map(toSafeConnection),
         invitedTeammates: value.step2?.data?.invitedTeammates || [],

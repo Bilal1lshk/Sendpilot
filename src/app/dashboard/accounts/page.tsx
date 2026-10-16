@@ -236,7 +236,7 @@ export default function LinkedInAccountsPage() {
     }
   };
 
-  /** Opens safe LinkedIn connection modal with isolated Incognito mode */
+  /** Opens LinkedIn connection modal */
   const handleAddAccount = () => {
     setConnectModalOpen(true);
   };

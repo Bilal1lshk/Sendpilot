@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { connectWithCredentials, migrateLegacyLinkedInConnections, disconnectOtherAccounts } from "@/lib/linkedin-connections";
 import LinkedInConnection from "@/models/LinkedInConnection";
+import Workspace from "@/models/Workspace";
 import {
   resolveAppOrigin,
   resolveLinkedInRedirectUri,
@@ -24,16 +25,20 @@ export async function GET(req: Request) {
   const stateParam = url.searchParams.get("state");
   const error = url.searchParams.get("error");
   const baseUrl = resolveAppOrigin(req);
+  const cookieStore = await cookies();
+  const returnTo = cookieStore.get("li_oauth_return_to")?.value || "/dashboard/accounts";
+  const safeReturnTo = returnTo.startsWith("/") ? returnTo : "/dashboard/accounts";
 
   const returnError = (errorMessage: string) => {
-    const errorUrl = `${baseUrl}/dashboard/accounts?error=${encodeURIComponent(errorMessage)}`;
+    const errorUrl = `${baseUrl}${safeReturnTo}?error=${encodeURIComponent(errorMessage)}`;
     const html = `<!DOCTYPE html>
 <html>
 <head><title>LinkedIn Connection Error</title></head>
 <body style="font-family:system-ui,-apple-system,sans-serif;background:#121415;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-  <div style="text-align:center;">
+  <div style="text-align:center;max-width:420px;padding:24px;border:1px solid #262626;border-radius:16px;background:#17191a;">
     <h3 style="color:#ef4444;margin-bottom:8px;">Connection Failed</h3>
-    <p style="color:#a3a3a3;font-size:14px;">${errorMessage}</p>
+    <p style="color:#a3a3a3;font-size:14px;margin-bottom:16px;">${errorMessage}</p>
+    <a href="${errorUrl}" style="color:#10b981;font-size:12px;text-decoration:none;">Return to dashboard &rarr;</a>
   </div>
   <script>
     try {
@@ -41,10 +46,10 @@ export async function GET(req: Request) {
         window.opener.postMessage({ type: "LINKEDIN_AUTH_ERROR", error: "${errorMessage}" }, "*");
         setTimeout(function() { window.close(); }, 1500);
       } else {
-        window.location.href = "${errorUrl}";
+        window.location.replace("${errorUrl}");
       }
     } catch(e) {
-      window.location.href = "${errorUrl}";
+      window.location.replace("${errorUrl}");
     }
   </script>
 </body>
@@ -53,6 +58,7 @@ export async function GET(req: Request) {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
     response.cookies.set("li_oauth_state", "", { maxAge: 0, path: "/" });
+    response.cookies.set("li_oauth_return_to", "", { maxAge: 0, path: "/" });
     return response;
   };
 
@@ -67,7 +73,6 @@ export async function GET(req: Request) {
   }
 
   // ── 1. Validate CSRF state & user identification ─────────────────
-  const cookieStore = await cookies();
   const storedState = cookieStore.get("li_oauth_state")?.value;
 
   let stateValid = Boolean(storedState && storedState === stateParam);
@@ -195,38 +200,44 @@ export async function GET(req: Request) {
     );
     await disconnectOtherAccounts(userId, result.connection.id);
 
+    // Automatically mark onboarding Step 2 as completed
+    await Workspace.updateOne(
+      { userId },
+      { $set: { "step2.status": "completed" } }
+    );
+
     const statusParam = result.alreadyConnected ? "already_connected" : "connected";
-    const redirectUrl = `${baseUrl}/dashboard/accounts?status=${statusParam}&id=${encodeURIComponent(result.connection.id)}`;
-    const hasBrowserSession = Boolean(session?.user?.id);
+    const redirectUrl = `${baseUrl}${safeReturnTo}?status=${statusParam}&id=${encodeURIComponent(result.connection.id)}`;
     const connectedName = (result.connection.linkedinName || "LinkedIn Profile").replace(/[<>"'&]/g, "");
 
-    // Return HTML that notifies window.opener if in popup, redirects if logged in, or shows Incognito completion card
+    // Return HTML that notifies window.opener if in popup, or redirects immediately
     const html = `<!DOCTYPE html>
 <html>
-<head><title>LinkedIn Connected</title></head>
+<head>
+  <title>LinkedIn Connected</title>
+  <meta http-equiv="refresh" content="1;url=${redirectUrl}">
+</head>
 <body style="font-family:system-ui,-apple-system,sans-serif;background:#121415;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
   <div style="text-align:center;max-width:420px;padding:24px;border:1px solid #262626;border-radius:16px;background:#17191a;">
     <div style="width:48px;height:48px;border-radius:12px;background:rgba(16,185,129,0.15);color:#10b981;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;font-weight:bold;">✓</div>
     <h3 style="margin:0 0 8px;color:#10b981;">LinkedIn Connected!</h3>
-    <p style="color:#d4d4d4;font-size:14px;margin:0 0 8px;"><strong>${connectedName}</strong> is now connected to your SendPilot workspace.</p>
-    <p id="subtext" style="color:#a3a3a3;font-size:12px;margin:0;">${
-      hasBrowserSession
-        ? "Updating accounts dashboard..."
-        : "You can now close this Incognito window and return to your main SendPilot tab."
-    }</p>
+    <p style="color:#d4d4d4;font-size:14px;margin:0 0 8px;"><strong>${connectedName}</strong> is now connected to SendPilot.</p>
+    <p id="subtext" style="color:#a3a3a3;font-size:12px;margin:0 0 16px;">Redirecting back to your SendPilot workspace...</p>
+    <a href="${redirectUrl}" style="color:#10b981;font-size:12px;text-decoration:none;">Click here if not redirected automatically &rarr;</a>
   </div>
   <script>
     try {
       if (window.opener && window.opener !== window) {
         window.opener.postMessage({ type: "LINKEDIN_AUTH_SUCCESS", status: "${statusParam}", id: "${result.connection.id}" }, "*");
-        setTimeout(function() { window.close(); }, 350);
-      } else if (${hasBrowserSession ? "true" : "false"}) {
-        window.location.href = "${redirectUrl}";
+        setTimeout(function() {
+          try { window.close(); } catch(e) {}
+          window.location.replace("${redirectUrl}");
+        }, 350);
+      } else {
+        window.location.replace("${redirectUrl}");
       }
     } catch(e) {
-      if (${hasBrowserSession ? "true" : "false"}) {
-        window.location.href = "${redirectUrl}";
-      }
+      window.location.replace("${redirectUrl}");
     }
   </script>
 </body>
@@ -236,6 +247,7 @@ export async function GET(req: Request) {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
     response.cookies.set("li_oauth_state", "", { maxAge: 0, path: "/" });
+    response.cookies.set("li_oauth_return_to", "", { maxAge: 0, path: "/" });
     return response;
   } catch (err) {
     console.error("LinkedIn OAuth callback exception:", err);
