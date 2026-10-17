@@ -5,6 +5,7 @@ import {
   extractLinkedInSession,
   verifyLinkedInSession,
   type TwoFactorMethod,
+  type ExtractedSessionResult,
 } from "@/lib/linkedin-session-extractor";
 import { createConnectionId, disconnectOtherAccounts } from "@/lib/linkedin-connections";
 import { encryptConnectionSecrets, decryptConnectionSecrets } from "@/lib/connection-crypto";
@@ -145,22 +146,83 @@ export async function POST(req: Request) {
 
     const normalized2FA: TwoFactorMethod = twoFactorMethod === "app" ? "app" : "otp";
 
-    const result = await extractLinkedInSession({
-      email: email.trim(),
-      password,
-      twoFactorMethod: normalized2FA,
-      verificationCode:
-        typeof verificationCode === "string" && verificationCode.trim()
-          ? verificationCode.trim()
-          : undefined,
-      pendingChallengeToken:
-        typeof pendingChallengeToken === "string" && pendingChallengeToken.trim()
-          ? pendingChallengeToken.trim()
-          : undefined,
-      headless: true,
-      timeout: 24000,
-      existingFingerprint,
-    });
+    let result: ExtractedSessionResult;
+    const workerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
+
+    if (workerUrl) {
+      // Offload Playwright browser extraction to dedicated local runner / Cloudflare tunnel
+      const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Bypass-Tunnel-Reminder": "true",
+        "User-Agent": "SendPilot-Worker-Client/1.0",
+      };
+      if (workerSecret) {
+        headers["x-worker-secret"] = workerSecret;
+      }
+
+      try {
+        const workerRes = await fetch(`${workerUrl.replace(/\/+$/, "")}/api/extract-session`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            email: email.trim(),
+            password,
+            twoFactorMethod: normalized2FA,
+            verificationCode:
+              typeof verificationCode === "string" && verificationCode.trim()
+                ? verificationCode.trim()
+                : undefined,
+            pendingChallengeToken:
+              typeof pendingChallengeToken === "string" && pendingChallengeToken.trim()
+                ? pendingChallengeToken.trim()
+                : undefined,
+            existingFingerprint,
+          }),
+          signal: AbortSignal.timeout(50000),
+        });
+
+        const workerData = await workerRes.json().catch(() => null);
+
+        if (!workerData) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `LinkedIn worker runner at ${workerUrl} returned an empty response (HTTP ${workerRes.status}).`,
+            },
+            { status: 502 }
+          );
+        }
+
+        result = workerData;
+      } catch (workerErr: unknown) {
+        const errMessage = workerErr instanceof Error ? workerErr.message : String(workerErr);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Unable to connect to LinkedIn runner (${workerUrl}): ${errMessage}. Ensure your local runner or VPS is active and the Cloudflare Tunnel is running.`,
+          },
+          { status: 504 }
+        );
+      }
+    } else {
+      result = await extractLinkedInSession({
+        email: email.trim(),
+        password,
+        twoFactorMethod: normalized2FA,
+        verificationCode:
+          typeof verificationCode === "string" && verificationCode.trim()
+            ? verificationCode.trim()
+            : undefined,
+        pendingChallengeToken:
+          typeof pendingChallengeToken === "string" && pendingChallengeToken.trim()
+            ? pendingChallengeToken.trim()
+            : undefined,
+        headless: true,
+        timeout: 24000,
+        existingFingerprint,
+      });
+    }
 
     if (result.proxyError) {
       return NextResponse.json(
