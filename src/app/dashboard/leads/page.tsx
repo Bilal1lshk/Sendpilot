@@ -22,11 +22,14 @@ import {
   FileSpreadsheet,
   Ban,
   Database,
+  UserPlus,
+  Check,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants, drawerVariants, floatingBarVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
 import { parseCsvContent, CsvParseResult } from "@/lib/csv-parser";
+import { SendConnectionModal, SendConnectionTarget } from "@/components/dashboard/SendConnectionModal";
 
 import { toast } from "sonner";
 
@@ -151,7 +154,7 @@ export default function LeadDatabasePage() {
   );
 
   const [viewMode, setViewMode] = useState<"table" | "pipeline">("table");
-  const [selectedLead, setSelectedLead] = useState<any | null>(null);
+  const [selectedLead, setSelectedLead] = useState<LeadItem | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [isClearing, setIsClearing] = useState(false);
@@ -193,6 +196,7 @@ export default function LeadDatabasePage() {
   const [parsedCsvResult, setParsedCsvResult] = useState<CsvParseResult | null>(null);
   const [showCsvDecisionModal, setShowCsvDecisionModal] = useState<boolean>(false);
   const [isSavingCsv, setIsSavingCsv] = useState<boolean>(false);
+  const [connectTarget, setConnectTarget] = useState<SendConnectionTarget | null>(null);
 
   const handleCsvFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -724,9 +728,9 @@ export default function LeadDatabasePage() {
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
+              <div className="pt-4 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between gap-3">
                 <a
-                  href="https://linkedin.com"
+                  href={selectedLead.linkedinUrl || "https://linkedin.com"}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900"
@@ -736,13 +740,32 @@ export default function LeadDatabasePage() {
                   <ExternalLink className="h-3 w-3 text-neutral-400" />
                 </a>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedLead(null)}
-                  className="rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-3.5 py-1.5 text-xs font-semibold"
-                >
-                  Close
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setConnectTarget({
+                        id: selectedLead.id,
+                        name: selectedLead.name,
+                        title: selectedLead.title,
+                        company: selectedLead.company,
+                        linkedinUrl: selectedLead.linkedinUrl || "https://linkedin.com",
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#0a66c2] hover:bg-[#004182] text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs cursor-pointer"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    <span>Send Connection Request</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLead(null)}
+                    className="rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-200 px-3 py-1.5 text-xs font-semibold cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
             </motion.div>
           </>
@@ -853,6 +876,16 @@ export default function LeadDatabasePage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Send Connection Request Modal */}
+      <SendConnectionModal
+        isOpen={Boolean(connectTarget)}
+        target={connectTarget}
+        onClose={() => setConnectTarget(null)}
+        onSuccess={(leadId) => {
+          setSelectedLead((prev: LeadItem | null) => (prev && prev.id === leadId ? { ...prev, pipeline: "Contacted" } : prev));
+        }}
+      />
     </motion.div>
   );
 }

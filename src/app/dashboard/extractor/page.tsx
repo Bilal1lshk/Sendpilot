@@ -26,10 +26,12 @@ import {
   RefreshCw,
   Globe,
   ShieldCheck,
+  UserPlus,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants } from "@/lib/motion";
 import { parseCsvContent, getSampleCsvTemplate, CsvParseResult, ParsedCsvLead } from "@/lib/csv-parser";
+import { SendConnectionModal, SendConnectionTarget } from "@/components/dashboard/SendConnectionModal";
 
 interface ExtractedLead {
   id: string;
@@ -114,6 +116,9 @@ export default function LeadExtractorPage() {
   const [extractedLeads, setExtractedLeads] = useState<ExtractedLead[]>([]);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [isSavingDb, setIsSavingDb] = useState(false);
+  const [showCodeSnippet, setShowCodeSnippet] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [connectTarget, setConnectTarget] = useState<SendConnectionTarget | null>(null);
 
   // Real CSV Upload & Import states
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -730,6 +735,7 @@ export default function LeadExtractorPage() {
                         <th className="py-3 px-4">Location</th>
                         <th className="py-3 px-4">ICP Score</th>
                         <th className="py-3 px-4">Profile</th>
+                        <th className="py-3 px-4 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -794,6 +800,33 @@ export default function LeadExtractorPage() {
                                 <span>Profile</span>
                                 <ExternalLink className="h-3 w-3" />
                               </a>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              {lead.status === "invited" ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800">
+                                  <Check className="h-3 w-3" />
+                                  <span>Invited</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConnectTarget({
+                                      id: lead.id,
+                                      name: lead.name,
+                                      firstName: lead.firstName,
+                                      lastName: lead.lastName,
+                                      title: lead.title,
+                                      company: lead.company,
+                                      linkedinUrl: lead.linkedinUrl,
+                                    })
+                                  }
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0a66c2]/10 hover:bg-[#0a66c2] text-[#0a66c2] hover:text-white transition-colors text-xs font-semibold cursor-pointer shadow-2xs"
+                                >
+                                  <UserPlus className="h-3.5 w-3.5" />
+                                  <span>Connect</span>
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -1333,6 +1366,19 @@ export default function LeadExtractorPage() {
           </div>
         )}
       </motion.div>
+
+      {/* Send Connection Request Modal */}
+      <SendConnectionModal
+        isOpen={Boolean(connectTarget)}
+        target={connectTarget}
+        onClose={() => setConnectTarget(null)}
+        senderAccountName={connectedAccountName}
+        onSuccess={(leadId) => {
+          setExtractedLeads((prev) =>
+            prev.map((l) => (l.id === leadId ? { ...l, status: "invited" } : l))
+          );
+        }}
+      />
     </motion.div>
   );
 }

@@ -7,10 +7,13 @@ import bcrypt from "bcryptjs";
 import { authConfig } from "./auth.config";
 import { decodeOpaqueSession, encodeOpaqueSession, revokeOpaqueSession } from "@/lib/opaque-auth-session";
 
-// Guard against localhost NEXTAUTH_URL leaking into production on Vercel
-if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+const isProduction =
+  process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+
+if (isProduction) {
+  // Guard against localhost NEXTAUTH_URL leaking into production on Vercel
   const currentUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL;
-  if (!currentUrl || currentUrl.includes("localhost")) {
+  if (!currentUrl || currentUrl.includes("localhost") || currentUrl.includes("127.0.0.1")) {
     const prodUrl =
       (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null) ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
@@ -20,12 +23,20 @@ if (process.env.VERCEL || process.env.NODE_ENV === "production") {
     process.env.NEXTAUTH_URL = prodUrl;
     process.env.AUTH_TRUST_HOST = "true";
   }
+} else {
+  // In local development, prevent production Vercel URL from leaking in and breaking cookies/CSRF
+  const currentUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || "";
+  if (!currentUrl || currentUrl.includes("vercel.app") || currentUrl.startsWith("https://")) {
+    const port = process.env.PORT || "3000";
+    const localUrl = `http://localhost:${port}`;
+    process.env.AUTH_URL = localUrl;
+    process.env.NEXTAUTH_URL = localUrl;
+    process.env.AUTH_TRUST_HOST = "true";
+  }
 }
 
-const useSecureCookies =
-  process.env.NODE_ENV === "production" ||
-  process.env.NEXTAUTH_URL?.startsWith("https://") ||
-  Boolean(process.env.VERCEL);
+const currentAuthUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || "";
+const useSecureCookies = isProduction && currentAuthUrl.startsWith("https://");
 const cookiePrefix = useSecureCookies ? "__Host-" : "";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({

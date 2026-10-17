@@ -74,6 +74,10 @@ export async function issueOtpCode(
     expiresAt,
   });
 
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[DEV OTP] 🔑 Code for ${normalizedEmail} (${purpose}): ${code}`);
+  }
+
   return { code, expiresAt };
 }
 
