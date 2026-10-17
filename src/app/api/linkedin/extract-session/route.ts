@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireUser, apiError } from "@/lib/crm";
 import { consumeRateLimit } from "@/lib/rate-limit";
-import { extractLinkedInSession } from "@/lib/linkedin-session-extractor";
+import {
+  extractLinkedInSession,
+  verifyLinkedInSession,
+} from "@/lib/linkedin-session-extractor";
 import { createConnectionId } from "@/lib/linkedin-connections";
 import { encryptConnectionSecrets } from "@/lib/connection-crypto";
 import LinkedInConnection from "@/models/LinkedInConnection";
@@ -16,8 +19,69 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { email, password } = body;
+    const { email, password, li_at, jsessionId, method = "playwright" } = body;
 
+    // ── Method 1: Manual Cookie Submission ──────────────────────────────────
+    if (method === "manual" || (li_at && !password)) {
+      if (!li_at || typeof li_at !== "string" || !li_at.trim()) {
+        return NextResponse.json(
+          { success: false, error: "Please provide a valid li_at cookie value." },
+          { status: 400 }
+        );
+      }
+
+      const cleanLiAt = li_at.trim();
+      const cleanCsrf = jsessionId && typeof jsessionId === "string" && jsessionId.trim()
+        ? jsessionId.trim()
+        : `ajax:${Date.now()}`;
+
+      // Verify the provided cookies against LinkedIn Voyager API
+      const verification = await verifyLinkedInSession(cleanLiAt, cleanCsrf);
+      if (!verification.active) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "The provided li_at cookie is invalid or expired. Please copy a fresh cookie from your active browser session.",
+          },
+          { status: 400 }
+        );
+      }
+
+      await connectDB();
+      const memberName =
+        [verification.profile?.firstName, verification.profile?.lastName].filter(Boolean).join(" ") ||
+        "LinkedIn Member";
+      const connId = createConnectionId();
+
+      await LinkedInConnection.create({
+        id: connId,
+        userId: ctx.userId,
+        encryptedCredentials: encryptConnectionSecrets({
+          accessToken: cleanLiAt,
+          li_at: cleanLiAt,
+          jsessionId: cleanCsrf,
+        }),
+        status: "active",
+        linkedinName: memberName,
+        linkedinAvatar: "",
+        confirmedAt: new Date(),
+        lastVerifiedAt: new Date(),
+      });
+
+      return NextResponse.json({
+        success: true,
+        saved: true,
+        connectionId: connId,
+        profile: {
+          name: memberName,
+          firstName: verification.profile?.firstName,
+          lastName: verification.profile?.lastName,
+          headline: verification.profile?.headline || "LinkedIn Profile",
+        },
+      });
+    }
+
+    // ── Method 2: Automatic Playwright Browser Extraction ───────────────────
     if (!email || typeof email !== "string" || !email.includes("@")) {
       return NextResponse.json(
         { success: false, error: "Please enter a valid LinkedIn email address." },
