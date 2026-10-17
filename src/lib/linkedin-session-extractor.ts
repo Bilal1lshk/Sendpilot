@@ -1,6 +1,13 @@
 import type { Browser, BrowserContext, Page } from "playwright-core";
-import { launchBrowser, createStealthContext } from "@/lib/browser-launcher";
-import { decryptConnectionSecrets, encryptConnectionSecrets } from "@/lib/connection-crypto";
+import {
+  launchBrowser,
+  createStealthContext,
+  safeCloseBrowser,
+} from "@/lib/browser-launcher";
+import {
+  decryptConnectionSecrets,
+  encryptConnectionSecrets,
+} from "@/lib/connection-crypto";
 
 export type TwoFactorMethod = "otp" | "app";
 
@@ -42,6 +49,7 @@ interface CapturedChallengeForm {
 interface PendingChallengePayload {
   email: string;
   checkpointUrl: string;
+  userAgent?: string;
   capturedForm?: CapturedChallengeForm | null;
   storageState: {
     cookies: Array<{
@@ -63,7 +71,7 @@ interface PendingChallengePayload {
 }
 
 const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36";
 
 const PIN_INPUT_SELECTOR = [
   'input[name="pin"]:visible',
@@ -84,6 +92,12 @@ const PIN_SUBMIT_SELECTOR = [
   'form[action*="challenge"] button[type="submit"]:visible',
   'button[type="submit"]:visible',
 ].join(", ");
+
+function isValidLiAtValue(val: string | undefined | null): val is string {
+  if (!val || typeof val !== "string") return false;
+  const clean = val.trim();
+  return clean.length > 25 && clean.toLowerCase() !== "delete me";
+}
 
 /**
  * Verifies active session using LinkedIn Voyager API (with cloud-IP fallback for Vercel)
@@ -125,6 +139,7 @@ export async function verifyLinkedInSession(liAt: string, jsessionId?: string) {
         Accept: "application/vnd.linkedin.normalized+json+2.1",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     });
 
     if (res.status === 200) {
@@ -153,6 +168,7 @@ export async function verifyLinkedInSession(liAt: string, jsessionId?: string) {
         Accept: "text/html,application/xhtml+xml",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     });
 
     const location = (feedRes.headers.get("location") || "").toLowerCase();
@@ -205,11 +221,14 @@ export async function verifyLinkedInSession(liAt: string, jsessionId?: string) {
 
 /**
  * Inspects the current page to distinguish between:
- * - Login form (/checkpoint/lg/login or /checkpoint/lg/login-submit)
+ * - Login form (/checkpoint/lg/login)
  * - Bot security puzzle (captchaInternal / "Let's do a quick security check")
  * - Real 2FA Checkpoint (/checkpoint/challenge/... with PIN input or LinkedIn App push)
  */
-async function detectCheckpointKind(page: Page, sawCaptchaNetwork = false): Promise<{
+async function detectCheckpointKind(
+  page: Page,
+  sawCaptchaNetwork = false
+): Promise<{
   isCheckpoint: boolean;
   isCaptcha: boolean;
   hasPinInput: boolean;
@@ -220,11 +239,9 @@ async function detectCheckpointKind(page: Page, sawCaptchaNetwork = false): Prom
   const bodyText = await page.innerText("body").catch(() => "");
   const lowerText = bodyText.toLowerCase();
 
-  // Do NOT treat the login page itself (/checkpoint/lg/login) as a 2FA challenge
   const isLoginUrl =
-    currentUrl.includes("/checkpoint/lg/login") ||
-    currentUrl.endsWith("/login") ||
-    currentUrl.endsWith("/login/");
+    currentUrl.includes("/checkpoint/lg/login") &&
+    !currentUrl.includes("/checkpoint/challenge");
 
   const pinLocator = page.locator(PIN_INPUT_SELECTOR).first();
   const hasPinInput = !isLoginUrl && (await pinLocator.isVisible().catch(() => false));
@@ -253,7 +270,6 @@ async function detectCheckpointKind(page: Page, sawCaptchaNetwork = false): Prom
       lowerText.includes("check your mobile"));
 
   const isCheckpoint =
-    !isLoginUrl &&
     !isCaptcha &&
     (currentUrl.includes("/checkpoint/challenge") ||
       hasPinInput ||
@@ -286,87 +302,74 @@ async function detectCheckpointKind(page: Page, sawCaptchaNetwork = false): Prom
 /**
  * Triggers sending the one-time code (SMS or email) if LinkedIn landed on the
  * mobile app push prompt or a "Send code" / "Try another way" chooser screen.
- * Waits until the PIN input field actually renders on the page.
+ * Uses combined locators to minimize CDP roundtrips and avoid serverless timeouts.
  */
 async function ensurePreferredTwoFactorMethod(
   page: Page,
   preferred: TwoFactorMethod
 ): Promise<void> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const switchToOtpCombinedSelector = [
+    "#try-another-way:visible",
+    'button:has-text("Try another way"):visible',
+    'a:has-text("Try another way"):visible',
+    'button:has-text("Verify with SMS"):visible',
+    'a:has-text("Verify with SMS"):visible',
+    'button:has-text("Verify using SMS"):visible',
+    'a:has-text("Verify using SMS"):visible',
+    'button:has-text("Verify with email"):visible',
+    'a:has-text("Verify with email"):visible',
+    'button:has-text("Send code"):visible',
+    'a:has-text("Send code"):visible',
+    'button:has-text("Get code"):visible',
+    'button:has-text("Use a verification code"):visible',
+    'a:has-text("Use a verification code"):visible',
+    'form#otp-generation button[type="submit"]:visible',
+  ].join(", ");
+
+  const appCombinedSelector = [
+    'button:has-text("Use LinkedIn app"):visible',
+    'a:has-text("Use LinkedIn app"):visible',
+    "#try-another-way:visible",
+    'button:has-text("Try another way"):visible',
+    'a:has-text("Try another way"):visible',
+  ].join(", ");
+
+  for (let attempt = 0; attempt < 2; attempt++) {
     const state = await detectCheckpointKind(page);
     if (!state.isCheckpoint) return;
 
     if (preferred === "otp") {
       if (state.hasPinInput) return;
 
-      // 1. If on the LinkedIn App Push screen, click "Try another way" / "Verify using SMS" / "Send code"
-      const switchToOtpSelectors = [
-        "#try-another-way:visible",
-        'button:has-text("Try another way"):visible',
-        'a:has-text("Try another way"):visible',
-        'button:has-text("Verify with SMS"):visible',
-        'a:has-text("Verify with SMS"):visible',
-        'button:has-text("Verify using SMS"):visible',
-        'a:has-text("Verify using SMS"):visible',
-        'button:has-text("Verify with email"):visible',
-        'a:has-text("Verify with email"):visible',
-        'button:has-text("Send code"):visible',
-        'a:has-text("Send code"):visible',
-        'button:has-text("Get code"):visible',
-        'button:has-text("Use a verification code"):visible',
-        'a:has-text("Use a verification code"):visible',
-        'form#otp-generation button[type="submit"]:visible',
-      ];
-
-      let clicked = false;
-      for (const sel of switchToOtpSelectors) {
-        const el = page.locator(sel).first();
-        if (await el.isVisible().catch(() => false)) {
-          await el.click().catch(() => {});
-          clicked = true;
-          await page.waitForTimeout(2000);
-          break;
-        }
-      }
-
-      // 2. If a radio option for SMS/Email appeared after clicking "Try another way", select it and submit
-      const recheck = await detectCheckpointKind(page);
-      if (!recheck.hasPinInput) {
-        const smsOrEmailRadio = page
-          .locator(
-            'input[type="radio"][value*="SMS" i], input[type="radio"][value*="EMAIL" i], input[type="radio"][value*="PHONE" i], label:has-text("SMS"), label:has-text("Email")'
-          )
-          .first();
-        if (await smsOrEmailRadio.isVisible().catch(() => false)) {
-          await smsOrEmailRadio.click().catch(() => {});
-          await page.waitForTimeout(400);
-          const submitChoice = page.locator('button[type="submit"]:visible').first();
-          if (await submitChoice.isVisible().catch(() => false)) {
-            await submitChoice.click().catch(() => {});
-            await page.waitForTimeout(2000);
-          }
-        }
-      }
-
-      if (!clicked) {
+      const switchBtn = page.locator(switchToOtpCombinedSelector).first();
+      if (await switchBtn.isVisible().catch(() => false)) {
+        await switchBtn.click().catch(() => {});
         await page.waitForTimeout(1200);
+      }
+
+      const recheck = await detectCheckpointKind(page);
+      if (recheck.hasPinInput) return;
+
+      const smsOrEmailRadio = page
+        .locator(
+          'input[type="radio"][value*="SMS" i], input[type="radio"][value*="EMAIL" i], input[type="radio"][value*="PHONE" i], label:has-text("SMS"), label:has-text("Email")'
+        )
+        .first();
+      if (await smsOrEmailRadio.isVisible().catch(() => false)) {
+        await smsOrEmailRadio.click().catch(() => {});
+        await page.waitForTimeout(250);
+        const submitChoice = page.locator('button[type="submit"]:visible').first();
+        if (await submitChoice.isVisible().catch(() => false)) {
+          await submitChoice.click().catch(() => {});
+          await page.waitForTimeout(1200);
+        }
       }
     } else if (preferred === "app") {
       if (state.isAppPush) return;
-      const appSelectors = [
-        'button:has-text("Use LinkedIn app"):visible',
-        'a:has-text("Use LinkedIn app"):visible',
-        "#try-another-way:visible",
-        'button:has-text("Try another way"):visible',
-        'a:has-text("Try another way"):visible',
-      ];
-      for (const sel of appSelectors) {
-        const el = page.locator(sel).first();
-        if (await el.isVisible().catch(() => false)) {
-          await el.click().catch(() => {});
-          await page.waitForTimeout(2000);
-          break;
-        }
+      const appBtn = page.locator(appCombinedSelector).first();
+      if (await appBtn.isVisible().catch(() => false)) {
+        await appBtn.click().catch(() => {});
+        await page.waitForTimeout(1200);
       }
       return;
     }
@@ -374,35 +377,181 @@ async function ensurePreferredTwoFactorMethod(
 }
 
 /**
- * Captures the active checkpoint <form> action, method, and hidden fields so the
- * one-time code can be submitted reliably even if GET checkpointUrl redirects.
+ * Captures the active checkpoint <form> action, method, and all fields so the
+ * one-time code can be submitted directly via HTTP POST or DOM form reconstruction.
  */
 async function captureChallengeForm(page: Page): Promise<CapturedChallengeForm | null> {
   try {
     return await page.evaluate(() => {
-      const pinInput =
-        document.querySelector<HTMLInputElement>(
-          'input[name="pin"], input#input__phone_verification_pin, input#input__email_verification_pin, input#input__totp_verification_pin, input[id*="verification_pin"]'
+      const pinInput = document.querySelector<HTMLInputElement>(
+        'input[name="pin"], input#input__phone_verification_pin, input#input__email_verification_pin, input#input__totp_verification_pin, input[id*="verification_pin"], input[autocomplete="one-time-code"], input[name*="verification"], input[name="challengeResponse"], input[type="tel"], input[type="number"]'
+      );
+      const form =
+        pinInput?.closest("form") ||
+        document.querySelector<HTMLFormElement>(
+          'form[action*="challenge"], form#email-pin-challenge, form#two-step-challenge, form[method="post" i]'
         );
-      const form = pinInput?.closest("form") || document.querySelector<HTMLFormElement>('form[action*="challenge"], form[method="post" i]');
       if (!form) return null;
 
+      const pinFieldName = pinInput?.name || "pin";
       const hiddenFields: Record<string, string> = {};
       form.querySelectorAll<HTMLInputElement>("input").forEach((inp) => {
-        if (inp.name && inp.type === "hidden") {
+        if (!inp.name || inp.name === pinFieldName) return;
+        const type = (inp.type || "").toLowerCase();
+        if (type === "hidden") {
           hiddenFields[inp.name] = inp.value || "";
+        } else if ((type === "checkbox" || type === "radio") && inp.checked) {
+          hiddenFields[inp.name] = inp.value || "true";
         }
       });
 
       return {
         action: form.action || window.location.href,
         method: (form.method || "POST").toUpperCase(),
-        pinFieldName: pinInput?.name || "pin",
+        pinFieldName,
         hiddenFields,
       };
     });
   } catch {
     return null;
+  }
+}
+
+/**
+ * Fast-path: Submits the captured 2FA challenge POST form directly over HTTP using
+ * the cookies from Step 1. Completes in ~1s without needing to spin up Chromium.
+ */
+async function submitChallengeFormViaHttp(
+  challenge: PendingChallengePayload,
+  code: string
+): Promise<{
+  success: boolean;
+  li_at?: string;
+  jsessionId?: string;
+  invalidCodeError?: string;
+}> {
+  const form = challenge.capturedForm;
+  if (!form?.action || !challenge.storageState?.cookies?.length) {
+    return { success: false };
+  }
+
+  const cleanCode = code.trim().replace(/\s+/g, "");
+  const cookieJar = new Map<string, string>();
+  for (const c of challenge.storageState.cookies) {
+    if (c.name && c.value) {
+      cookieJar.set(c.name, c.value);
+    }
+  }
+
+  const parseSetCookies = (res: Response) => {
+    const rawHeaders: string[] =
+      typeof (res.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie ===
+      "function"
+        ? (res.headers as unknown as { getSetCookie: () => string[] }).getSetCookie()
+        : [res.headers.get("set-cookie") || ""].filter(Boolean);
+
+    for (const header of rawHeaders) {
+      const firstPart = header.split(";")[0]?.trim();
+      if (!firstPart) continue;
+      const eqIdx = firstPart.indexOf("=");
+      if (eqIdx <= 0) continue;
+      const name = firstPart.slice(0, eqIdx).trim();
+      const val = firstPart.slice(eqIdx + 1).trim();
+      if (!val || val.toLowerCase() === "delete me" || /max-age=0/i.test(header)) {
+        if (name !== "li_at") cookieJar.delete(name);
+        continue;
+      }
+      cookieJar.set(name, val);
+    }
+  };
+
+  const buildCookieHeader = () =>
+    Array.from(cookieJar.entries())
+      .map(([k, v]) => `${k}=${v}`)
+      .join("; ");
+
+  try {
+    const targetUrl = new URL(form.action, "https://www.linkedin.com").toString();
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(form.hiddenFields || {})) {
+      params.set(k, v);
+    }
+    params.set(form.pinFieldName || "pin", cleanCode);
+
+    const ua = challenge.userAgent || BROWSER_UA;
+    let res = await fetch(targetUrl, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: buildCookieHeader(),
+        "User-Agent": ua,
+        Origin: "https://www.linkedin.com",
+        Referer: challenge.checkpointUrl || "https://www.linkedin.com/checkpoint/challenge/",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      body: params.toString(),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    parseSetCookies(res);
+
+    // Follow up to 4 redirects to collect li_at cookie across hops
+    let hops = 0;
+    while (
+      hops < 4 &&
+      !isValidLiAtValue(cookieJar.get("li_at")) &&
+      res.status >= 300 &&
+      res.status < 400
+    ) {
+      const loc = res.headers.get("location");
+      if (!loc) break;
+      const nextUrl = new URL(loc, targetUrl).toString();
+      res = await fetch(nextUrl, {
+        method: "GET",
+        redirect: "manual",
+        headers: {
+          Cookie: buildCookieHeader(),
+          "User-Agent": ua,
+          Referer: targetUrl,
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+      parseSetCookies(res);
+      hops++;
+    }
+
+    const liAt = cookieJar.get("li_at");
+    if (isValidLiAtValue(liAt)) {
+      const jsessionId = (cookieJar.get("JSESSIONID") || "").replace(/^"+|"+$/g, "");
+      return {
+        success: true,
+        li_at: liAt,
+        jsessionId,
+      };
+    }
+
+    const bodyText = await res.text().catch(() => "");
+    const lower = bodyText.toLowerCase();
+    if (
+      lower.includes("code you entered is incorrect") ||
+      lower.includes("expired code") ||
+      lower.includes("doesn't match") ||
+      lower.includes("not the right code") ||
+      lower.includes("please enter a valid code")
+    ) {
+      return {
+        success: false,
+        invalidCodeError:
+          "The verification code entered was incorrect or expired. Please try again.",
+      };
+    }
+
+    return { success: false };
+  } catch {
+    return { success: false };
   }
 }
 
@@ -418,14 +567,13 @@ async function submitOneTimeCode(
   const pinInput = page.locator(PIN_INPUT_SELECTOR).first();
 
   const visible = await pinInput
-    .waitFor({ state: "visible", timeout: 6000 })
+    .waitFor({ state: "visible", timeout: 4000 })
     .then(() => true)
     .catch(() => false);
 
   if (visible) {
-    await pinInput.click().catch(() => {});
     await pinInput.fill(cleanCode);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(150);
 
     const submitBtn = page.locator(PIN_SUBMIT_SELECTOR).first();
     if (await submitBtn.isVisible().catch(() => false)) {
@@ -477,11 +625,14 @@ async function createPendingChallengeToken(
   email: string
 ): Promise<string | undefined> {
   try {
-    const storageState = (await context.storageState()) as PendingChallengePayload["storageState"];
+    const storageState =
+      (await context.storageState()) as PendingChallengePayload["storageState"];
     const capturedForm = await captureChallengeForm(page);
+    const userAgent = await page.evaluate(() => navigator.userAgent).catch(() => BROWSER_UA);
     const payload: PendingChallengePayload = {
       email,
       checkpointUrl: page.url(),
+      userAgent,
       capturedForm,
       storageState,
       createdAt: Date.now(),
@@ -493,54 +644,73 @@ async function createPendingChallengeToken(
 }
 
 /**
- * Performs the login on https://www.linkedin.com/checkpoint/lg/login using human-paced typing
- * and single form submission to avoid SDUI / PerimeterX captchaInternal blocks.
+ * Performs login on https://www.linkedin.com/checkpoint/lg/login using event-driven
+ * waiting so it resolves immediately once LinkedIn responds.
  */
 async function performCheckpointLogin(page: Page, email: string, password: string) {
   await page.goto("https://www.linkedin.com/checkpoint/lg/login", {
     waitUntil: "domcontentloaded",
-    timeout: 20000,
+    timeout: 12000,
   });
-  await page.waitForTimeout(1000);
 
   const emailInput = page
     .locator('#username:visible, input[name="session_key"]:visible, input[type="email"]:visible')
     .first();
-  await emailInput.waitFor({ state: "visible", timeout: 15000 });
-  await emailInput.click();
-  await emailInput.fill("");
-  await emailInput.pressSequentially(email, { delay: 25 });
+  await emailInput.waitFor({ state: "visible", timeout: 8000 });
+  await emailInput.fill(email);
 
   const passInput = page
-    .locator('#password:visible, input[name="session_password"]:visible, input[type="password"]:visible')
+    .locator(
+      '#password:visible, input[name="session_password"]:visible, input[type="password"]:visible'
+    )
     .first();
-  await passInput.waitFor({ state: "visible", timeout: 15000 });
-  await passInput.click();
-  await passInput.fill("");
-  await passInput.pressSequentially(password, { delay: 25 });
-
-  await page.waitForTimeout(400);
+  await passInput.waitFor({ state: "visible", timeout: 8000 });
+  await passInput.fill(password);
 
   const submitBtn = page
     .locator(
       'form[action*="login-submit"] button[type="submit"]:visible, button[type="submit"]:visible'
     )
     .first();
+
+  const navigationOrOutcomePromise = Promise.race([
+    page
+      .waitForURL(
+        (u) => !u.pathname.endsWith("/lg/login") && !u.pathname.endsWith("/login"),
+        { timeout: 10000 }
+      )
+      .catch(() => {}),
+    page
+      .locator(PIN_INPUT_SELECTOR)
+      .first()
+      .waitFor({ state: "visible", timeout: 10000 })
+      .catch(() => {}),
+    page
+      .locator(
+        '#error-for-username:visible, #error-for-password:visible, [data-qa-alert="error"]:visible'
+      )
+      .first()
+      .waitFor({ state: "visible", timeout: 10000 })
+      .catch(() => {}),
+    page.waitForTimeout(4500),
+  ]);
+
   if (await submitBtn.isVisible().catch(() => false)) {
     await submitBtn.click();
   } else {
     await passInput.press("Enter");
   }
 
-  // Wait for navigation / response after login submit
-  await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(2000);
+  await navigationOrOutcomePromise;
+  await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(400);
 }
 
 /**
  * Automates real browser login with full support for LinkedIn Two-Factor Authentication:
  * - "otp": One-time code (LinkedIn sends a code by SMS or email)
  * - "app": LinkedIn app (Approve the sign-in in the mobile app)
+ * Enforces a strict time budget so serverless functions never hit FUNCTION_INVOCATION_TIMEOUT.
  */
 export async function extractLinkedInSession({
   email,
@@ -549,29 +719,66 @@ export async function extractLinkedInSession({
   verificationCode,
   pendingChallengeToken,
   headless = true,
-  timeout = 45000,
+  timeout = 24000,
   onProgress,
 }: ExtractOptions): Promise<ExtractedSessionResult> {
+  const overallStart = Date.now();
+  // Cap total execution budget to 25s so Vercel never hits FUNCTION_INVOCATION_TIMEOUT
+  const maxBudgetMs = Math.min(timeout || 24000, 25000);
+
+  let restoredChallenge: PendingChallengePayload | null = null;
+  if (pendingChallengeToken) {
+    try {
+      const parsed = decryptConnectionSecrets<PendingChallengePayload>(pendingChallengeToken);
+      if (parsed && Date.now() - parsed.createdAt < 15 * 60 * 1000) {
+        restoredChallenge = parsed;
+      }
+    } catch {
+      restoredChallenge = null;
+    }
+  }
+
+  // Fast-path: When submitting a 6-digit OTP code with a captured form from Step 1,
+  // try direct HTTP POST first (~1s) before launching Chromium.
+  if (verificationCode && verificationCode.trim() && restoredChallenge?.capturedForm) {
+    onProgress?.("Submitting verification code...");
+    const httpAttempt = await submitChallengeFormViaHttp(
+      restoredChallenge,
+      verificationCode
+    );
+    if (httpAttempt.success && httpAttempt.li_at) {
+      const verification = await verifyLinkedInSession(
+        httpAttempt.li_at,
+        httpAttempt.jsessionId
+      );
+      return {
+        success: true,
+        li_at: httpAttempt.li_at,
+        jsessionId: httpAttempt.jsessionId,
+        profile: verification.profile,
+      };
+    }
+    if (httpAttempt.invalidCodeError) {
+      return {
+        success: false,
+        requiresTwoFactor: true,
+        twoFactorMethod: "otp",
+        pendingChallengeToken,
+        error: httpAttempt.invalidCodeError,
+      };
+    }
+  }
+
   let browser: Browser | null = null;
   onProgress?.("Launching browser engine...");
 
   try {
     browser = await launchBrowser({ headless });
 
-    let restoredChallenge: PendingChallengePayload | null = null;
-    if (pendingChallengeToken) {
-      try {
-        const parsed = decryptConnectionSecrets<PendingChallengePayload>(pendingChallengeToken);
-        if (parsed && Date.now() - parsed.createdAt < 15 * 60 * 1000) {
-          restoredChallenge = parsed;
-        }
-      } catch {
-        restoredChallenge = null;
-      }
-    }
-
     const context = await createStealthContext(browser, {
+      userAgent: restoredChallenge?.userAgent,
       storageState: restoredChallenge?.storageState,
+      blockHeavyResources: true,
     });
 
     const page = await context.newPage();
@@ -588,12 +795,11 @@ export async function extractLinkedInSession({
       await page
         .goto(restoredChallenge.checkpointUrl, {
           waitUntil: "domcontentloaded",
-          timeout: 18000,
+          timeout: 10000,
         })
         .catch(() => {});
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(600);
 
-      // If GET on checkpointUrl redirected back to login and we have no captured form, re-login
       const currentUrl = page.url();
       if (
         (currentUrl.includes("/login") || currentUrl.includes("/uas/login")) &&
@@ -607,20 +813,22 @@ export async function extractLinkedInSession({
     }
 
     onProgress?.("Checking LinkedIn authentication & two-factor status...");
-    const startTime = Date.now();
     let foundLiAt = "";
     let foundJsessionId = "";
     let codeSubmitted = false;
+    let ensuredMethodOnce = false;
+    let unresolvedCheckpointChecks = 0;
+    let nonCheckpointChecks = 0;
 
-    while (Date.now() - startTime < timeout) {
+    while (Date.now() - overallStart < maxBudgetMs) {
       // 1. Check if li_at session cookie has been granted
       const cookies = await context.cookies();
-      const liAtCookie = cookies.find((c) => c.name === "li_at");
+      const liAtCookie = cookies.find((c) => c.name === "li_at" && isValidLiAtValue(c.value));
       const jsessionIdCookie = cookies.find((c) => c.name === "JSESSIONID");
 
-      if (liAtCookie && liAtCookie.value) {
+      if (liAtCookie && isValidLiAtValue(liAtCookie.value)) {
         foundLiAt = liAtCookie.value;
-        foundJsessionId = jsessionIdCookie?.value || "";
+        foundJsessionId = (jsessionIdCookie?.value || "").replace(/^"+|"+$/g, "");
         break;
       }
 
@@ -634,7 +842,7 @@ export async function extractLinkedInSession({
         bodyText.includes("Please enter a valid username") ||
         bodyText.includes("recognize that email")
       ) {
-        await browser.close();
+        await safeCloseBrowser(browser);
         return { success: false, error: "Incorrect LinkedIn email or password provided." };
       }
 
@@ -648,23 +856,25 @@ export async function extractLinkedInSession({
           bodyText.includes("not the right code"))
       ) {
         const refreshedToken = await createPendingChallengeToken(context, page, email);
-        await browser.close();
+        await safeCloseBrowser(browser);
         return {
           success: false,
           requiresTwoFactor: true,
           twoFactorMethod: "otp",
-          pendingChallengeToken: refreshedToken,
+          pendingChallengeToken: refreshedToken || pendingChallengeToken,
           error: "The verification code entered was incorrect or expired. Please try again.",
         };
       }
 
       const errorElements = await page
-        .locator("#error-for-username:visible, #error-for-password:visible, [data-qa-alert='error']:visible")
+        .locator(
+          '#error-for-username:visible, #error-for-password:visible, #error-for-pin:visible, [data-qa-alert="error"]:visible'
+        )
         .all();
       for (const el of errorElements) {
         const txt = (await el.innerText().catch(() => "")).trim();
         if (txt) {
-          await browser.close();
+          await safeCloseBrowser(browser);
           return { success: false, error: txt };
         }
       }
@@ -673,7 +883,7 @@ export async function extractLinkedInSession({
       const checkpoint = await detectCheckpointKind(page, sawCaptchaNetwork);
 
       if (checkpoint.isCaptcha) {
-        await browser.close();
+        await safeCloseBrowser(browser);
         return {
           success: false,
           error:
@@ -682,10 +892,11 @@ export async function extractLinkedInSession({
       }
 
       if (checkpoint.isCheckpoint || restoredChallenge?.capturedForm) {
-        // Ensure LinkedIn is switched to the user's preferred 2FA method (e.g. click "Try another way" -> "Send code")
-        if (checkpoint.isCheckpoint) {
+        if (checkpoint.isCheckpoint && !ensuredMethodOnce && !verificationCode) {
+          ensuredMethodOnce = true;
           await ensurePreferredTwoFactorMethod(page, twoFactorMethod);
         }
+
         const updatedCheckpoint = await detectCheckpointKind(page, sawCaptchaNetwork);
 
         // Case A: User provided a 6-digit verification code -> submit it now
@@ -698,25 +909,25 @@ export async function extractLinkedInSession({
           );
           if (submitRes.error) {
             const token = await createPendingChallengeToken(context, page, email);
-            await browser.close();
+            await safeCloseBrowser(browser);
             return {
               success: false,
               requiresTwoFactor: true,
               twoFactorMethod: "otp",
-              pendingChallengeToken: token,
+              pendingChallengeToken: token || pendingChallengeToken,
               error: submitRes.error,
             };
           }
           codeSubmitted = true;
-          await page.waitForLoadState("domcontentloaded", { timeout: 12000 }).catch(() => {});
-          await page.waitForTimeout(2500);
+          await page.waitForLoadState("domcontentloaded", { timeout: 6000 }).catch(() => {});
+          await page.waitForTimeout(1200);
           continue;
         }
 
-        // Case B: One-time code is visible on the page (meaning LinkedIn HAS sent the SMS/email code!)
+        // Case B: One-time code input is visible on the page -> return immediately so user can enter it
         if (updatedCheckpoint.hasPinInput && !verificationCode) {
           const token = await createPendingChallengeToken(context, page, email);
-          await browser.close();
+          await safeCloseBrowser(browser);
           return {
             success: false,
             requiresTwoFactor: true,
@@ -728,35 +939,89 @@ export async function extractLinkedInSession({
         }
 
         // Case C: LinkedIn is showing the Mobile App Push screen ("Check your LinkedIn app")
-        // If user selected "otp" and LinkedIn didn't offer an SMS/email fallback on this account,
-        // inform the user and switch to app approval or return challenge state after waiting briefly.
-        if (updatedCheckpoint.isAppPush && !verificationCode && twoFactorMethod === "otp") {
+        if (updatedCheckpoint.isAppPush && !verificationCode) {
+          if (twoFactorMethod === "otp") {
+            const token = await createPendingChallengeToken(context, page, email);
+            await safeCloseBrowser(browser);
+            return {
+              success: false,
+              requiresTwoFactor: true,
+              twoFactorMethod: "app",
+              challengeMessage:
+                "LinkedIn sent a sign-in approval push to your LinkedIn mobile app instead of an SMS/email code. Approve it in your mobile app, then click Continue.",
+              pendingChallengeToken: token,
+              error: "Approve the sign-in request in your LinkedIn mobile app.",
+            };
+          }
+
+          // For "app" push method: poll briefly (up to 4s on resume or 2s on initial login),
+          // then return 202 with pendingChallengeToken so the serverless function never times out.
+          onProgress?.("Checking LinkedIn mobile app approval status...");
+          const appPollDuration = restoredChallenge ? 4500 : 2000;
+          const appPollStart = Date.now();
+          while (
+            Date.now() - appPollStart < appPollDuration &&
+            Date.now() - overallStart < maxBudgetMs - 1500
+          ) {
+            await page.waitForTimeout(750);
+            const pollCookies = await context.cookies();
+            const pollLiAt = pollCookies.find(
+              (c) => c.name === "li_at" && isValidLiAtValue(c.value)
+            );
+            const pollJsession = pollCookies.find((c) => c.name === "JSESSIONID");
+            if (pollLiAt && isValidLiAtValue(pollLiAt.value)) {
+              foundLiAt = pollLiAt.value;
+              foundJsessionId = (pollJsession?.value || "").replace(/^"+|"+$/g, "");
+              break;
+            }
+          }
+
+          if (foundLiAt) break;
+
           const token = await createPendingChallengeToken(context, page, email);
-          await browser.close();
+          await safeCloseBrowser(browser);
           return {
             success: false,
             requiresTwoFactor: true,
             twoFactorMethod: "app",
             challengeMessage:
-              "LinkedIn sent a sign-in approval push to your LinkedIn mobile app instead of an SMS/email code. Approve it in your mobile app, then click Continue.",
-            pendingChallengeToken: token,
-            error: "Approve the sign-in request in your LinkedIn mobile app.",
+              "Approve the sign-in notification in your LinkedIn mobile app, then click 'I Approved in App — Continue'.",
+            pendingChallengeToken: token || pendingChallengeToken,
+            error:
+              "Open the LinkedIn mobile app and tap Yes on the sign-in prompt, then click Continue.",
           };
         }
 
-        // Case D: LinkedIn Mobile App Push Approval ("app") -> keep polling for li_at cookie
-        onProgress?.("Waiting for you to approve the sign-in in the LinkedIn mobile app...");
+        // Case D: Generic checkpoint screen without recognized PIN input or App Push text yet
+        unresolvedCheckpointChecks++;
+        if (!verificationCode && unresolvedCheckpointChecks >= 2) {
+          const token = await createPendingChallengeToken(context, page, email);
+          await safeCloseBrowser(browser);
+          return {
+            success: false,
+            requiresTwoFactor: true,
+            twoFactorMethod,
+            challengeMessage: updatedCheckpoint.description,
+            pendingChallengeToken: token || pendingChallengeToken,
+            error: updatedCheckpoint.description,
+          };
+        }
+      } else {
+        nonCheckpointChecks++;
+        if (nonCheckpointChecks >= 3) {
+          break;
+        }
       }
 
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(800);
     }
 
     if (!foundLiAt) {
       const checkpoint = await detectCheckpointKind(page, sawCaptchaNetwork);
       const token = checkpoint.isCheckpoint
         ? await createPendingChallengeToken(context, page, email)
-        : undefined;
-      await browser.close();
+        : pendingChallengeToken;
+      await safeCloseBrowser(browser);
 
       if (checkpoint.isCaptcha) {
         return {
@@ -785,14 +1050,16 @@ export async function extractLinkedInSession({
 
       return {
         success: false,
-        error: "Authentication timed out. Please verify your credentials or use the 'Paste Cookies' tab.",
+        error:
+          "Authentication did not complete in time. Please verify your credentials or use the 'Paste Cookies' tab.",
       };
     }
 
     onProgress?.("Verifying session with LinkedIn Voyager API...");
-    const verification = await verifyLinkedInSession(foundLiAt, foundJsessionId);
+    await safeCloseBrowser(browser);
+    browser = null;
 
-    await browser.close();
+    const verification = await verifyLinkedInSession(foundLiAt, foundJsessionId);
 
     return {
       success: true,
@@ -801,7 +1068,7 @@ export async function extractLinkedInSession({
       profile: verification.profile,
     };
   } catch (err: unknown) {
-    if (browser) await browser.close().catch(() => {});
+    await safeCloseBrowser(browser);
     const message = err instanceof Error ? err.message : "Unknown browser automation error";
     return {
       success: false,

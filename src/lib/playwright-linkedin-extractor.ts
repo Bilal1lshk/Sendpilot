@@ -1,5 +1,5 @@
 import type { Browser } from "playwright-core";
-import { launchBrowser } from "@/lib/browser-launcher";
+import { launchBrowser, safeCloseBrowser } from "@/lib/browser-launcher";
 
 export interface PlaywrightExtractedLead {
   id: string;
@@ -442,8 +442,6 @@ export async function extractSearchLeadsWithPlaywright({
       pagesScraped,
     };
   } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
-    }
+    await safeCloseBrowser(browser);
   }
 }
