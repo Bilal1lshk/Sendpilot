@@ -777,21 +777,17 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
 
   // Allow anti-bot scripts (merchantpool1.linkedin.com, li.protechts.net, recaptcha/enterprise)
   // to initialize before typing credentials so `apfc` telemetry is populated naturally
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(200);
   await page.mouse.move(180, 260).catch(() => {});
-  await page.mouse.move(480, 320, { steps: 4 }).catch(() => {});
 
   const emailInput = page
     .locator('#username:visible, input[name="session_key"]:visible, input[type="email"]:visible')
     .first();
   await emailInput.waitFor({ state: "visible", timeout: 8000 });
   await emailInput.click().catch(() => {});
-  await emailInput.fill("");
-  await emailInput.pressSequentially(email, { delay: 18 }).catch(async () => {
-    await emailInput.fill(email);
-  });
+  await emailInput.fill(email);
 
-  await page.waitForTimeout(180);
+  await page.waitForTimeout(100);
 
   const passInput = page
     .locator(
@@ -800,12 +796,9 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
     .first();
   await passInput.waitFor({ state: "visible", timeout: 8000 });
   await passInput.click().catch(() => {});
-  await passInput.fill("");
-  await passInput.pressSequentially(password, { delay: 18 }).catch(async () => {
-    await passInput.fill(password);
-  });
+  await passInput.fill(password);
 
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(150);
 
   const submitBtn = page
     .locator(
@@ -960,8 +953,8 @@ export async function extractLinkedInSession({
       };
     }
 
-    // Verify proxy in debug / non-production mode
-    if (process.env.DEBUG_PROXY === "true" || process.env.NODE_ENV !== "production") {
+    // Verify proxy ONLY in explicit debug mode when a proxy is configured
+    if (proxyConfig?.server && process.env.DEBUG_PROXY === "true") {
       const probe = await verifyProxyConnection(browser, proxyConfig);
       if (probe) {
         console.log(
@@ -1108,7 +1101,13 @@ export async function extractLinkedInSession({
       captchaChecks = 0;
 
       if (checkpoint.isCheckpoint || restoredChallenge?.capturedForm) {
-        if (checkpoint.isCheckpoint && !ensuredMethodOnce && !verificationCode) {
+        if (
+          checkpoint.isCheckpoint &&
+          !ensuredMethodOnce &&
+          !verificationCode &&
+          !checkpoint.hasPinInput &&
+          !(twoFactorMethod === "app" && checkpoint.isAppPush)
+        ) {
           ensuredMethodOnce = true;
           await ensurePreferredTwoFactorMethod(page, twoFactorMethod);
         }

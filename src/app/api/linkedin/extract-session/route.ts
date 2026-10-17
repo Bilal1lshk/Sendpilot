@@ -182,15 +182,22 @@ export async function POST(req: Request) {
           signal: AbortSignal.timeout(50000),
         });
 
-        const workerData = await workerRes.json().catch(() => null);
+        const rawText = await workerRes.text().catch(() => "");
+        let workerData: ExtractedSessionResult | null = null;
+        try {
+          workerData = JSON.parse(rawText);
+        } catch {
+          workerData = null;
+        }
 
         if (!workerData) {
+          const detail = rawText ? ` (${rawText.slice(0, 120).trim()})` : "";
           return NextResponse.json(
             {
               success: false,
-              error: `LinkedIn worker runner at ${workerUrl} returned an empty response (HTTP ${workerRes.status}).`,
+              error: `LinkedIn worker at ${workerUrl} returned HTTP ${workerRes.status}${detail}.`,
             },
-            { status: 502 }
+            { status: workerRes.status || 502 }
           );
         }
 
