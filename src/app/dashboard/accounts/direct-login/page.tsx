@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowLeft,
-  Shield,
   Mail,
   Lock,
   Eye,
@@ -14,7 +13,6 @@ import {
   CheckCircle2,
   Loader2,
   ArrowRight,
-  ShieldCheck,
   UserCheck,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
@@ -49,13 +47,13 @@ export default function DirectLoginCookieExtractorPage() {
     e.preventDefault();
 
     if (!email.trim() || !password) {
-      toast.error("Please enter both your LinkedIn email and password.");
+      toast.error("Please enter your LinkedIn email and password.");
       return;
     }
 
     setLoading(true);
     setResult(null);
-    setProgressStage("Authenticating with LinkedIn in the background...");
+    setProgressStage("Authenticating with LinkedIn...");
 
     try {
       const response = await fetch("/api/linkedin/extract-session", {
@@ -96,7 +94,7 @@ export default function DirectLoginCookieExtractorPage() {
       initial="initial"
       animate="animate"
       exit="exit"
-      className="max-w-2xl mx-auto space-y-6 pb-12"
+      className="max-w-xl mx-auto space-y-5 pb-12 px-4 sm:px-0"
     >
       {/* Top Breadcrumb */}
       <div>
@@ -114,8 +112,8 @@ export default function DirectLoginCookieExtractorPage() {
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-neutral-100 dark:border-neutral-800 pb-5">
           <div>
-            <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">
-              <span>Direct Authentication</span>
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">
+              <span>Direct Connection</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 flex items-center gap-2.5">
               <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
@@ -124,7 +122,7 @@ export default function DirectLoginCookieExtractorPage() {
               Connect LinkedIn Account
             </h1>
             <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-              Authenticate with your credentials to link your LinkedIn account directly to SendPilot.
+              Enter your LinkedIn credentials to link your account directly to your SendPilot workspace.
             </p>
           </div>
         </div>
@@ -144,7 +142,7 @@ export default function DirectLoginCookieExtractorPage() {
                   LinkedIn Email / Phone <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="email"
                     required
@@ -152,7 +150,7 @@ export default function DirectLoginCookieExtractorPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={loading}
-                    className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-4 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 transition-colors disabled:opacity-50"
+                    className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-4 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -163,7 +161,7 @@ export default function DirectLoginCookieExtractorPage() {
                   LinkedIn Password <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Lock className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type={showPassword ? "text" : "password"}
                     required
@@ -171,12 +169,12 @@ export default function DirectLoginCookieExtractorPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={loading}
-                    className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-10 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 transition-colors disabled:opacity-50"
+                    className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-10 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -230,7 +228,7 @@ export default function DirectLoginCookieExtractorPage() {
                   <span className="font-semibold text-neutral-800 dark:text-neutral-200">
                     {result.profile?.name || result.profile?.firstName || "Your profile"}
                   </span>{" "}
-                  is now securely connected and verified for outreach.
+                  is now connected and verified for outreach.
                 </p>
                 {result.profile?.headline && (
                   <p className="text-[11px] text-neutral-400 italic">
@@ -239,11 +237,11 @@ export default function DirectLoginCookieExtractorPage() {
                 )}
               </div>
 
-              <div className="pt-2 flex items-center justify-center gap-3">
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2.5">
                 <button
                   type="button"
                   onClick={() => router.push("/dashboard/accounts")}
-                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white px-5 py-2.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white px-5 py-2.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                 >
                   <UserCheck className="w-3.5 h-3.5" />
                   <span>View in Accounts</span>
@@ -251,7 +249,7 @@ export default function DirectLoginCookieExtractorPage() {
                 <button
                   type="button"
                   onClick={() => setResult(null)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 px-4 py-2.5 text-xs font-semibold text-neutral-700 dark:text-neutral-300 shadow-2xs transition-colors cursor-pointer"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 px-4 py-2.5 text-xs font-semibold text-neutral-700 dark:text-neutral-300 shadow-2xs transition-colors cursor-pointer"
                 >
                   <span>Connect Another Account</span>
                 </button>
@@ -259,19 +257,6 @@ export default function DirectLoginCookieExtractorPage() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Safety Guarantee */}
-        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/30 p-4 flex items-start gap-3">
-          <Shield className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <h5 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
-              Protected Data Storage
-            </h5>
-            <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
-              Your credentials are used once in memory by the local browser session to authenticate and generate your session cookie, and are never saved in plain text. Session tokens are securely protected on the server using AES-256-GCM encryption.
-            </p>
-          </div>
-        </div>
       </div>
     </motion.div>
   );
