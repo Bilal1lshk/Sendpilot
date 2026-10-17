@@ -134,7 +134,7 @@ export async function POST(req: Request) {
           ? pendingChallengeToken.trim()
           : undefined,
       headless: true,
-      timeout: normalized2FA === "app" ? 45000 : 35000,
+      timeout: 24000,
     });
 
     if (result.requiresTwoFactor) {

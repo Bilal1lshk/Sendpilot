@@ -17,6 +17,11 @@ const nextConfig: NextConfig = {
       "./node_modules/playwright-core/package.json",
       "./node_modules/@sparticuz/chromium/bin/**/*",
     ],
+    "/api/linkedin/send-connection": [
+      "./node_modules/playwright-core/browsers.json",
+      "./node_modules/playwright-core/package.json",
+      "./node_modules/@sparticuz/chromium/bin/**/*",
+    ],
   },
 };
 

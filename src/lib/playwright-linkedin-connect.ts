@@ -1,4 +1,5 @@
-import { chromium, type Browser } from "playwright";
+import type { Browser } from "playwright-core";
+import { launchBrowser, safeCloseBrowser } from "@/lib/browser-launcher";
 
 export interface SendConnectionOptions {
   profileUrl: string;
@@ -22,30 +23,7 @@ function cleanCookieValue(raw: string, cookieName: string): string {
 }
 
 async function launchBrowserWithFallback(): Promise<Browser> {
-  const launchArgs = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-blink-features=AutomationControlled",
-  ];
-
-  try {
-    return await chromium.launch({ headless: true, args: launchArgs });
-  } catch {
-    try {
-      return await chromium.launch({
-        headless: true,
-        channel: "chrome",
-        args: launchArgs,
-      });
-    } catch {
-      return await chromium.launch({
-        headless: true,
-        channel: "msedge",
-        args: launchArgs,
-      });
-    }
-  }
+  return await launchBrowser({ headless: true });
 }
 
 /**
@@ -332,8 +310,6 @@ export async function sendLinkedInConnectionWithPlaywright({
       message: `Automation error: ${errorMsg}`,
     };
   } finally {
-    if (browser) {
-      await browser.close().catch(() => {});
-    }
+    await safeCloseBrowser(browser);
   }
 }
