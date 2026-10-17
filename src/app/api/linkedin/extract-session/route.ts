@@ -4,6 +4,7 @@ import { consumeRateLimit } from "@/lib/rate-limit";
 import {
   extractLinkedInSession,
   verifyLinkedInSession,
+  type TwoFactorMethod,
 } from "@/lib/linkedin-session-extractor";
 import { createConnectionId, disconnectOtherAccounts } from "@/lib/linkedin-connections";
 import { encryptConnectionSecrets } from "@/lib/connection-crypto";
@@ -19,7 +20,16 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { email, password, li_at, jsessionId, method = "playwright" } = body;
+    const {
+      email,
+      password,
+      li_at,
+      jsessionId,
+      method = "playwright",
+      twoFactorMethod = "otp",
+      verificationCode,
+      pendingChallengeToken,
+    } = body;
 
     // ── Method 1: Manual Cookie Submission ──────────────────────────────────
     if (method === "manual" || (li_at && !password)) {
@@ -31,9 +41,10 @@ export async function POST(req: Request) {
       }
 
       const cleanLiAt = li_at.trim();
-      const cleanCsrf = jsessionId && typeof jsessionId === "string" && jsessionId.trim()
-        ? jsessionId.trim()
-        : `ajax:${Date.now()}`;
+      const cleanCsrf =
+        jsessionId && typeof jsessionId === "string" && jsessionId.trim()
+          ? jsessionId.trim()
+          : `ajax:${Date.now()}`;
 
       // Verify the provided cookies against LinkedIn Voyager API
       const verification = await verifyLinkedInSession(cleanLiAt, cleanCsrf);
@@ -41,7 +52,8 @@ export async function POST(req: Request) {
         return NextResponse.json(
           {
             success: false,
-            error: "The provided li_at cookie is invalid or expired. Please copy a fresh cookie from your active browser session.",
+            error:
+              "The provided li_at cookie is invalid or expired. Please copy a fresh cookie from your active browser session.",
           },
           { status: 400 }
         );
@@ -49,8 +61,9 @@ export async function POST(req: Request) {
 
       await connectDB();
       const memberName =
-        [verification.profile?.firstName, verification.profile?.lastName].filter(Boolean).join(" ") ||
-        "LinkedIn Member";
+        [verification.profile?.firstName, verification.profile?.lastName]
+          .filter(Boolean)
+          .join(" ") || "LinkedIn Member";
       const connId = createConnectionId();
 
       await LinkedInConnection.create({
@@ -83,10 +96,10 @@ export async function POST(req: Request) {
       });
     }
 
-    // ── Method 2: Automatic Playwright Browser Extraction ───────────────────
-    if (!email || typeof email !== "string" || !email.includes("@")) {
+    // ── Method 2: Automatic Playwright Browser Extraction (+ 2FA Support) ───
+    if (!email || typeof email !== "string" || !email.trim()) {
       return NextResponse.json(
-        { success: false, error: "Please enter a valid LinkedIn email address." },
+        { success: false, error: "Please enter a valid LinkedIn email address or phone number." },
         { status: 400 }
       );
     }
@@ -98,21 +111,49 @@ export async function POST(req: Request) {
       );
     }
 
-    // Rate limit attempts to protect user account
-    if (!(await consumeRateLimit(ctx.userId, "linkedin-extract-session", 10, 15 * 60 * 1000))) {
+    // Rate limit attempts to protect user account (allow more steps for 2FA verification)
+    if (!(await consumeRateLimit(ctx.userId, "linkedin-extract-session", 20, 15 * 60 * 1000))) {
       return NextResponse.json(
         { success: false, error: "Too many login attempts. Please wait 15 minutes before retrying." },
         { status: 429 }
       );
     }
 
-    // Execute completely in headless (silent background) mode
+    const normalized2FA: TwoFactorMethod = twoFactorMethod === "app" ? "app" : "otp";
+
     const result = await extractLinkedInSession({
       email: email.trim(),
       password,
+      twoFactorMethod: normalized2FA,
+      verificationCode:
+        typeof verificationCode === "string" && verificationCode.trim()
+          ? verificationCode.trim()
+          : undefined,
+      pendingChallengeToken:
+        typeof pendingChallengeToken === "string" && pendingChallengeToken.trim()
+          ? pendingChallengeToken.trim()
+          : undefined,
       headless: true,
-      timeout: 50000,
+      timeout: normalized2FA === "app" ? 45000 : 35000,
     });
+
+    if (result.requiresTwoFactor) {
+      return NextResponse.json(
+        {
+          success: false,
+          requiresTwoFactor: true,
+          twoFactorMethod: result.twoFactorMethod || normalized2FA,
+          challengeMessage:
+            result.challengeMessage ||
+            (normalized2FA === "app"
+              ? "Approve the sign-in in the LinkedIn mobile app."
+              : "LinkedIn sent a one-time code by SMS or email."),
+          pendingChallengeToken: result.pendingChallengeToken,
+          error: result.error,
+        },
+        { status: 202 }
+      );
+    }
 
     if (!result.success || !result.li_at) {
       return NextResponse.json(
@@ -127,7 +168,8 @@ export async function POST(req: Request) {
     // Protectedly store encrypted credentials in backend (AES-256-GCM)
     await connectDB();
     const memberName =
-      [result.profile?.firstName, result.profile?.lastName].filter(Boolean).join(" ") || email.trim();
+      [result.profile?.firstName, result.profile?.lastName].filter(Boolean).join(" ") ||
+      email.trim();
     const connId = createConnectionId();
 
     await LinkedInConnection.create({
