@@ -1,4 +1,5 @@
-import { chromium, Browser } from "playwright";
+import type { Browser } from "playwright-core";
+import { launchBrowser } from "@/lib/browser-launcher";
 
 export interface PlaywrightExtractedLead {
   id: string;
@@ -32,31 +33,7 @@ export interface PlaywrightExtractResult {
 }
 
 async function launchBrowserWithFallback(): Promise<Browser> {
-  const launchArgs = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-blink-features=AutomationControlled",
-  ];
-
-  // Try bundled Chromium first, then fall back to installed Chrome or Edge on Windows/Mac/Linux
-  try {
-    return await chromium.launch({ headless: true, args: launchArgs });
-  } catch {
-    try {
-      return await chromium.launch({
-        headless: true,
-        channel: "chrome",
-        args: launchArgs,
-      });
-    } catch {
-      return await chromium.launch({
-        headless: true,
-        channel: "msedge",
-        args: launchArgs,
-      });
-    }
-  }
+  return await launchBrowser({ headless: true });
 }
 
 function cleanCookieValue(raw: string, cookieName: string): string {

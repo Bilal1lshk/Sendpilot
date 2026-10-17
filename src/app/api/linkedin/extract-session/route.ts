@@ -5,13 +5,13 @@ import {
   extractLinkedInSession,
   verifyLinkedInSession,
 } from "@/lib/linkedin-session-extractor";
-import { createConnectionId } from "@/lib/linkedin-connections";
+import { createConnectionId, disconnectOtherAccounts } from "@/lib/linkedin-connections";
 import { encryptConnectionSecrets } from "@/lib/connection-crypto";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import { connectDB } from "@/lib/mongodb";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const ctx = await requireUser();
@@ -68,6 +68,8 @@ export async function POST(req: Request) {
         lastVerifiedAt: new Date(),
       });
 
+      await disconnectOtherAccounts(ctx.userId, connId);
+
       return NextResponse.json({
         success: true,
         saved: true,
@@ -109,7 +111,7 @@ export async function POST(req: Request) {
       email: email.trim(),
       password,
       headless: true,
-      timeout: 90000,
+      timeout: 50000,
     });
 
     if (!result.success || !result.li_at) {
@@ -143,6 +145,8 @@ export async function POST(req: Request) {
       confirmedAt: new Date(),
       lastVerifiedAt: new Date(),
     });
+
+    await disconnectOtherAccounts(ctx.userId, connId);
 
     // Security: Do NOT expose raw li_at or jsessionId in the client response
     return NextResponse.json({

@@ -6,8 +6,12 @@ import Workspace from "@/models/Workspace";
 import { decryptConnectionSecrets, encryptConnectionSecrets } from "@/lib/connection-crypto";
 import { toSafeConnection } from "@/lib/linkedin-connection-dto";
 
+import { verifyLinkedInSession } from "@/lib/linkedin-session-extractor";
+
 export interface LinkedInCredentials {
   accessToken: string;
+  li_at?: string;
+  jsessionId?: string;
   refreshToken?: string;
   tokenExpiresAt?: string;
   linkedinMemberId?: string;
@@ -82,6 +86,40 @@ export async function verifyConnection(id: string, userId: string) {
 
   try {
     const credentials = decryptConnectionSecrets<LinkedInCredentials>(connection.encryptedCredentials);
+    const cookieToken = credentials.li_at || credentials.accessToken || "";
+
+    // 1. If this connection uses a session cookie (li_at), verify via LinkedIn session verifier
+    if (credentials.li_at || cookieToken.startsWith("AQ")) {
+      const sessionCheck = await verifyLinkedInSession(cookieToken, credentials.jsessionId);
+      if (!sessionCheck.active) {
+        throw new Error("LinkedIn session cookie expired");
+      }
+
+      const detectedName = [sessionCheck.profile?.firstName, sessionCheck.profile?.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+      if (detectedName) {
+        connection.linkedinName = detectedName;
+      } else if (!connection.linkedinName) {
+        connection.linkedinName = "LinkedIn Member";
+      }
+
+      connection.status = "active";
+      connection.lastVerifiedAt = new Date();
+      if (!connection.confirmedAt) {
+        connection.confirmedAt = new Date();
+      }
+      await connection.save();
+      return {
+        verified: true as const,
+        memberId: credentials.linkedinMemberId || connection.id,
+        connection: toSafeConnection(connection),
+      };
+    }
+
+    // 2. Legacy OAuth 2.0 Bearer token verification
     const response = await fetch("https://api.linkedin.com/v2/userinfo", {
       headers: { Authorization: `Bearer ${credentials.accessToken}` },
       cache: "no-store",
