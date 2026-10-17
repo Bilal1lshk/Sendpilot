@@ -624,6 +624,19 @@ export default function ConnectStepPage() {
                         </>
                       )}
                     </button>
+
+                    <div className="pt-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAwaitingTwoFactor(true);
+                          setTwoFactorMethod("otp");
+                        }}
+                        className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium cursor-pointer"
+                      >
+                        Already received a LinkedIn code? Click here to enter OTP
+                      </button>
+                    </div>
                   </>
                 )}
               </form>

@@ -558,23 +558,38 @@ export default function DirectLoginCookieExtractorPage() {
                 )}
 
                 {!awaitingTwoFactor && (
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-3 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>{progressStage || "Connecting..."}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Connect LinkedIn Account</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
+                  <>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-3 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>{progressStage || "Connecting..."}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Connect LinkedIn Account</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+
+                    <div className="pt-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAwaitingTwoFactor(true);
+                          setTwoFactorMethod("otp");
+                        }}
+                        className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium cursor-pointer"
+                      >
+                        Already received a LinkedIn code? Click here to enter OTP
+                      </button>
+                    </div>
+                  </>
                 )}
               </form>
             </motion.div>

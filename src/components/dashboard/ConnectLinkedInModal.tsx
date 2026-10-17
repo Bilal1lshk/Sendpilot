@@ -474,6 +474,19 @@ export function ConnectLinkedInModal({
                     </>
                   )}
                 </button>
+
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep("two_factor");
+                      setTwoFactorMethod("otp");
+                    }}
+                    className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium cursor-pointer"
+                  >
+                    Already received a verification code? Click here to enter OTP
+                  </button>
+                </div>
               </form>
             </div>
           ) : step === "two_factor" ? (
