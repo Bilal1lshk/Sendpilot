@@ -2,6 +2,53 @@ import { chromium } from 'playwright';
 import readline from 'readline';
 
 /**
+ * Verify if captured LinkedIn cookies can access authenticated APIs
+ */
+export async function verifyLinkedInCookies(liAt, jsessionId) {
+  console.log('\n🔍 Verifying cookies with LinkedIn Voyager API...');
+  try {
+    const cleanCsrf = jsessionId ? jsessionId.replace(/"/g, '') : '';
+    const res = await fetch('https://www.linkedin.com/voyager/api/me', {
+      redirect: 'manual',
+      headers: {
+        'Cookie': `li_at=${liAt}; JSESSIONID="${cleanCsrf}"`,
+        'csrf-token': cleanCsrf,
+        'x-restli-protocol-version': '2.0.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0',
+        'Accept': 'application/vnd.linkedin.normalized+json+2.1'
+      }
+    });
+
+    if (res.status === 200) {
+      const json = await res.json().catch(() => null);
+      console.log('✅ Cookie verification status: 200 OK (Session is Active!)');
+      
+      const plainInfo = json?.data || json?.miniProfile || {};
+      const firstName = plainInfo.firstName || plainInfo.localizedFirstName || '';
+      const lastName = plainInfo.lastName || plainInfo.localizedLastName || '';
+      const headline = plainInfo.occupation || plainInfo.headline || '';
+      
+      if (firstName || lastName) {
+        console.log(`👤 Connected Profile: ${firstName} ${lastName}`);
+      }
+      if (headline) {
+        console.log(`📌 Headline: ${headline}`);
+      }
+      return { active: true, status: 200, profile: { firstName, lastName, headline } };
+    } else if (res.status === 302 || res.status === 401 || res.status === 403) {
+      console.log(`❌ Cookie is INVALID or EXPIRED (HTTP ${res.status} redirect to login).`);
+      return { active: false, status: res.status };
+    } else {
+      console.log(`⚠️ LinkedIn API returned HTTP ${res.status}: ${res.statusText}`);
+      return { active: false, status: res.status };
+    }
+  } catch (err) {
+    console.error('❌ Verification request error:', err.message);
+    return { active: false, error: err.message };
+  }
+}
+
+/**
  * Robust LinkedIn Cookie Extractor using real browser automation
  */
 export async function extractLinkedInCookies({ email, password, headless = false, timeout = 90000 }) {
@@ -117,7 +164,10 @@ export async function extractLinkedInCookies({ email, password, headless = false
     console.log('==================================================');
     console.log(`li_at: ${foundLiAt}`);
     console.log(`JSESSIONID: ${foundJsessionId}`);
-    console.log('==================================================\n');
+    console.log('==================================================');
+
+    // Perform live API verification
+    await verifyLinkedInCookies(foundLiAt, foundJsessionId);
 
     await browser.close();
     return {
@@ -133,13 +183,20 @@ export async function extractLinkedInCookies({ email, password, headless = false
   }
 }
 
-// Allow CLI execution: node scripts/linkedin-login-extractor.mjs email password
+// CLI handler
 if (process.argv[1]?.endsWith('linkedin-login-extractor.mjs')) {
-  const emailArg = process.argv[2];
-  const passArg = process.argv[3];
+  const arg1 = process.argv[2];
+  const arg2 = process.argv[3];
 
-  if (emailArg && passArg) {
-    extractLinkedInCookies({ email: emailArg, password: passArg, headless: false });
+  if (arg1 === '--verify') {
+    if (!arg2) {
+      console.log('Usage: node scripts/linkedin-login-extractor.mjs --verify "<li_at>" "[JSESSIONID]"');
+      process.exit(1);
+    }
+    const arg3 = process.argv[4] || '';
+    verifyLinkedInCookies(arg2, arg3);
+  } else if (arg1 && arg2) {
+    extractLinkedInCookies({ email: arg1, password: arg2, headless: false });
   } else {
     const rl = readline.createInterface({
       input: process.stdin,
@@ -147,7 +204,7 @@ if (process.argv[1]?.endsWith('linkedin-login-extractor.mjs')) {
     });
 
     console.log('==================================================');
-    console.log('LinkedIn Cookie Extractor (Playwright Automation)');
+    console.log('LinkedIn Cookie Extractor & Verifier (Playwright)');
     console.log('==================================================');
     rl.question('LinkedIn Email: ', (email) => {
       rl.question('LinkedIn Password: ', (password) => {
