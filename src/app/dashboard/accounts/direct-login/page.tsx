@@ -7,22 +7,15 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowLeft,
   Shield,
-  KeyRound,
   Mail,
   Lock,
   Eye,
   EyeOff,
-  Sparkles,
   CheckCircle2,
-  Copy,
-  Check,
-  AlertCircle,
   Loader2,
-  ExternalLink,
-  Laptop,
-  Terminal,
-  RefreshCw,
-  UserCheck
+  ArrowRight,
+  ShieldCheck,
+  UserCheck,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { toast } from "sonner";
@@ -35,19 +28,15 @@ export default function DirectLoginCookieExtractorPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [headless, setHeadless] = useState(false);
-  const [saveAccount, setSaveAccount] = useState(true);
 
   // Execution state
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState<string>("");
-  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Result state
   const [result, setResult] = useState<{
-    li_at: string;
-    jsessionId: string;
     profile?: {
+      name?: string;
       firstName?: string;
       lastName?: string;
       headline?: string;
@@ -66,58 +55,39 @@ export default function DirectLoginCookieExtractorPage() {
 
     setLoading(true);
     setResult(null);
-    setProgressStage("Launching real browser session...");
+    setProgressStage("Authenticating with LinkedIn in the background...");
 
     try {
-      // Periodic progress messages while waiting
-      const stageTimer1 = setTimeout(() => setProgressStage("Loading LinkedIn login & submitting credentials..."), 3000);
-      const stageTimer2 = setTimeout(() => setProgressStage("Bypassing bot defense & capturing li_at and JSESSIONID..."), 7000);
-      const stageTimer3 = setTimeout(() => setProgressStage("Verifying session with LinkedIn Voyager API..."), 12000);
-
       const response = await fetch("/api/linkedin/extract-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: email.trim(),
           password,
-          headless,
-          saveAccount,
         }),
       });
-
-      clearTimeout(stageTimer1);
-      clearTimeout(stageTimer2);
-      clearTimeout(stageTimer3);
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || "Failed to extract LinkedIn session.");
+        throw new Error(data.error || "Failed to authenticate LinkedIn account.");
       }
 
       setResult({
-        li_at: data.li_at,
-        jsessionId: data.jsessionId,
         profile: data.profile,
         saved: data.saved,
         connectionId: data.connectionId,
       });
 
-      toast.success("Successfully extracted and verified LinkedIn session!");
+      setPassword("");
+      toast.success("LinkedIn profile connected and verified successfully!");
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to extract cookies.";
+      const errorMsg = err instanceof Error ? err.message : "Failed to connect account.";
       toast.error(errorMsg);
     } finally {
       setLoading(false);
       setProgressStage("");
     }
-  };
-
-  const copyToClipboard = (text: string, fieldName: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(fieldName);
-    toast.success(`Copied ${fieldName} to clipboard!`);
-    setTimeout(() => setCopiedField(null), 2000);
   };
 
   return (
@@ -126,278 +96,181 @@ export default function DirectLoginCookieExtractorPage() {
       initial="initial"
       animate="animate"
       exit="exit"
-      className="max-w-4xl mx-auto space-y-6 pb-12"
+      className="max-w-2xl mx-auto space-y-6 pb-12"
     >
       {/* Top Breadcrumb */}
       <div>
         <Link
           href="/dashboard/accounts"
-          className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
-          Back to LinkedIn Accounts
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to LinkedIn Accounts</span>
         </Link>
       </div>
 
-      {/* Hero Header */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-zinc-900 via-zinc-900/90 to-zinc-950 border border-zinc-800 p-6 sm:p-8">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              <Sparkles className="w-3.5 h-3.5" />
-              Playwright Browser Automation
+      {/* Main Card */}
+      <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 sm:p-8 shadow-xs space-y-6">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-neutral-100 dark:border-neutral-800 pb-5">
+          <div>
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">
+              <span>Direct Authentication</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-              <span className="p-2 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30">
-                <LinkedInIcon className="w-6 h-6" />
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 flex items-center gap-2.5">
+              <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <LinkedInIcon className="w-5 h-5" />
               </span>
-              Direct Session & Cookie Extractor
+              Connect LinkedIn Account
             </h1>
-            <p className="text-sm text-zinc-400 max-w-2xl leading-relaxed">
-              Enter your credentials to launch an authentic browser instance that safely logs in, bypasses anti-bot defenses, extracts your active <code className="text-blue-300 font-mono">li_at</code> & <code className="text-blue-300 font-mono">JSESSIONID</code> cookies, and connects your profile.
+            <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+              Authenticate with your credentials to link your LinkedIn account directly to SendPilot.
             </p>
           </div>
         </div>
-      </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Input Form */}
-        <motion.div
-          variants={cardVariants}
-          className="lg:col-span-7 bg-zinc-900/70 border border-zinc-800 rounded-2xl p-6 backdrop-blur-sm space-y-6"
-        >
-          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4">
-            <h2 className="text-base font-semibold text-white flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-blue-400" />
-              LinkedIn Credentials
-            </h2>
-            <span className="text-xs text-zinc-400 flex items-center gap-1">
-              <Shield className="w-3.5 h-3.5 text-emerald-400" />
-              Local in-memory execution
-            </span>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Email Field */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-300">LinkedIn Email / Phone</label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  required
-                  placeholder="your_linkedin_email@domain.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={loading}
-                  className="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all disabled:opacity-50"
-                />
+        {/* Form or Result */}
+        <AnimatePresence mode="wait">
+          {!result ? (
+            <motion.form
+              key="form"
+              variants={cardVariants}
+              onSubmit={handleSubmit}
+              className="space-y-4"
+            >
+              {/* Email Field */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  LinkedIn Email / Phone <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="your_linkedin_email@domain.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={loading}
+                    className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-4 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 transition-colors disabled:opacity-50"
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* Password Field */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-300">LinkedIn Password</label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  required
-                  placeholder="••••••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
-                  className="w-full bg-zinc-950/80 border border-zinc-800 rounded-xl pl-10 pr-10 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-all disabled:opacity-50"
-                />
+              {/* Password Field */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  LinkedIn Password <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    placeholder="••••••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
+                    className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-10 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 transition-colors disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Connecting Profile...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                    <span>Connect Account</span>
+                    <ArrowRight className="w-3.5 h-3.5 ml-0.5 opacity-90" />
+                  </>
+                )}
+              </button>
+
+              {/* Realtime progress tracker */}
+              {loading && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2.5 animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>{progressStage || "Processing..."}</span>
+                </div>
+              )}
+            </motion.form>
+          ) : (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="py-4 text-center space-y-4"
+            >
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
+                <CheckCircle2 className="h-8 w-8 stroke-[2.5]" />
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-neutral-900 dark:text-neutral-100">
+                  LinkedIn Connected!
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-sm mx-auto">
+                  <span className="font-semibold text-neutral-800 dark:text-neutral-200">
+                    {result.profile?.name || result.profile?.firstName || "Your profile"}
+                  </span>{" "}
+                  is now securely connected and verified for outreach.
+                </p>
+                {result.profile?.headline && (
+                  <p className="text-[11px] text-neutral-400 italic">
+                    {result.profile.headline}
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-2 flex items-center justify-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                  onClick={() => router.push("/dashboard/accounts")}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white px-5 py-2.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>View in Accounts</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResult(null)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 px-4 py-2.5 text-xs font-semibold text-neutral-700 dark:text-neutral-300 shadow-2xs transition-colors cursor-pointer"
+                >
+                  <span>Connect Another Account</span>
                 </button>
               </div>
-            </div>
-
-            {/* Options Toggle Section */}
-            <div className="p-4 rounded-xl bg-zinc-950/50 border border-zinc-800/80 space-y-3">
-              {/* Visible Mode vs Headless */}
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={!headless}
-                  onChange={(e) => setHeadless(!e.target.checked)}
-                  disabled={loading}
-                  className="mt-0.5 rounded border-zinc-700 text-blue-600 focus:ring-blue-500/30"
-                />
-                <div className="space-y-0.5">
-                  <span className="text-xs font-medium text-zinc-200 flex items-center gap-1.5">
-                    <Laptop className="w-3.5 h-3.5 text-blue-400" />
-                    Interactive Visible Window (Recommended)
-                  </span>
-                  <p className="text-[11px] text-zinc-400 leading-normal">
-                    Opens Edge on your desktop. If LinkedIn sends a 2FA code or CAPTCHA puzzle, you can complete it directly.
-                  </p>
-                </div>
-              </label>
-
-              {/* Auto Save Account */}
-              <label className="flex items-start gap-3 cursor-pointer pt-2 border-t border-zinc-800/60">
-                <input
-                  type="checkbox"
-                  checked={saveAccount}
-                  onChange={(e) => setSaveAccount(e.target.checked)}
-                  disabled={loading}
-                  className="mt-0.5 rounded border-zinc-700 text-blue-600 focus:ring-blue-500/30"
-                />
-                <div className="space-y-0.5">
-                  <span className="text-xs font-medium text-zinc-200 flex items-center gap-1.5">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    Connect & Save to Workspace
-                  </span>
-                  <p className="text-[11px] text-zinc-400 leading-normal">
-                    Automatically encrypts and adds this account to your active SendPilot LinkedIn Accounts list.
-                  </p>
-                </div>
-              </label>
-            </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Extracting Session...</span>
-                </>
-              ) : (
-                <>
-                  <KeyRound className="w-4 h-4 text-white" />
-                  <span>Extract & Verify Session Cookies</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Realtime progress tracker */}
-          {loading && (
-            <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 flex items-center gap-3 animate-pulse">
-              <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
-              <span>{progressStage || "Processing..."}</span>
-            </div>
+            </motion.div>
           )}
-        </motion.div>
+        </AnimatePresence>
 
-        {/* Right Column: Security Guarantees & Extracted Results */}
-        <div className="lg:col-span-5 space-y-6">
-          {/* Security Notice Card */}
-          <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 space-y-3">
-            <div className="flex items-center gap-2 text-emerald-400 font-medium text-sm">
-              <Shield className="w-4 h-4" />
-              Zero Password Storage Guarantee
-            </div>
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              SendPilot never stores your LinkedIn password on our database. The credentials are passed strictly in memory to your local Playwright browser process to authenticate once, retrieve the <code className="text-zinc-200">li_at</code> session cookie, and are immediately discarded.
+        {/* Safety Guarantee */}
+        <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/30 p-4 flex items-start gap-3">
+          <Shield className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h5 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+              Protected Data Storage
+            </h5>
+            <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+              Your credentials are used once in memory by the local browser session to authenticate and generate your session cookie, and are never saved in plain text. Session tokens are securely protected on the server using AES-256-GCM encryption.
             </p>
-            <div className="pt-2 border-t border-zinc-800 text-[11px] text-zinc-500 flex items-center gap-1.5">
-              <Terminal className="w-3.5 h-3.5" />
-              AES-256-GCM encryption on session tokens
-            </div>
           </div>
-
-          {/* Results Display */}
-          <AnimatePresence>
-            {result && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="bg-zinc-900/90 border border-emerald-500/30 rounded-2xl p-6 space-y-4 shadow-xl shadow-emerald-500/5"
-              >
-                <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  Session Successfully Extracted!
-                </div>
-
-                {/* Profile info if returned */}
-                {result.profile?.firstName && (
-                  <div className="p-3 rounded-xl bg-zinc-950/70 border border-zinc-800 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold">
-                      {result.profile.firstName[0]}
-                    </div>
-                    <div className="overflow-hidden">
-                      <div className="text-sm font-semibold text-white truncate">
-                        {result.profile.firstName} {result.profile.lastName}
-                      </div>
-                      {result.profile.headline && (
-                        <div className="text-xs text-zinc-400 truncate">
-                          {result.profile.headline}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* li_at box */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-mono text-zinc-300 font-medium">li_at cookie</span>
-                    <button
-                      onClick={() => copyToClipboard(result.li_at, "li_at")}
-                      className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                    >
-                      {copiedField === "li_at" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      {copiedField === "li_at" ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 font-mono text-[11px] text-zinc-400 break-all select-all">
-                    {result.li_at}
-                  </div>
-                </div>
-
-                {/* JSESSIONID box */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-mono text-zinc-300 font-medium">JSESSIONID cookie</span>
-                    <button
-                      onClick={() => copyToClipboard(result.jsessionId, "JSESSIONID")}
-                      className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                    >
-                      {copiedField === "JSESSIONID" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      {copiedField === "JSESSIONID" ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-zinc-950 border border-zinc-800 font-mono text-[11px] text-zinc-400 break-all select-all">
-                    {result.jsessionId}
-                  </div>
-                </div>
-
-                {/* Next Steps Buttons */}
-                <div className="pt-2 flex flex-col gap-2">
-                  {result.saved ? (
-                    <button
-                      onClick={() => router.push("/dashboard/accounts")}
-                      className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
-                    >
-                      <UserCheck className="w-3.5 h-3.5" />
-                      View in Connected Accounts
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => router.push("/dashboard/accounts")}
-                      className="w-full py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
-                    >
-                      Done
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       </div>
     </motion.div>

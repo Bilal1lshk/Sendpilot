@@ -9,21 +9,14 @@ import {
   ArrowLeft,
   ArrowRight,
   Shield,
-  KeyRound,
   Mail,
   Lock,
   Eye,
   EyeOff,
-  Sparkles,
   CheckCircle2,
-  Copy,
-  Check,
-  AlertCircle,
   Loader2,
-  Laptop,
   Plus,
   Send,
-  UserCheck,
   ShieldCheck,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
@@ -42,23 +35,12 @@ export default function ConnectStepPage() {
   const [invitedTeammates, setInvitedTeammates] = useState<TeammateInvite[]>([]);
   const [teammateEmail, setTeammateEmail] = useState<string>("");
 
-  // Direct Extractor State
+  // Direct login form state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [headless, setHeadless] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [progressStage, setProgressStage] = useState<string>("");
-  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
-
-  // Extracted cookies result state
-  const [extractedData, setExtractedData] = useState<{
-    li_at: string;
-    jsessionId: string;
-    profileName?: string;
-    headline?: string;
-  } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -79,52 +61,45 @@ export default function ConnectStepPage() {
     load();
   }, []);
 
-  const handleExtractAndConnect = async (e: React.FormEvent) => {
+  const handleConnectProfile = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!email.trim() || !password) {
-      toast.error("Please enter both your LinkedIn email and password.");
+      toast.error("Please enter your LinkedIn email and password.");
       return;
     }
 
-    setIsExtracting(true);
-    setProgressStage("Launching real browser session...");
+    setIsConnecting(true);
 
     try {
-      const stageTimer1 = setTimeout(() => setProgressStage("Loading LinkedIn login & submitting credentials..."), 3000);
-      const stageTimer2 = setTimeout(() => setProgressStage("Bypassing bot defense & capturing li_at and JSESSIONID..."), 7000);
-      const stageTimer3 = setTimeout(() => setProgressStage("Verifying session with LinkedIn Voyager API..."), 12000);
-
       const response = await fetch("/api/linkedin/extract-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: email.trim(),
           password,
-          headless,
-          saveAccount: true, // Automatically link connection in DB
         }),
       });
-
-      clearTimeout(stageTimer1);
-      clearTimeout(stageTimer2);
-      clearTimeout(stageTimer3);
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || "Failed to extract LinkedIn session.");
+        throw new Error(data.error || "Failed to authenticate LinkedIn account.");
       }
 
-      const memberName = [data.profile?.firstName, data.profile?.lastName].filter(Boolean).join(" ") || email.trim();
-      const headline = data.profile?.headline || "LinkedIn Profile";
+      const memberName = data.profile?.name || data.profile?.firstName || email.trim();
+      const headline = data.profile?.headline || "LinkedIn Member";
 
       const newAccount: LinkedInAccount = {
         id: data.connectionId || `li_${Date.now()}`,
         name: memberName,
         headline,
         status: "Active",
-        connectedAt: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        connectedAt: new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
       };
 
       const updated = [newAccount, ...connectedAccounts.filter((a) => a.id !== newAccount.id)];
@@ -135,30 +110,16 @@ export default function ConnectStepPage() {
         invitedTeammates,
       });
 
-      setExtractedData({
-        li_at: data.li_at,
-        jsessionId: data.jsessionId,
-        profileName: memberName,
-        headline,
-      });
-
-      setShowAddForm(false);
+      setEmail("");
       setPassword("");
-      toast.success(`${memberName} connected successfully with li_at & JSESSIONID!`);
+      setShowAddForm(false);
+      toast.success(`${memberName} connected securely to your workspace!`);
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to extract cookies.";
+      const errorMsg = err instanceof Error ? err.message : "Authentication error.";
       toast.error(errorMsg);
     } finally {
-      setIsExtracting(false);
-      setProgressStage("");
+      setIsConnecting(false);
     }
-  };
-
-  const copyToClipboard = (text: string, fieldName: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(fieldName);
-    toast.success(`Copied ${fieldName} to clipboard!`);
-    setTimeout(() => setCopiedField(null), 2000);
   };
 
   const handleDisconnect = async (id: string) => {
@@ -206,9 +167,11 @@ export default function ConnectStepPage() {
   };
 
   const handleRemove = async (id: string) => {
-    const response = await fetch(`/api/linkedin/accounts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    const response = await fetch(`/api/linkedin/accounts?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
     if (!response.ok) {
-      toast.error("Could not delete LinkedIn account");
+      toast.error("Could not remove LinkedIn account");
       return;
     }
     const updated = connectedAccounts.filter((acc) => acc.id !== id);
@@ -217,7 +180,7 @@ export default function ConnectStepPage() {
       connectedAccounts: updated,
       invitedTeammates,
     });
-    toast.success("LinkedIn account removed successfully.");
+    toast.success("LinkedIn account removed.");
   };
 
   const handleInviteTeammate = async (e: React.FormEvent) => {
@@ -261,7 +224,7 @@ export default function ConnectStepPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 p-6 flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+        <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
       </div>
     );
   }
@@ -283,17 +246,17 @@ export default function ConnectStepPage() {
           {/* Header */}
           <div className="flex items-start justify-between gap-4 border-b border-neutral-100 dark:border-neutral-800 pb-5">
             <div>
-              <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-1">
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 mb-1">
                 <span>Step 2 of 4</span>
               </div>
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 flex items-center gap-2.5">
-                <span className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                   <LinkedInIcon className="w-5 h-5" />
                 </span>
-                Direct LinkedIn Session Connection
+                Connect Your LinkedIn Profile
               </h1>
               <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                Authenticate with your LinkedIn credentials to automatically extract active <code className="text-blue-600 dark:text-blue-400 font-mono">li_at</code> & <code className="text-blue-600 dark:text-blue-400 font-mono">JSESSIONID</code> cookies.
+                Link your active profile to start personalized outreach campaigns and automated messaging.
               </p>
             </div>
 
@@ -315,7 +278,7 @@ export default function ConnectStepPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddForm(!showAddForm)}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>{showAddForm ? "Hide Form" : "Connect Another Account"}</span>
@@ -337,87 +300,29 @@ export default function ConnectStepPage() {
             </div>
           )}
 
-          {/* Extracted Cookies Card (Shown immediately upon successful extraction) */}
-          <AnimatePresence>
-            {extractedData && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/20 p-5 space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-semibold text-xs">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>Cookies Extracted & Verified for {extractedData.profileName}</span>
-                  </div>
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono">
-                    200 OK Active
-                  </span>
-                </div>
-
-                {/* li_at copy box */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-mono text-neutral-600 dark:text-neutral-400 text-[11px]">li_at</span>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(extractedData.li_at, "li_at")}
-                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                    >
-                      {copiedField === "li_at" ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                      {copiedField === "li_at" ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <div className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 font-mono text-[11px] text-neutral-600 dark:text-neutral-400 break-all select-all">
-                    {extractedData.li_at}
-                  </div>
-                </div>
-
-                {/* JSESSIONID copy box */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-mono text-neutral-600 dark:text-neutral-400 text-[11px]">JSESSIONID</span>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(extractedData.jsessionId, "JSESSIONID")}
-                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                    >
-                      {copiedField === "JSESSIONID" ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                      {copiedField === "JSESSIONID" ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <div className="p-2 rounded-lg bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 font-mono text-[11px] text-neutral-600 dark:text-neutral-400 break-all select-all">
-                    {extractedData.jsessionId}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Direct Extractor Form (Shown when 0 accounts or when user clicks Connect Another) */}
+          {/* Direct Connection Form */}
           {(connectedAccounts.length === 0 || showAddForm) && (
             <motion.div
-              initial={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-950/40 p-5 sm:p-6 space-y-5"
+              className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-neutral-950/40 p-5 sm:p-6 space-y-4"
             >
               <div className="flex items-center justify-between border-b border-neutral-200/80 dark:border-neutral-800/80 pb-3">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-                  <KeyRound className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  Sign In with LinkedIn
+                  <LinkedInIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  LinkedIn Credentials
                 </h3>
                 <span className="text-[11px] text-neutral-500 dark:text-neutral-400 flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  Real Playwright Engine
+                  AES-256-GCM Encrypted
                 </span>
               </div>
 
-              <form onSubmit={handleExtractAndConnect} className="space-y-4">
+              <form onSubmit={handleConnectProfile} className="space-y-4">
                 {/* Email Field */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                    LinkedIn Email / Phone
+                  <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                    LinkedIn Email / Phone <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -427,16 +332,16 @@ export default function ConnectStepPage() {
                       placeholder="your_linkedin_email@domain.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      disabled={isExtracting}
-                      className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all disabled:opacity-50"
+                      disabled={isConnecting}
+                      className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 pl-10 pr-4 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 transition-colors disabled:opacity-50"
                     />
                   </div>
                 </div>
 
                 {/* Password Field */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                    LinkedIn Password
+                  <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                    LinkedIn Password <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -446,8 +351,8 @@ export default function ConnectStepPage() {
                       placeholder="••••••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      disabled={isExtracting}
-                      className="w-full bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl pl-10 pr-10 py-2.5 text-xs text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all disabled:opacity-50"
+                      disabled={isConnecting}
+                      className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 pl-10 pr-10 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 transition-colors disabled:opacity-50"
                     />
                     <button
                       type="button"
@@ -459,41 +364,21 @@ export default function ConnectStepPage() {
                   </div>
                 </div>
 
-                {/* Interactive Window Option */}
-                <label className="flex items-start gap-2.5 p-3 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800/80 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={!headless}
-                    onChange={(e) => setHeadless(!e.target.checked)}
-                    disabled={isExtracting}
-                    className="mt-0.5 rounded border-neutral-300 dark:border-neutral-700 text-blue-600 focus:ring-blue-500/30"
-                  />
-                  <div className="space-y-0.5">
-                    <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                      <Laptop className="w-3.5 h-3.5 text-blue-500" />
-                      Interactive Window (Recommended)
-                    </span>
-                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-normal">
-                      Opens an Edge browser window so you can solve any 2FA email code or CAPTCHA puzzle if requested by LinkedIn.
-                    </p>
-                  </div>
-                </label>
-
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  disabled={isExtracting}
-                  className="w-full py-3 px-4 rounded-xl bg-[#0a66c2] hover:bg-[#004182] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  disabled={isConnecting}
+                  className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  {isExtracting ? (
+                  {isConnecting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>Extracting Session...</span>
+                      <span>Connecting Profile...</span>
                     </>
                   ) : (
                     <>
-                      <KeyRound className="w-4 h-4 text-white" />
-                      <span>Extract & Connect LinkedIn Profile</span>
+                      <CheckCircle2 className="w-4 h-4 text-white" />
+                      <span>Connect LinkedIn Account</span>
                       <ArrowRight className="w-3.5 h-3.5 ml-0.5 opacity-90" />
                     </>
                   )}
@@ -501,10 +386,10 @@ export default function ConnectStepPage() {
               </form>
 
               {/* Realtime progress tracker */}
-              {isExtracting && (
-                <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-600 dark:text-blue-300 flex items-center gap-3 animate-pulse">
-                  <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
-                  <span>{progressStage || "Processing..."}</span>
+              {isConnecting && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2.5 animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>Authenticating with LinkedIn in the background...</span>
                 </div>
               )}
             </motion.div>
@@ -515,10 +400,10 @@ export default function ConnectStepPage() {
             <Shield className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <h5 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
-                Zero Password Storage Guarantee
+                Protected Data Storage
               </h5>
               <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                Your password is held strictly in memory by the local browser session to authenticate and generate your session cookie, and is discarded immediately. All extracted session tokens are encrypted using AES-256-GCM.
+                Your credentials are used once in memory by the local browser session to establish your authenticated LinkedIn connection and are never saved in plain text. Session tokens are securely protected on the server using AES-256-GCM encryption.
               </p>
             </div>
           </div>
@@ -543,12 +428,12 @@ export default function ConnectStepPage() {
                   value={teammateEmail}
                   onChange={(e) => setTeammateEmail(e.target.value)}
                   placeholder="teammate@company.com"
-                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 pl-9 pr-3 py-2 text-xs outline-none focus:border-blue-500 transition-colors"
+                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 pl-9 pr-3 py-2 text-xs outline-none focus:border-emerald-500 transition-colors"
                 />
               </div>
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 px-4 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 shadow-2xs transition-colors cursor-pointer shrink-0"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-300 shadow-2xs transition-colors cursor-pointer shrink-0"
               >
                 <Send className="h-3.5 w-3.5 text-neutral-400" />
                 <span>Invite Teammate</span>
@@ -592,7 +477,7 @@ export default function ConnectStepPage() {
             <button
               type="button"
               onClick={handleContinue}
-              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white px-6 py-2.5 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
             >
               <span>Continue to Leads</span>
               <ArrowRight className="h-3.5 w-3.5" />
