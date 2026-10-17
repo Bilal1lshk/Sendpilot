@@ -516,7 +516,7 @@ export default function LinkedInAccountsPage() {
                       What we store
                     </h4>
                     <p className="text-neutral-500 dark:text-neutral-400">
-                      We store your profile name and avatar with OAuth credentials encrypted on the server. Credentials are never included in account responses.
+                      We store your profile name and avatar with session credentials encrypted on the server using AES-256-GCM. Credentials are never included in account responses.
                     </p>
                   </div>
 
@@ -525,7 +525,7 @@ export default function LinkedInAccountsPage() {
                       What we never do
                     </h4>
                     <p className="text-neutral-500 dark:text-neutral-400">
-                      We never ask for your LinkedIn password, never scrape private inboxes without permission, and never send high-volume mass spam.
+                      We never store your LinkedIn password in plain text, never scrape private inboxes without permission, and never send high-volume mass spam.
                     </p>
                   </div>
 

@@ -1,120 +1,29 @@
 import { NextResponse } from "next/server";
-import { randomBytes, createHmac } from "crypto";
-import { auth } from "@/auth";
-import connectDB from "@/lib/mongodb";
-import { migrateLegacyLinkedInConnections } from "@/lib/linkedin-connections";
-import { consumeRateLimit } from "@/lib/rate-limit";
-import { resolveLinkedInRedirectUri } from "@/lib/oauth-origin";
+import { resolveAppOrigin } from "@/lib/oauth-origin";
 
-/** GET /api/auth/linkedin/authorize
+/**
+ * GET /api/auth/linkedin/authorize
  *
- * Generates a CSRF-proof `state` value, stores it in an httpOnly cookie
- * (li_oauth_state, 10-minute TTL), then redirects the browser to LinkedIn's
- * OAuth 2.0 authorization screen.
- *
- * The redirect_uri is always the single registered callback:
- *   http://localhost:3000/api/auth/linkedin/callback
+ * Deprecated: The LinkedIn OAuth redirect flow has been replaced with the
+ * direct Session Extractor (Playwright background automation and manual li_at cookies).
+ * Any requests to this route are redirected to the session extractor page.
  */
 export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const jsonMode = searchParams.get("json") === "true";
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) return NextResponse.redirect(new URL("/login", req.url));
+  const origin = resolveAppOrigin(req);
+  const { searchParams } = new URL(req.url);
+  const jsonMode = searchParams.get("json") === "true";
+  const returnTo = searchParams.get("returnTo") || "/dashboard/accounts/direct-login";
+  const targetPath = returnTo.startsWith("/") ? returnTo : "/dashboard/accounts/direct-login";
+  const targetUrl = `${origin}${targetPath}`;
 
-    await connectDB();
-    try {
-      await migrateLegacyLinkedInConnections(userId);
-    } catch (migErr) {
-      console.warn("Legacy migration warning in authorize:", migErr);
-    }
-    if (!(await consumeRateLimit(userId, "linkedin-authorize", 30, 15 * 60 * 1000))) {
-      return NextResponse.json({ success: false, error: "Too many connection attempts" }, { status: 429 });
-    }
-
-    const isManual = searchParams.get("mode") === "manual" || searchParams.get("dev") === "true";
-    const clientId = process.env.LINKEDIN_CLIENT_ID || process.env.Linkedin_Client_ID;
-    const redirectUri = resolveLinkedInRedirectUri(req, { isManual });
-    const scope = "openid profile email";
-
-    if (!clientId || !redirectUri) {
-      console.error("❌ Missing LINKEDIN_CLIENT_ID or LINKEDIN_REDIRECT_URI in environment variables (.env)");
-      return NextResponse.json(
-        { error: "LinkedIn OAuth credentials are not properly configured in the server environment (.env)." },
-        { status: 500 }
-      );
-    }
-
-    // Cryptographically signed state containing userId and nonce
-    const statePayload = `${userId}:${Date.now()}:${randomBytes(8).toString("hex")}`;
-    const payloadB64 = Buffer.from(statePayload).toString("base64url");
-    const hmacSecret =
-      process.env.COOKIE_ENC_KEY ||
-      process.env.AUTH_SECRET ||
-      process.env.NEXTAUTH_SECRET ||
-      "default_sendpilot_secret";
-    const signature = createHmac("sha256", hmacSecret).update(payloadB64).digest("hex");
-    const state = `${payloadB64}.${signature}`;
-
-    const returnToParam = searchParams.get("returnTo") || (req.headers.get("referer")?.includes("/get-started") ? "/get-started/connect" : "/dashboard/accounts");
-    const returnTo = returnToParam.startsWith("/") ? returnToParam : "/dashboard/accounts";
-
-    const isSecure =
-      process.env.NODE_ENV === "production" ||
-      Boolean(process.env.VERCEL) ||
-      req.url.startsWith("https://");
-
-    const authUrl =
-      `https://www.linkedin.com/oauth/v2/authorization` +
-      `?client_id=${encodeURIComponent(clientId.trim())}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri.trim())}` +
-      `&scope=${encodeURIComponent(scope.trim())}` +
-      `&response_type=code` +
-      `&state=${encodeURIComponent(state)}`;
-
-    if (jsonMode) {
-      const jsonRes = NextResponse.json({ success: true, url: authUrl, redirectUri: redirectUri.trim() });
-      jsonRes.cookies.set("li_oauth_state", state, {
-        httpOnly: true,
-        secure: isSecure,
-        sameSite: "lax",
-        maxAge: 60 * 30,
-        path: "/",
-      });
-      jsonRes.cookies.set("li_oauth_return_to", returnTo, {
-        httpOnly: true,
-        secure: isSecure,
-        sameSite: "lax",
-        maxAge: 60 * 30,
-        path: "/",
-      });
-      return jsonRes;
-    }
-
-    // Set state in an httpOnly cookie so the callback can verify it
-    const response = NextResponse.redirect(authUrl);
-    response.cookies.set("li_oauth_state", state, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: "lax",
-      maxAge: 60 * 30, // 30 minutes
-      path: "/",
+  if (jsonMode) {
+    return NextResponse.json({
+      success: true,
+      url: targetUrl,
+      redirectUri: targetUrl,
+      method: "session-extractor",
     });
-    response.cookies.set("li_oauth_return_to", returnTo, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite: "lax",
-      maxAge: 60 * 30,
-      path: "/",
-    });
-
-    return response;
-  } catch (error) {
-    console.error("Error creating LinkedIn authorization URL:", error);
-    return NextResponse.json(
-      { error: "Failed to initiate LinkedIn authorization" },
-      { status: 500 }
-    );
   }
+
+  return NextResponse.redirect(targetUrl);
 }

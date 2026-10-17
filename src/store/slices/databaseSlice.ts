@@ -213,7 +213,7 @@ export function mapSafeAccountToConnected(account: SafeConnectionApiItem): Conne
     id: account.id,
     name: account.linkedinName,
     headline: "LinkedIn profile",
-    type: "LinkedIn OAuth",
+    type: "LinkedIn Session",
     photo: account.linkedinAvatar,
     status:
       account.status === "active"
