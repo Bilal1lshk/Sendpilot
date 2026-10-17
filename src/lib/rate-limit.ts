@@ -13,7 +13,7 @@ export async function consumeRateLimit(
   const result = await RateLimit.findOneAndUpdate(
     { key },
     { $inc: { count: 1 }, $setOnInsert: { expiresAt } },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: "after" }
   ).lean();
 
   return (result?.count || 0) <= limit;

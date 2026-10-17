@@ -68,7 +68,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (typeof body.email === "string") update.email = body.email.trim().toLowerCase() || undefined;
     if (typeof body.linkedinUrl === "string") update.linkedinUrl = normalizeLinkedInUrl(body.linkedinUrl);
 
-    const lead = await Lead.findOneAndUpdate({ _id: id, userId: ctx.userId }, { $set: update }, { new: true, runValidators: true }).lean();
+    const lead = await Lead.findOneAndUpdate({ _id: id, userId: ctx.userId }, { $set: update }, { returnDocument: "after", runValidators: true }).lean();
     if (!lead) return NextResponse.json({ success: false, error: "Lead not found" }, { status: 404 });
 
     return NextResponse.json({ success: true, lead: serializeLead(lead) });

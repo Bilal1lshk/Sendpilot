@@ -38,6 +38,12 @@ export default function DirectLoginCookieExtractorPage() {
   const [pendingChallengeToken, setPendingChallengeToken] = useState<string | undefined>(undefined);
   const [challengeMessage, setChallengeMessage] = useState("");
   const [awaitingTwoFactor, setAwaitingTwoFactor] = useState(false);
+  const [proxyError, setProxyError] = useState<{
+    code: string;
+    stage: string;
+    message: string;
+    hint: string;
+  } | null>(null);
 
   const [liAt, setLiAt] = useState("");
   const [jsessionId, setJsessionId] = useState("");
@@ -139,6 +145,17 @@ export default function DirectLoginCookieExtractorPage() {
       }
 
       if (!response.ok || !data?.success) {
+        if (data?.proxyError || data?.code) {
+          const pErr = {
+            code: data.code || data.proxyError?.code || "PROXY_ERROR",
+            stage: data.stage || data.proxyError?.stage || "execution",
+            message: data.proxyError?.message || data.error || "Residential proxy error.",
+            hint: data.hint || data.proxyError?.hint || "Check proxy settings in environment variables.",
+          };
+          setProxyError(pErr);
+          toast.error(`Proxy Error [${pErr.code}]: ${pErr.hint}`);
+          return;
+        }
         throw new Error(data?.error || "Failed to authenticate LinkedIn account.");
       }
 
@@ -326,6 +343,21 @@ export default function DirectLoginCookieExtractorPage() {
                       </div>
                     )}
 
+                    {proxyError && (
+                      <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+                        <div className="flex items-center gap-1.5 font-semibold">
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-[10px] uppercase">
+                            {proxyError.code}
+                          </span>
+                          <span>Proxy Error (Stage: {proxyError.stage})</span>
+                        </div>
+                        <p className="leading-snug">{proxyError.message}</p>
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+                          💡 Hint: {proxyError.hint}
+                        </p>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-2.5 pt-2">
                       <button
                         type="button"
@@ -508,6 +540,21 @@ export default function DirectLoginCookieExtractorPage() {
                       <code className="text-emerald-600 dark:text-emerald-400 font-semibold">li_at</code> value.
                     </div>
                   </>
+                )}
+
+                {proxyError && !awaitingTwoFactor && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-[10px] uppercase">
+                        {proxyError.code}
+                      </span>
+                      <span>Proxy Error (Stage: {proxyError.stage})</span>
+                    </div>
+                    <p className="leading-snug">{proxyError.message}</p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+                      💡 Hint: {proxyError.hint}
+                    </p>
+                  </div>
                 )}
 
                 {!awaitingTwoFactor && (

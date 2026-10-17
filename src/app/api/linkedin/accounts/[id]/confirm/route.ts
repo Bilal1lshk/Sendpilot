@@ -14,7 +14,7 @@ export async function POST(_req: Request, { params }: RouteContext) {
   const connection = await LinkedInConnection.findOneAndUpdate(
     { id, userId: ctx.userId, status: "active", lastVerifiedAt: { $ne: null } },
     { $set: { confirmedAt: new Date() } },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!connection) {
     return NextResponse.json({ success: false, error: "Verified connection not found" }, { status: 404 });

@@ -7,7 +7,7 @@ import {
   type TwoFactorMethod,
 } from "@/lib/linkedin-session-extractor";
 import { createConnectionId, disconnectOtherAccounts } from "@/lib/linkedin-connections";
-import { encryptConnectionSecrets } from "@/lib/connection-crypto";
+import { encryptConnectionSecrets, decryptConnectionSecrets } from "@/lib/connection-crypto";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import { connectDB } from "@/lib/mongodb";
 
@@ -119,6 +119,30 @@ export async function POST(req: Request) {
       );
     }
 
+    // Connect to DB and check for an existing persisted hardware fingerprint for this account
+    await connectDB();
+    let existingFingerprint: import("@/lib/browser-launcher").AccountFingerprint | undefined;
+    try {
+      const existingConn = await LinkedInConnection.findOne({
+        userId: ctx.userId,
+      }).lean();
+      if (existingConn?.encryptedCredentials) {
+        const decrypted = decryptConnectionSecrets<{
+          fingerprint?: import("@/lib/browser-launcher").AccountFingerprint;
+          extractedEmail?: string;
+        }>(existingConn.encryptedCredentials);
+        if (
+          decrypted?.fingerprint &&
+          (!decrypted.extractedEmail ||
+            decrypted.extractedEmail.toLowerCase() === email.trim().toLowerCase())
+        ) {
+          existingFingerprint = decrypted.fingerprint;
+        }
+      }
+    } catch {
+      // Ignore fingerprint retrieval error
+    }
+
     const normalized2FA: TwoFactorMethod = twoFactorMethod === "app" ? "app" : "otp";
 
     const result = await extractLinkedInSession({
@@ -135,7 +159,22 @@ export async function POST(req: Request) {
           : undefined,
       headless: true,
       timeout: 24000,
+      existingFingerprint,
     });
+
+    if (result.proxyError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `${result.proxyError.message} ${result.proxyError.hint}`,
+          proxyError: result.proxyError,
+          code: result.proxyError.code,
+          stage: result.proxyError.stage,
+          hint: result.proxyError.hint,
+        },
+        { status: 502 }
+      );
+    }
 
     if (result.requiresTwoFactor) {
       return NextResponse.json(
@@ -149,6 +188,7 @@ export async function POST(req: Request) {
               ? "Approve the sign-in in the LinkedIn mobile app."
               : "LinkedIn sent a one-time code by SMS or email."),
           pendingChallengeToken: result.pendingChallengeToken,
+          proxySessionId: result.proxySessionId,
           error: result.error,
         },
         { status: 202 }
@@ -165,8 +205,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Protectedly store encrypted credentials in backend (AES-256-GCM)
-    await connectDB();
+    // Protectedly store encrypted credentials & deterministic hardware fingerprint in MongoDB (AES-256-GCM)
     const memberName =
       [result.profile?.firstName, result.profile?.lastName].filter(Boolean).join(" ") ||
       email.trim();
@@ -180,6 +219,8 @@ export async function POST(req: Request) {
         li_at: result.li_at,
         jsessionId: result.jsessionId,
         extractedEmail: email.trim(),
+        fingerprint: result.fingerprint,
+        proxySessionId: result.proxySessionId,
       }),
       status: "active",
       linkedinName: memberName,
@@ -190,7 +231,7 @@ export async function POST(req: Request) {
 
     await disconnectOtherAccounts(ctx.userId, connId);
 
-    // Security: Do NOT expose raw li_at or jsessionId in the client response
+    // Security: Do NOT expose raw li_at, jsessionId, or proxy credentials in the client response
     return NextResponse.json({
       success: true,
       saved: true,

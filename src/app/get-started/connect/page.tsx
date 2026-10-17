@@ -43,6 +43,19 @@ export default function ConnectStepPage() {
   const [liAt, setLiAt] = useState("");
   const [jsessionId, setJsessionId] = useState("");
 
+  // Two-Factor Authentication & Proxy state
+  const [twoFactorMethod, setTwoFactorMethod] = useState<"otp" | "app">("otp");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [pendingChallengeToken, setPendingChallengeToken] = useState<string | undefined>(undefined);
+  const [challengeMessage, setChallengeMessage] = useState("");
+  const [awaitingTwoFactor, setAwaitingTwoFactor] = useState(false);
+  const [proxyError, setProxyError] = useState<{
+    code: string;
+    stage: string;
+    message: string;
+    hint: string;
+  } | null>(null);
+
   const [isConnecting, setIsConnecting] = useState(false);
   const [progressMsg, setProgressMsg] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -69,6 +82,7 @@ export default function ConnectStepPage() {
   const handleConnectProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsConnecting(true);
+    setProxyError(null);
 
     try {
       let payload: Record<string, unknown> = {};
@@ -79,11 +93,26 @@ export default function ConnectStepPage() {
           setIsConnecting(false);
           return;
         }
-        setProgressMsg("Connecting to LinkedIn...");
+        if (awaitingTwoFactor && twoFactorMethod === "otp" && !verificationCode.trim()) {
+          toast.error("Please enter the verification code sent by LinkedIn.");
+          setIsConnecting(false);
+          return;
+        }
+
+        setProgressMsg(
+          awaitingTwoFactor
+            ? twoFactorMethod === "otp"
+              ? "Verifying one-time code with LinkedIn..."
+              : "Checking LinkedIn mobile app approval..."
+            : "Connecting to LinkedIn..."
+        );
         payload = {
           method: "playwright",
           email: email.trim(),
           password,
+          twoFactorMethod,
+          verificationCode: verificationCode.trim() || undefined,
+          pendingChallengeToken,
         };
       } else {
         if (!liAt.trim()) {
@@ -107,7 +136,38 @@ export default function ConnectStepPage() {
 
       const data = await response.json().catch(() => null);
 
+      if (response.status === 202 || data?.requiresTwoFactor) {
+        if (data?.twoFactorMethod === "app" || data?.twoFactorMethod === "otp") {
+          setTwoFactorMethod(data.twoFactorMethod);
+        }
+        setPendingChallengeToken(data?.pendingChallengeToken);
+        setChallengeMessage(
+          data?.challengeMessage ||
+            (twoFactorMethod === "app"
+              ? "Approve the sign-in in the LinkedIn mobile app."
+              : "LinkedIn sent a one-time code by SMS or email.")
+        );
+        setAwaitingTwoFactor(true);
+        toast.info(
+          twoFactorMethod === "app"
+            ? "Check your LinkedIn mobile app to approve the sign-in."
+            : "Enter the one-time verification code sent by LinkedIn."
+        );
+        return;
+      }
+
       if (!response.ok || !data?.success) {
+        if (data?.proxyError || data?.code) {
+          const pErr = {
+            code: data.code || data.proxyError?.code || "PROXY_ERROR",
+            stage: data.stage || data.proxyError?.stage || "execution",
+            message: data.proxyError?.message || data.error || "Residential proxy error.",
+            hint: data.hint || data.proxyError?.hint || "Check proxy settings in environment variables.",
+          };
+          setProxyError(pErr);
+          toast.error(`Proxy Error [${pErr.code}]: ${pErr.hint}`);
+          return;
+        }
         throw new Error(data?.error || "Failed to authenticate LinkedIn account.");
       }
 
@@ -363,117 +423,209 @@ export default function ConnectStepPage() {
               </div>
 
               <form onSubmit={handleConnectProfile} className="space-y-3.5">
-                {connectMode === "auto" ? (
-                  <>
-                    {/* Email Field */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        LinkedIn Email / Phone <span className="text-red-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input
-                          type="email"
-                          required
-                          placeholder="your_linkedin_email@domain.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          disabled={isConnecting}
-                          className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-4 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
-                        />
-                      </div>
+                {proxyError && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-[10px] uppercase">
+                        {proxyError.code}
+                      </span>
+                      <span>Proxy Error (Stage: {proxyError.stage})</span>
                     </div>
-
-                    {/* Password Field */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        LinkedIn Password <span className="text-red-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <Lock className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        <input
-                          type={showPassword ? "text" : "password"}
-                          required
-                          placeholder="••••••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          disabled={isConnecting}
-                          className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-10 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors cursor-pointer"
-                        >
-                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    {/* li_at Cookie */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                          li_at Cookie <span className="text-red-500">*</span>
-                        </label>
-                        <span className="text-[10px] text-neutral-400">Required</span>
-                      </div>
-                      <input
-                        type="text"
-                        required
-                        placeholder="AQEDAQ..."
-                        value={liAt}
-                        onChange={(e) => setLiAt(e.target.value)}
-                        disabled={isConnecting}
-                        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
-                      />
-                    </div>
-
-                    {/* JSESSIONID Cookie */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                          JSESSIONID Cookie
-                        </label>
-                        <span className="text-[10px] text-neutral-400">Optional</span>
-                      </div>
-                      <input
-                        type="text"
-                        placeholder='ajax:123456789... (or "ajax:...")'
-                        value={jsessionId}
-                        onChange={(e) => setJsessionId(e.target.value)}
-                        disabled={isConnecting}
-                        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
-                      />
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-neutral-50 dark:bg-neutral-950/50 border border-neutral-200 dark:border-neutral-800/60 text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                      💡 <strong>How to find it:</strong> On linkedin.com, press <kbd className="px-1 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 font-mono text-[10px]">F12</kbd> $\rightarrow$ <strong>Application</strong> $\rightarrow$ <strong>Cookies</strong> $\rightarrow$ copy the <code className="text-emerald-600 dark:text-emerald-400">li_at</code> value.
-                    </div>
-                  </>
+                    <p className="leading-snug">{proxyError.message}</p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+                      💡 Hint: {proxyError.hint}
+                    </p>
+                  </div>
                 )}
 
-                {/* Submit Button */}
-                <button
-                  type="submit"
-                  disabled={isConnecting}
-                  className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {isConnecting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-white" />
-                      <span>{progressMsg || "Connecting Profile..."}</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-white" />
-                      <span>Connect LinkedIn Account</span>
-                      <ArrowRight className="w-3.5 h-3.5 ml-0.5 opacity-90" />
-                    </>
-                  )}
-                </button>
+                {awaitingTwoFactor ? (
+                  <div className="space-y-3.5">
+                    {challengeMessage && (
+                      <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-200">
+                        {challengeMessage}
+                      </div>
+                    )}
+
+                    {twoFactorMethod === "otp" ? (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                          One-Time Verification Code (SMS or Email)
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          required
+                          autoFocus
+                          placeholder="Enter 6-digit code (e.g. 123456)"
+                          value={verificationCode}
+                          onChange={(e) => setVerificationCode(e.target.value)}
+                          disabled={isConnecting}
+                          className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-4 py-2.5 text-sm font-mono tracking-widest text-center text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 placeholder:tracking-normal placeholder:font-sans placeholder:text-xs outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                        />
+                      </div>
+                    ) : (
+                      <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-950/60 border border-neutral-200/70 dark:border-neutral-800 text-xs text-neutral-600 dark:text-neutral-300 space-y-1.5">
+                        <p className="font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
+                          Approve in your LinkedIn mobile app
+                        </p>
+                        <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                          Open the LinkedIn app on your phone, tap <strong>Yes</strong> on the sign-in prompt, then click Continue below.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        disabled={isConnecting}
+                        onClick={() => {
+                          setAwaitingTwoFactor(false);
+                          setVerificationCode("");
+                        }}
+                        className="py-2.5 px-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Back</span>
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={isConnecting}
+                        className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                      >
+                        {isConnecting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-white" />
+                            <span>{progressMsg || "Verifying..."}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span>
+                              {twoFactorMethod === "otp"
+                                ? "Verify One-Time Code"
+                                : "I Approved in App — Continue"}
+                            </span>
+                            <ArrowRight className="w-3.5 h-3.5 opacity-90" />
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {connectMode === "auto" ? (
+                      <>
+                        {/* Email Field */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                            LinkedIn Email / Phone <span className="text-red-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="email"
+                              required
+                              placeholder="your_linkedin_email@domain.com"
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              disabled={isConnecting}
+                              className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-4 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Password Field */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                            LinkedIn Password <span className="text-red-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <Lock className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type={showPassword ? "text" : "password"}
+                              required
+                              placeholder="••••••••••••"
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              disabled={isConnecting}
+                              className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-10 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+                            >
+                              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* li_at Cookie */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                              li_at Cookie <span className="text-red-500">*</span>
+                            </label>
+                            <span className="text-[10px] text-neutral-400">Required</span>
+                          </div>
+                          <input
+                            type="text"
+                            required
+                            placeholder="AQEDAQ..."
+                            value={liAt}
+                            onChange={(e) => setLiAt(e.target.value)}
+                            disabled={isConnecting}
+                            className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                          />
+                        </div>
+
+                        {/* JSESSIONID Cookie */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                              JSESSIONID Cookie
+                            </label>
+                            <span className="text-[10px] text-neutral-400">Optional</span>
+                          </div>
+                          <input
+                            type="text"
+                            placeholder='ajax:123456789... (or "ajax:...")'
+                            value={jsessionId}
+                            onChange={(e) => setJsessionId(e.target.value)}
+                            disabled={isConnecting}
+                            className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                          />
+                        </div>
+
+                        <div className="p-2.5 rounded-lg bg-neutral-50 dark:bg-neutral-950/50 border border-neutral-200 dark:border-neutral-800/60 text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                          💡 <strong>How to find it:</strong> On linkedin.com, press <kbd className="px-1 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 font-mono text-[10px]">F12</kbd> $\rightarrow$ <strong>Application</strong> $\rightarrow$ <strong>Cookies</strong> $\rightarrow$ copy the <code className="text-emerald-600 dark:text-emerald-400">li_at</code> value.
+                        </div>
+                      </>
+                    )}
+
+                    {/* Submit Button */}
+                    <button
+                      type="submit"
+                      disabled={isConnecting}
+                      className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {isConnecting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin text-white" />
+                          <span>{progressMsg || "Connecting Profile..."}</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-white" />
+                          <span>Connect LinkedIn Account</span>
+                          <ArrowRight className="w-3.5 h-3.5 ml-0.5 opacity-90" />
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
               </form>
             </motion.div>
           )}

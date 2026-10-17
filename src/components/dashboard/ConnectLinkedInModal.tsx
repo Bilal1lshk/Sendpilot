@@ -58,6 +58,12 @@ export function ConnectLinkedInModal({
   const [verificationCode, setVerificationCode] = useState("");
   const [pendingChallengeToken, setPendingChallengeToken] = useState<string | undefined>(undefined);
   const [challengeMessage, setChallengeMessage] = useState("");
+  const [proxyError, setProxyError] = useState<{
+    code: string;
+    stage: string;
+    message: string;
+    hint: string;
+  } | null>(null);
 
   // Manual method fields
   const [liAt, setLiAt] = useState("");
@@ -77,6 +83,7 @@ export function ConnectLinkedInModal({
       setVerificationCode("");
       setPendingChallengeToken(undefined);
       setChallengeMessage("");
+      setProxyError(null);
     }
   }, [isOpen]);
 
@@ -160,6 +167,17 @@ export function ConnectLinkedInModal({
       }
 
       if (!res.ok || !data?.success) {
+        if (data?.proxyError || data?.code) {
+          const pErr = {
+            code: data.code || data.proxyError?.code || "PROXY_ERROR",
+            stage: data.stage || data.proxyError?.stage || "execution",
+            message: data.proxyError?.message || data.error || "Residential proxy failed.",
+            hint: data.hint || data.proxyError?.hint || "Check proxy settings in environment variables.",
+          };
+          setProxyError(pErr);
+          toast.error(`Proxy Error [${pErr.code}]: ${pErr.hint}`);
+          return;
+        }
         throw new Error(data?.error || "Failed to authenticate LinkedIn account.");
       }
 
@@ -423,6 +441,21 @@ export function ConnectLinkedInModal({
                   </>
                 )}
 
+                {proxyError && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-[10px] uppercase">
+                        {proxyError.code}
+                      </span>
+                      <span>Proxy Error (Stage: {proxyError.stage})</span>
+                    </div>
+                    <p className="leading-snug">{proxyError.message}</p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+                      💡 Hint: {proxyError.hint}
+                    </p>
+                  </div>
+                )}
+
                 {/* Submit button */}
                 <button
                   type="submit"
@@ -527,6 +560,21 @@ export function ConnectLinkedInModal({
                   <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
                     Open the LinkedIn app on your phone, tap <strong>Yes</strong> on the sign-in
                     notification, then click the button below to complete connection.
+                  </p>
+                </div>
+              )}
+
+              {proxyError && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-[10px] uppercase">
+                      {proxyError.code}
+                    </span>
+                    <span>Proxy Error (Stage: {proxyError.stage})</span>
+                  </div>
+                  <p className="leading-snug">{proxyError.message}</p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+                    💡 Hint: {proxyError.hint}
                   </p>
                 </div>
               )}

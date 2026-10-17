@@ -3,11 +3,19 @@ import {
   launchBrowser,
   createStealthContext,
   safeCloseBrowser,
+  resolveAccountProxy,
+  getOrGenerateAccountFingerprint,
+  categorizeProxyError,
+  verifyProxyConnection,
+  type ProxyConfig,
+  type AccountFingerprint,
+  type CategorizedProxyError,
 } from "@/lib/browser-launcher";
 import {
   decryptConnectionSecrets,
   encryptConnectionSecrets,
 } from "@/lib/connection-crypto";
+import { ProxyAgent } from "undici";
 
 export type TwoFactorMethod = "otp" | "app";
 
@@ -25,6 +33,10 @@ export interface ExtractedSessionResult {
   twoFactorMethod?: TwoFactorMethod;
   challengeMessage?: string;
   pendingChallengeToken?: string;
+  proxyError?: CategorizedProxyError;
+  fingerprint?: AccountFingerprint;
+  proxySessionId?: string;
+  bytesTransferred?: number;
   error?: string;
 }
 
@@ -36,6 +48,7 @@ export interface ExtractOptions {
   pendingChallengeToken?: string;
   headless?: boolean;
   timeout?: number;
+  existingFingerprint?: AccountFingerprint;
   onProgress?: (stage: string) => void;
 }
 
@@ -50,6 +63,8 @@ interface PendingChallengePayload {
   email: string;
   checkpointUrl: string;
   userAgent?: string;
+  proxySessionId?: string;
+  fingerprint?: AccountFingerprint;
   capturedForm?: CapturedChallengeForm | null;
   storageState: {
     cookies: Array<{
@@ -456,18 +471,45 @@ async function captureChallengeForm(page: Page): Promise<CapturedChallengeForm |
   }
 }
 
+function createUndiciProxyAgent(proxyConfig?: ProxyConfig): ProxyAgent | undefined {
+  if (!proxyConfig?.server) return undefined;
+  try {
+    let proxyUrl = proxyConfig.server.trim();
+    if (!/^https?:\/\//i.test(proxyUrl)) {
+      proxyUrl = `http://${proxyUrl}`;
+    }
+    const parsed = new URL(proxyUrl);
+    if (proxyConfig.username) {
+      parsed.username = encodeURIComponent(proxyConfig.username);
+    }
+    if (proxyConfig.password) {
+      parsed.password = encodeURIComponent(proxyConfig.password);
+    }
+    return new ProxyAgent(parsed.toString());
+  } catch (err) {
+    console.warn(
+      "[proxy] Failed to initialize ProxyAgent for HTTP submission:",
+      err instanceof Error ? err.message : String(err)
+    );
+    return undefined;
+  }
+}
+
 /**
  * Fast-path: Submits the captured 2FA challenge POST form directly over HTTP using
- * the cookies from Step 1. Completes in ~1s without needing to spin up Chromium.
+ * the cookies from Step 1 through the identical residential proxy session.
+ * Completes in ~1s without needing to spin up Chromium.
  */
 async function submitChallengeFormViaHttp(
   challenge: PendingChallengePayload,
-  code: string
+  code: string,
+  proxyConfig?: ProxyConfig
 ): Promise<{
   success: boolean;
   li_at?: string;
   jsessionId?: string;
   invalidCodeError?: string;
+  proxyError?: CategorizedProxyError;
 }> {
   const form = challenge.capturedForm;
   if (!form?.action || !challenge.storageState?.cookies?.length) {
@@ -517,8 +559,11 @@ async function submitChallengeFormViaHttp(
     }
     params.set(form.pinFieldName || "pin", cleanCode);
 
-    const ua = challenge.userAgent || BROWSER_UA;
-    let res = await fetch(targetUrl, {
+    const ua = challenge.fingerprint?.userAgent || challenge.userAgent || BROWSER_UA;
+    const acceptLanguage = challenge.fingerprint?.acceptLanguage || "en-US,en;q=0.9";
+    const dispatcher = createUndiciProxyAgent(proxyConfig);
+
+    const postOptions: Record<string, unknown> = {
       method: "POST",
       redirect: "manual",
       headers: {
@@ -528,11 +573,25 @@ async function submitChallengeFormViaHttp(
         Origin: "https://www.linkedin.com",
         Referer: challenge.checkpointUrl || "https://www.linkedin.com/checkpoint/challenge/",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": acceptLanguage,
       },
       body: params.toString(),
       signal: AbortSignal.timeout(8000),
-    });
+    };
+    if (dispatcher) {
+      postOptions.dispatcher = dispatcher;
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(targetUrl, postOptions as RequestInit);
+    } catch (fetchErr) {
+      const catProxy = categorizeProxyError(fetchErr, "http_challenge_submit");
+      if (catProxy) {
+        return { success: false, proxyError: catProxy };
+      }
+      return { success: false };
+    }
 
     parseSetCookies(res);
 
@@ -547,7 +606,8 @@ async function submitChallengeFormViaHttp(
       const loc = res.headers.get("location");
       if (!loc) break;
       const nextUrl = new URL(loc, targetUrl).toString();
-      res = await fetch(nextUrl, {
+
+      const getOptions: Record<string, unknown> = {
         method: "GET",
         redirect: "manual",
         headers: {
@@ -555,9 +615,24 @@ async function submitChallengeFormViaHttp(
           "User-Agent": ua,
           Referer: targetUrl,
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": acceptLanguage,
         },
         signal: AbortSignal.timeout(6000),
-      });
+      };
+      if (dispatcher) {
+        getOptions.dispatcher = dispatcher;
+      }
+
+      try {
+        res = await fetch(nextUrl, getOptions as RequestInit);
+      } catch (hopErr) {
+        const catProxy = categorizeProxyError(hopErr, "http_challenge_hop");
+        if (catProxy) {
+          return { success: false, proxyError: catProxy };
+        }
+        break;
+      }
+
       parseSetCookies(res);
       hops++;
     }
@@ -589,7 +664,11 @@ async function submitChallengeFormViaHttp(
     }
 
     return { success: false };
-  } catch {
+  } catch (err) {
+    const catProxy = categorizeProxyError(err, "http_challenge_submit");
+    if (catProxy) {
+      return { success: false, proxyError: catProxy };
+    }
     return { success: false };
   }
 }
@@ -661,7 +740,9 @@ async function submitOneTimeCode(
 async function createPendingChallengeToken(
   context: BrowserContext,
   page: Page,
-  email: string
+  email: string,
+  proxySessionId?: string,
+  fingerprint?: AccountFingerprint
 ): Promise<string | undefined> {
   try {
     const storageState =
@@ -671,7 +752,9 @@ async function createPendingChallengeToken(
     const payload: PendingChallengePayload = {
       email,
       checkpointUrl: page.url(),
-      userAgent,
+      userAgent: fingerprint?.userAgent || userAgent,
+      proxySessionId,
+      fingerprint,
       capturedForm,
       storageState,
       createdAt: Date.now(),
@@ -782,6 +865,7 @@ export async function extractLinkedInSession({
   pendingChallengeToken,
   headless = true,
   timeout = 24000,
+  existingFingerprint,
   onProgress,
 }: ExtractOptions): Promise<ExtractedSessionResult> {
   const overallStart = Date.now();
@@ -800,14 +884,32 @@ export async function extractLinkedInSession({
     }
   }
 
+  // Deterministically resolve per-account proxy and hardware fingerprint
+  const proxySessionId = restoredChallenge?.proxySessionId;
+  const proxyConfig = resolveAccountProxy(email, proxySessionId);
+  const fingerprint = getOrGenerateAccountFingerprint(
+    email,
+    proxyConfig?.country,
+    restoredChallenge?.fingerprint || existingFingerprint
+  );
+  let sessionBytesTransferred = 0;
+
   // Fast-path: When submitting a 6-digit OTP code with a captured form from Step 1,
-  // try direct HTTP POST first (~1s) before launching Chromium.
+  // try direct HTTP POST first (~1s) through the same sticky residential proxy session.
   if (verificationCode && verificationCode.trim() && restoredChallenge?.capturedForm) {
     onProgress?.("Submitting verification code...");
     const httpAttempt = await submitChallengeFormViaHttp(
       restoredChallenge,
-      verificationCode
+      verificationCode,
+      proxyConfig
     );
+    if (httpAttempt.proxyError) {
+      return {
+        success: false,
+        proxyError: httpAttempt.proxyError,
+        error: `${httpAttempt.proxyError.message} ${httpAttempt.proxyError.hint}`,
+      };
+    }
     if (httpAttempt.success && httpAttempt.li_at) {
       const verification = await verifyLinkedInSession(
         httpAttempt.li_at,
@@ -818,6 +920,9 @@ export async function extractLinkedInSession({
         li_at: httpAttempt.li_at,
         jsessionId: httpAttempt.jsessionId,
         profile: verification.profile,
+        fingerprint,
+        proxySessionId: proxyConfig?.sessionId,
+        bytesTransferred: 0,
       };
     }
     if (httpAttempt.invalidCodeError) {
@@ -826,6 +931,8 @@ export async function extractLinkedInSession({
         requiresTwoFactor: true,
         twoFactorMethod: "otp",
         pendingChallengeToken,
+        fingerprint,
+        proxySessionId: proxyConfig?.sessionId,
         error: httpAttempt.invalidCodeError,
       };
     }
@@ -835,12 +942,43 @@ export async function extractLinkedInSession({
   onProgress?.("Launching browser engine...");
 
   try {
-    browser = await launchBrowser({ headless });
+    try {
+      browser = await launchBrowser({ headless, proxy: proxyConfig });
+    } catch (launchErr) {
+      const catProxy = categorizeProxyError(launchErr, "browser_launch");
+      if (catProxy) {
+        return {
+          success: false,
+          proxyError: catProxy,
+          error: `${catProxy.message} ${catProxy.hint}`,
+        };
+      }
+      const message = launchErr instanceof Error ? launchErr.message : "Browser launch failed";
+      return {
+        success: false,
+        error: `${message}. You can also connect using the 'Paste Cookies' tab with your li_at cookie.`,
+      };
+    }
+
+    // Verify proxy in debug / non-production mode
+    if (process.env.DEBUG_PROXY === "true" || process.env.NODE_ENV !== "production") {
+      const probe = await verifyProxyConnection(browser, proxyConfig);
+      if (probe) {
+        console.log(
+          `[proxy-debug] Active IP: ${probe.ip}, Region: ${probe.country || "auto"}, Timezone: ${probe.timezone || "auto"}`
+        );
+      }
+    }
 
     const context = await createStealthContext(browser, {
-      userAgent: restoredChallenge?.userAgent,
+      userAgent: fingerprint.userAgent,
       storageState: restoredChallenge?.storageState,
-      blockHeavyResources: false,
+      fingerprint,
+      proxyConfig,
+      bandwidthSaver: true,
+      onBandwidthUpdate: (bytes) => {
+        sessionBytesTransferred = bytes;
+      },
     });
 
     const page = await context.newPage();
@@ -918,13 +1056,22 @@ export async function extractLinkedInSession({
           bodyText.includes("Please enter a valid code") ||
           bodyText.includes("not the right code"))
       ) {
-        const refreshedToken = await createPendingChallengeToken(context, page, email);
+        const refreshedToken = await createPendingChallengeToken(
+          context,
+          page,
+          email,
+          proxyConfig?.sessionId,
+          fingerprint
+        );
         await safeCloseBrowser(browser);
         return {
           success: false,
           requiresTwoFactor: true,
           twoFactorMethod: "otp",
           pendingChallengeToken: refreshedToken || pendingChallengeToken,
+          fingerprint,
+          proxySessionId: proxyConfig?.sessionId,
+          bytesTransferred: sessionBytesTransferred,
           error: "The verification code entered was incorrect or expired. Please try again.",
         };
       }
@@ -977,13 +1124,22 @@ export async function extractLinkedInSession({
             restoredChallenge?.capturedForm
           );
           if (submitRes.error) {
-            const token = await createPendingChallengeToken(context, page, email);
+            const token = await createPendingChallengeToken(
+              context,
+              page,
+              email,
+              proxyConfig?.sessionId,
+              fingerprint
+            );
             await safeCloseBrowser(browser);
             return {
               success: false,
               requiresTwoFactor: true,
               twoFactorMethod: "otp",
               pendingChallengeToken: token || pendingChallengeToken,
+              fingerprint,
+              proxySessionId: proxyConfig?.sessionId,
+              bytesTransferred: sessionBytesTransferred,
               error: submitRes.error,
             };
           }
@@ -995,7 +1151,13 @@ export async function extractLinkedInSession({
 
         // Case B: One-time code input is visible on the page -> return immediately so user can enter it
         if (updatedCheckpoint.hasPinInput && !verificationCode) {
-          const token = await createPendingChallengeToken(context, page, email);
+          const token = await createPendingChallengeToken(
+            context,
+            page,
+            email,
+            proxyConfig?.sessionId,
+            fingerprint
+          );
           await safeCloseBrowser(browser);
           return {
             success: false,
@@ -1003,6 +1165,9 @@ export async function extractLinkedInSession({
             twoFactorMethod: "otp",
             challengeMessage: updatedCheckpoint.description,
             pendingChallengeToken: token,
+            fingerprint,
+            proxySessionId: proxyConfig?.sessionId,
+            bytesTransferred: sessionBytesTransferred,
             error: updatedCheckpoint.description,
           };
         }
@@ -1010,7 +1175,13 @@ export async function extractLinkedInSession({
         // Case C: LinkedIn is showing the Mobile App Push screen ("Check your LinkedIn app")
         if (updatedCheckpoint.isAppPush && !verificationCode) {
           if (twoFactorMethod === "otp") {
-            const token = await createPendingChallengeToken(context, page, email);
+            const token = await createPendingChallengeToken(
+              context,
+              page,
+              email,
+              proxyConfig?.sessionId,
+              fingerprint
+            );
             await safeCloseBrowser(browser);
             return {
               success: false,
@@ -1019,6 +1190,9 @@ export async function extractLinkedInSession({
               challengeMessage:
                 "LinkedIn sent a sign-in approval push to your LinkedIn mobile app instead of an SMS/email code. Approve it in your mobile app, then click Continue.",
               pendingChallengeToken: token,
+              fingerprint,
+              proxySessionId: proxyConfig?.sessionId,
+              bytesTransferred: sessionBytesTransferred,
               error: "Approve the sign-in request in your LinkedIn mobile app.",
             };
           }
@@ -1047,7 +1221,13 @@ export async function extractLinkedInSession({
 
           if (foundLiAt) break;
 
-          const token = await createPendingChallengeToken(context, page, email);
+          const token = await createPendingChallengeToken(
+            context,
+            page,
+            email,
+            proxyConfig?.sessionId,
+            fingerprint
+          );
           await safeCloseBrowser(browser);
           return {
             success: false,
@@ -1056,6 +1236,9 @@ export async function extractLinkedInSession({
             challengeMessage:
               "Approve the sign-in notification in your LinkedIn mobile app, then click 'I Approved in App — Continue'.",
             pendingChallengeToken: token || pendingChallengeToken,
+            fingerprint,
+            proxySessionId: proxyConfig?.sessionId,
+            bytesTransferred: sessionBytesTransferred,
             error:
               "Open the LinkedIn mobile app and tap Yes on the sign-in prompt, then click Continue.",
           };
@@ -1064,7 +1247,13 @@ export async function extractLinkedInSession({
         // Case D: Generic checkpoint screen without recognized PIN input or App Push text yet
         unresolvedCheckpointChecks++;
         if (!verificationCode && unresolvedCheckpointChecks >= 2) {
-          const token = await createPendingChallengeToken(context, page, email);
+          const token = await createPendingChallengeToken(
+            context,
+            page,
+            email,
+            proxyConfig?.sessionId,
+            fingerprint
+          );
           await safeCloseBrowser(browser);
           return {
             success: false,
@@ -1072,6 +1261,9 @@ export async function extractLinkedInSession({
             twoFactorMethod,
             challengeMessage: updatedCheckpoint.description,
             pendingChallengeToken: token || pendingChallengeToken,
+            fingerprint,
+            proxySessionId: proxyConfig?.sessionId,
+            bytesTransferred: sessionBytesTransferred,
             error: updatedCheckpoint.description,
           };
         }
@@ -1088,7 +1280,13 @@ export async function extractLinkedInSession({
     if (!foundLiAt) {
       const checkpoint = await detectCheckpointKind(page, sawCaptchaNetwork);
       const token = checkpoint.isCheckpoint
-        ? await createPendingChallengeToken(context, page, email)
+        ? await createPendingChallengeToken(
+            context,
+            page,
+            email,
+            proxyConfig?.sessionId,
+            fingerprint
+          )
         : pendingChallengeToken;
       await safeCloseBrowser(browser);
 
@@ -1110,6 +1308,9 @@ export async function extractLinkedInSession({
               ? "Approve the sign-in in your LinkedIn mobile app, then click 'I Approved in App — Continue'."
               : checkpoint.description,
           pendingChallengeToken: token,
+          fingerprint,
+          proxySessionId: proxyConfig?.sessionId,
+          bytesTransferred: sessionBytesTransferred,
           error:
             twoFactorMethod === "app"
               ? "Approve the sign-in in your LinkedIn mobile app, then click 'I Approved in App — Continue'."
@@ -1130,14 +1331,29 @@ export async function extractLinkedInSession({
 
     const verification = await verifyLinkedInSession(foundLiAt, foundJsessionId);
 
+    console.log(
+      `[session-extractor] Login completed for ${email.slice(0, 3)}***. Transferred approx ${(sessionBytesTransferred / 1024).toFixed(1)} KB over network.`
+    );
+
     return {
       success: true,
       li_at: foundLiAt,
       jsessionId: foundJsessionId,
       profile: verification.profile,
+      fingerprint,
+      proxySessionId: proxyConfig?.sessionId,
+      bytesTransferred: sessionBytesTransferred,
     };
   } catch (err: unknown) {
     await safeCloseBrowser(browser);
+    const catProxy = categorizeProxyError(err, "session_extraction");
+    if (catProxy) {
+      return {
+        success: false,
+        proxyError: catProxy,
+        error: `${catProxy.message} ${catProxy.hint}`,
+      };
+    }
     const message = err instanceof Error ? err.message : "Unknown browser automation error";
     return {
       success: false,
