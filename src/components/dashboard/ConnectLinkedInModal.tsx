@@ -13,7 +13,6 @@ import {
   EyeOff,
   Cookie,
   KeyRound,
-  ExternalLink,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { toast } from "sonner";
@@ -45,8 +44,6 @@ export function ConnectLinkedInModal({
   defaultUserName = "LinkedIn User",
 }: ConnectLinkedInModalProps) {
   const [activeTab, setActiveTab] = useState<"auto" | "manual">("auto");
-  const [accountType, setAccountType] = useState<"Sales Navigator" | "LinkedIn Premium" | "LinkedIn Free">("Sales Navigator");
-  const [dailyCap, setDailyCap] = useState(25);
 
   // Auto method fields
   const [email, setEmail] = useState("");
@@ -84,7 +81,7 @@ export function ConnectLinkedInModal({
           setIsSubmitting(false);
           return;
         }
-        setProgressMsg("Connecting to LinkedIn...");
+        setProgressMsg("Connecting to LinkedIn in background...");
         payload = {
           method: "playwright",
           email: email.trim(),
@@ -121,12 +118,12 @@ export function ConnectLinkedInModal({
         id: data.connectionId || `li_${Date.now()}`,
         name: memberName,
         headline: data.profile?.headline || "LinkedIn Profile",
-        type: accountType,
+        type: "Sales Navigator",
         photo: "",
         status: "Active",
         connectedDate: new Date().toLocaleDateString(),
         usedToday: 0,
-        dailyCap,
+        dailyCap: 25,
         warmupStage: 1,
       };
 
@@ -155,19 +152,19 @@ export function ConnectLinkedInModal({
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        className="w-full max-w-md rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xl overflow-hidden"
+        className="w-full max-w-md rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-neutral-100 dark:border-neutral-800">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
+        <div className="flex items-center justify-between p-5 border-b border-neutral-100 dark:border-neutral-800/80">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
               <LinkedInIcon className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-neutral-900 dark:text-neutral-100">
+              <h3 className="text-base font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">
                 Connect LinkedIn
               </h3>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                 Link an active profile for outreach campaigns
               </p>
             </div>
@@ -175,7 +172,7 @@ export function ConnectLinkedInModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
@@ -185,14 +182,14 @@ export function ConnectLinkedInModal({
         <div className="p-5">
           {step === "form" ? (
             <div className="space-y-4">
-              {/* Tabs */}
-              <div className="grid grid-cols-2 p-1 rounded-xl bg-neutral-100 dark:bg-neutral-800/80 text-xs font-semibold">
+              {/* Segmented Control / Tabs */}
+              <div className="grid grid-cols-2 p-1 rounded-xl bg-neutral-100 dark:bg-neutral-800/60 text-xs font-medium">
                 <button
                   type="button"
                   onClick={() => setActiveTab("auto")}
-                  className={`py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  className={`py-2 px-3 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 ${
                     activeTab === "auto"
-                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-2xs"
+                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-semibold shadow-xs"
                       : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                   }`}
                 >
@@ -202,9 +199,9 @@ export function ConnectLinkedInModal({
                 <button
                   type="button"
                   onClick={() => setActiveTab("manual")}
-                  className={`py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  className={`py-2 px-3 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 ${
                     activeTab === "manual"
-                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-2xs"
+                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-semibold shadow-xs"
                       : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
                   }`}
                 >
@@ -213,32 +210,32 @@ export function ConnectLinkedInModal({
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-3.5">
+              <form onSubmit={handleSubmit} className="space-y-4 pt-1">
                 {activeTab === "auto" ? (
                   <>
                     {/* Email Input */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        LinkedIn Email / Phone <span className="text-red-500">*</span>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        LinkedIn Email or Phone
                       </label>
                       <div className="relative">
                         <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                         <input
                           type="email"
                           required
-                          placeholder="your_linkedin@email.com"
+                          placeholder="name@company.com"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           disabled={isSubmitting}
-                          className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-3 py-2 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                          className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/60 pl-10 pr-3.5 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-950 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
                         />
                       </div>
                     </div>
 
                     {/* Password Input */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        LinkedIn Password <span className="text-red-500">*</span>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        LinkedIn Password
                       </label>
                       <div className="relative">
                         <Lock className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -249,12 +246,12 @@ export function ConnectLinkedInModal({
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           disabled={isSubmitting}
-                          className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 pl-10 pr-10 py-2 text-xs text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                          className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/60 pl-10 pr-10 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-950 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors cursor-pointer"
                         >
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
@@ -264,12 +261,12 @@ export function ConnectLinkedInModal({
                 ) : (
                   <>
                     {/* li_at cookie */}
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                          li_at Cookie <span className="text-red-500">*</span>
+                        <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                          li_at Cookie
                         </label>
-                        <span className="text-[10px] text-neutral-400">Required</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Required</span>
                       </div>
                       <input
                         type="text"
@@ -278,81 +275,42 @@ export function ConnectLinkedInModal({
                         value={liAt}
                         onChange={(e) => setLiAt(e.target.value)}
                         disabled={isSubmitting}
-                        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/60 px-3.5 py-2.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-950 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
                       />
                     </div>
 
                     {/* JSESSIONID cookie */}
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                        <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
                           JSESSIONID Cookie
                         </label>
                         <span className="text-[10px] text-neutral-400">Optional</span>
                       </div>
                       <input
                         type="text"
-                        placeholder='ajax:123456789... (or "ajax:...")'
+                        placeholder='ajax:123456789... (optional)'
                         value={jsessionId}
                         onChange={(e) => setJsessionId(e.target.value)}
                         disabled={isSubmitting}
-                        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/60 px-3.5 py-2.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-950 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
                       />
                     </div>
 
-                    <div className="p-2.5 rounded-lg bg-neutral-50 dark:bg-neutral-950/50 border border-neutral-200 dark:border-neutral-800/60 text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
-                      💡 <strong>How to find it:</strong> On linkedin.com, press <kbd className="px-1 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 font-mono text-[10px]">F12</kbd> $\rightarrow$ <strong>Application</strong> $\rightarrow$ <strong>Cookies</strong> $\rightarrow$ copy the <code className="text-emerald-600 dark:text-emerald-400">li_at</code> value.
+                    <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950/40 border border-neutral-200/70 dark:border-neutral-800/60 text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed flex items-start gap-2">
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">Tip:</span>
+                      <span>
+                        On LinkedIn, press <kbd className="px-1.5 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 font-mono text-[10px] text-neutral-800 dark:text-neutral-200">F12</kbd> → <strong>Application</strong> → <strong>Cookies</strong> → copy the <code className="text-emerald-600 dark:text-emerald-400 font-mono font-medium">li_at</code> value.
+                      </span>
                     </div>
                   </>
                 )}
-
-                {/* Account Tier & Daily Cap */}
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-neutral-600 dark:text-neutral-400 mb-1">
-                      Account Tier
-                    </label>
-                    <select
-                      value={accountType}
-                      onChange={(e) =>
-                        setAccountType(
-                          e.target.value as
-                            | "Sales Navigator"
-                            | "LinkedIn Premium"
-                            | "LinkedIn Free"
-                        )
-                      }
-                      className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-900 dark:text-neutral-100 outline-none"
-                    >
-                      <option value="Sales Navigator">Sales Navigator</option>
-                      <option value="LinkedIn Premium">LinkedIn Premium</option>
-                      <option value="LinkedIn Free">LinkedIn Free</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-neutral-600 dark:text-neutral-400 mb-1">
-                      Daily Cap
-                    </label>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min={5}
-                        max={50}
-                        value={dailyCap}
-                        onChange={(e) => setDailyCap(Number(e.target.value))}
-                        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-2.5 py-1.5 text-xs text-neutral-900 dark:text-neutral-100 outline-none"
-                      />
-                      <span className="text-[11px] text-neutral-400 shrink-0">req/day</span>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Submit button */}
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-medium text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
@@ -361,9 +319,8 @@ export function ConnectLinkedInModal({
                     </>
                   ) : (
                     <>
-                      <CheckCircle2 className="w-4 h-4 text-white" />
                       <span>Connect LinkedIn Account</span>
-                      <ArrowRight className="w-3.5 h-3.5 ml-0.5 opacity-90" />
+                      <ArrowRight className="w-3.5 h-3.5 opacity-90" />
                     </>
                   )}
                 </button>
