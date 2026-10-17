@@ -92,9 +92,15 @@ export async function extractLinkedInCookies({ email, password, headless = false
     await passInput.waitFor({ state: 'visible', timeout: 15000 });
     await passInput.fill(password);
 
-    console.log('🔘 Submitting credentials...');
-    const submitBtn = page.locator('button[type="submit"]:visible, button:has-text("Sign in"):visible').first();
-    await submitBtn.click();
+    console.log('🔘 Submitting credentials via Enter key...');
+    await passInput.press('Enter');
+
+    // Also click Sign in if form didn't submit
+    await page.waitForTimeout(1000);
+    const exactSignInBtn = page.getByRole('button', { name: /^sign in$/i }).first();
+    if (await exactSignInBtn.isVisible().catch(() => false)) {
+      await exactSignInBtn.click().catch(() => {});
+    }
 
     console.log('⏳ Monitoring login status and cookies...');
     const startTime = Date.now();

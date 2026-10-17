@@ -8,6 +8,7 @@ import {
   Loader2,
   ArrowRight,
   ShieldCheck,
+  KeyRound,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { toast } from "sonner";
@@ -294,6 +295,16 @@ export function ConnectLinkedInModal({
                   <p className="text-[11px] text-neutral-400 text-center mt-2.5">
                     Opens LinkedIn to authorize your profile in one click.
                   </p>
+
+                  <div className="pt-3 border-t border-neutral-800/80 text-center mt-3">
+                    <a
+                      href="/dashboard/accounts/direct-login"
+                      className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      <KeyRound className="h-3 w-3" />
+                      <span>Or extract cookies directly via Email/Password</span>
+                    </a>
+                  </div>
                 </div>
               </div>
             ) : (
