@@ -4,6 +4,10 @@ import path from "path";
 import { auth } from "@/auth";
 import connectDB from "@/lib/mongodb";
 import Workspace from "@/models/Workspace";
+import LinkedInConnection from "@/models/LinkedInConnection";
+import { decryptConnectionSecrets } from "@/lib/connection-crypto";
+import { extractSearchLeadsWithPlaywright } from "@/lib/playwright-linkedin-extractor";
+import { invalidateDbCache } from "@/lib/db-cache";
 
 interface ExtractedLead {
   id: string;
@@ -271,15 +275,19 @@ export async function POST(req: Request) {
     let {
       keywords = "Graphic Designer",
       location = "",
+    } = body;
+    const {
       searchUrl = "",
       rawHtml = "",
       maxLeads = 10,
       mode = "live",
       saveToWorkspace = false,
+      liAtCookie = "",
+      jSessionId = "",
     } = body;
 
     // Check if raw HTML was provided
-    if (rawHtml && typeof rawHtml === "string" && rawHtml.includes("role=\"listitem\"")) {
+    if (rawHtml && typeof rawHtml === "string" && rawHtml.includes('role="listitem"')) {
       const parsedLeads = parseLinkedInHtml(rawHtml, maxLeads);
       if (parsedLeads.length > 0) {
         if (saveToWorkspace) {
@@ -293,14 +301,15 @@ export async function POST(req: Request) {
             if (!workspace.step3.data) workspace.step3.data = { leads: [], readyCount: 0, importType: "linkedin_search" };
 
             const existingLeads = workspace.step3.data.leads || [];
-            const existingUrls = new Set(existingLeads.map((l: any) => l.linkedinUrl));
+            const existingUrls = new Set(existingLeads.map((l: { linkedinUrl?: string }) => l.linkedinUrl));
             const newUnique = parsedLeads.filter((l) => !existingUrls.has(l.linkedinUrl));
 
-            const mergedLeads: any[] = [...existingLeads, ...newUnique.map((l) => ({ ...l, jobTitle: l.title }))];
+            const mergedLeads = [...existingLeads, ...newUnique.map((l) => ({ ...l, jobTitle: l.title }))];
             workspace.step3.data.leads = mergedLeads;
             workspace.step3.data.readyCount = mergedLeads.length;
             workspace.markModified("step3");
             await workspace.save();
+            invalidateDbCache(userId);
           } catch (dbErr) {
             console.error("DB Save error:", dbErr);
           }
@@ -330,13 +339,114 @@ export async function POST(req: Request) {
       } catch {}
     }
 
-    let result: { leads: ExtractedLead[]; authwallDetected: boolean; usedFallback: boolean };
+    // Resolve li_at + JSESSIONID from request body OR stored LinkedInConnection if available
+    let resolvedLiAt = typeof liAtCookie === "string" ? liAtCookie.trim() : "";
+    let resolvedJSession = typeof jSessionId === "string" ? jSessionId.trim() : "";
 
-    if (mode === "fast") {
+    if ((!resolvedLiAt || !resolvedJSession) && session?.user?.id) {
+      try {
+        await connectDB();
+        let activeConn = await LinkedInConnection.findOne({
+          userId: session.user.id,
+          status: "active",
+        })
+          .sort({ updatedAt: -1 })
+          .select("+encryptedCredentials");
+
+        if (!activeConn) {
+          activeConn = await LinkedInConnection.findOne({
+            userId: session.user.id,
+          })
+            .sort({ updatedAt: -1 })
+            .select("+encryptedCredentials");
+        }
+
+        if (activeConn?.encryptedCredentials) {
+          const secrets = decryptConnectionSecrets<{
+            accessToken?: string;
+            liAt?: string;
+            li_at?: string;
+            jsessionId?: string;
+            JSESSIONID?: string;
+          }>(activeConn.encryptedCredentials);
+          if (!resolvedLiAt) {
+            resolvedLiAt = (secrets.li_at || secrets.liAt || secrets.accessToken || "").trim();
+          }
+          if (!resolvedJSession) {
+            resolvedJSession = (secrets.jsessionId || secrets.JSESSIONID || "").trim();
+          }
+        }
+      } catch {
+        // Ignore if connection uses OAuth token rather than cookie secrets
+      }
+    }
+
+    const resolvedSearchUrl =
+      searchUrl && typeof searchUrl === "string" && searchUrl.trim()
+        ? searchUrl.trim()
+        : `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(
+            `${keywords} ${location}`.trim() || "Graphic Designer"
+          )}&origin=SWITCH_SEARCH_VERTICAL`;
+
+    let result: {
+      leads: ExtractedLead[];
+      authwallDetected: boolean;
+      usedFallback: boolean;
+      engineUsed?: string;
+      playwrightError?: string;
+    };
+
+    // Priority 1: Playwright with li_at cookie + JSESSIONID
+    if (resolvedLiAt || mode === "playwright") {
+      if (!resolvedLiAt) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Please enter your LinkedIn li_at cookie to run Playwright session extraction.",
+          },
+          { status: 400 }
+        );
+      }
+
+      const pwResult = await extractSearchLeadsWithPlaywright({
+        searchUrl: resolvedSearchUrl,
+        liAtCookie: resolvedLiAt,
+        jSessionId: resolvedJSession || undefined,
+        maxLeads: Number(maxLeads) || 10,
+      });
+
+      if (pwResult.leads.length > 0) {
+        result = {
+          leads: pwResult.leads,
+          authwallDetected: pwResult.authwallDetected,
+          usedFallback: false,
+          engineUsed: "playwright",
+        };
+      } else if (mode === "playwright") {
+        return NextResponse.json(
+          {
+            success: false,
+            authwallDetected: pwResult.authwallDetected,
+            error:
+              pwResult.error ||
+              "Playwright could not find profile cards on that Search URL. Verify your li_at cookie and search URL.",
+          },
+          { status: 422 }
+        );
+      } else {
+        result = {
+          leads: generateFallbackLeads(keywords, location, maxLeads),
+          authwallDetected: true,
+          usedFallback: true,
+          playwrightError: pwResult.error,
+        };
+      }
+    } else if (mode === "fast") {
       result = {
         leads: generateFallbackLeads(keywords, location, maxLeads),
         authwallDetected: false,
         usedFallback: false,
+        engineUsed: "fast",
       };
     } else {
       result = await runPythonExtractor(keywords, location, maxLeads, searchUrl || undefined);
@@ -365,7 +475,7 @@ export async function POST(req: Request) {
         }
 
         const existingLeads = workspace.step3.data.leads || [];
-        const existingUrls = new Set(existingLeads.map((l: any) => l.linkedinUrl));
+        const existingUrls = new Set(existingLeads.map((l: { linkedinUrl?: string }) => l.linkedinUrl));
         const newUniqueLeads = result.leads.filter((l) => !existingUrls.has(l.linkedinUrl));
 
         const formattedNewLeads = newUniqueLeads.map((l) => ({
@@ -387,6 +497,7 @@ export async function POST(req: Request) {
         workspace.markModified("step3.data");
 
         await workspace.save();
+        invalidateDbCache(userId);
         saved = true;
       } catch (dbErr) {
         console.warn("Could not save extracted leads to database workspace:", dbErr);
@@ -403,23 +514,64 @@ export async function POST(req: Request) {
       usedFallback: result.usedFallback,
       savedToWorkspace: saved,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error in /api/extractor/linkedin:", error);
     return NextResponse.json(
-      { error: "Failed to extract leads from LinkedIn", message: error.message },
+      {
+        error: "Failed to extract leads from LinkedIn",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
       { status: 500 }
     );
   }
 }
 
 export async function GET() {
+  try {
+    const session = await auth();
+    if (session?.user?.id) {
+      await connectDB();
+      let activeConn = await LinkedInConnection.findOne({
+        userId: session.user.id,
+        status: "active",
+      })
+        .sort({ updatedAt: -1 })
+        .select("+encryptedCredentials");
+
+      if (!activeConn) {
+        activeConn = await LinkedInConnection.findOne({
+          userId: session.user.id,
+        })
+          .sort({ updatedAt: -1 })
+          .select("+encryptedCredentials");
+      }
+
+      if (activeConn?.encryptedCredentials) {
+        const secrets = decryptConnectionSecrets<{
+          accessToken?: string;
+          liAt?: string;
+          li_at?: string;
+        }>(activeConn.encryptedCredentials);
+
+        const hasCookie = Boolean(
+          (secrets.li_at || secrets.liAt || secrets.accessToken || "").trim()
+        );
+
+        return NextResponse.json({
+          status: "ready",
+          hasActiveSession: hasCookie,
+          linkedinName: activeConn.linkedinName || "LinkedIn Account",
+          connectionStatus: activeConn.status,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Could not check stored LinkedIn session status:", err);
+  }
+
   return NextResponse.json({
     status: "ready",
-    engine: "Selenium WebDriver & Python 3",
-    supportedSources: [
-      "LinkedIn Search (People & Roles)",
-      "Sales Navigator List",
-      "CSV / Excel Upload",
-    ],
+    hasActiveSession: false,
+    linkedinName: "",
   });
 }

@@ -184,14 +184,6 @@ export default function LinkedInAccountsPage() {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <Link
-            href="/dashboard/accounts/direct-login"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer"
-          >
-            <KeyRound className="h-3.5 w-3.5 text-blue-400" />
-            <span>Session Extractor</span>
-          </Link>
-
           <button
             type="button"
             onClick={() => setSecurityPanelOpen(true)}
