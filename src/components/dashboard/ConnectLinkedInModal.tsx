@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import {
   X,
   CheckCircle2,
@@ -13,6 +13,9 @@ import {
   EyeOff,
   Cookie,
   KeyRound,
+  Smartphone,
+  ShieldCheck,
+  ArrowLeft,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { toast } from "sonner";
@@ -50,13 +53,19 @@ export function ConnectLinkedInModal({
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  // Two-Factor Authentication options: "otp" (One-time code) | "app" (LinkedIn app)
+  const [twoFactorMethod, setTwoFactorMethod] = useState<"otp" | "app">("otp");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [pendingChallengeToken, setPendingChallengeToken] = useState<string | undefined>(undefined);
+  const [challengeMessage, setChallengeMessage] = useState("");
+
   // Manual method fields
   const [liAt, setLiAt] = useState("");
   const [jsessionId, setJsessionId] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [progressMsg, setProgressMsg] = useState("");
-  const [step, setStep] = useState<"form" | "success">("form");
+  const [step, setStep] = useState<"form" | "two_factor" | "success">("form");
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccountData | null>(null);
 
   useEffect(() => {
@@ -65,6 +74,9 @@ export function ConnectLinkedInModal({
       setProgressMsg("");
       setStep("form");
       setPassword("");
+      setVerificationCode("");
+      setPendingChallengeToken(undefined);
+      setChallengeMessage("");
     }
   }, [isOpen]);
 
@@ -81,11 +93,29 @@ export function ConnectLinkedInModal({
           setIsSubmitting(false);
           return;
         }
-        setProgressMsg("Connecting to LinkedIn in background...");
+        if (step === "two_factor" && twoFactorMethod === "otp" && !verificationCode.trim()) {
+          toast.error("Please enter the one-time code sent by LinkedIn.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        setProgressMsg(
+          step === "two_factor"
+            ? twoFactorMethod === "otp"
+              ? "Verifying one-time code with LinkedIn..."
+              : "Checking LinkedIn mobile app approval..."
+            : twoFactorMethod === "app"
+              ? "Signing in & waiting for LinkedIn app approval..."
+              : "Connecting to LinkedIn..."
+        );
+
         payload = {
           method: "playwright",
           email: email.trim(),
           password,
+          twoFactorMethod,
+          verificationCode: verificationCode.trim() || undefined,
+          pendingChallengeToken,
         };
       } else {
         if (!liAt.trim()) {
@@ -108,6 +138,26 @@ export function ConnectLinkedInModal({
       });
 
       const data = await res.json().catch(() => null);
+
+      if (res.status === 202 || data?.requiresTwoFactor) {
+        if (data?.twoFactorMethod === "app" || data?.twoFactorMethod === "otp") {
+          setTwoFactorMethod(data.twoFactorMethod);
+        }
+        setPendingChallengeToken(data?.pendingChallengeToken);
+        setChallengeMessage(
+          data?.challengeMessage ||
+            (twoFactorMethod === "app"
+              ? "Approve the sign-in in the LinkedIn mobile app."
+              : "LinkedIn sent a one-time code by SMS or email.")
+        );
+        setStep("two_factor");
+        toast.info(
+          twoFactorMethod === "app"
+            ? "Check your LinkedIn mobile app to approve the sign-in."
+            : "Enter the one-time verification code sent by LinkedIn."
+        );
+        return;
+      }
 
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Failed to authenticate LinkedIn account.");
@@ -132,6 +182,8 @@ export function ConnectLinkedInModal({
       onConnected(mapped);
       setEmail("");
       setPassword("");
+      setVerificationCode("");
+      setPendingChallengeToken(undefined);
       setLiAt("");
       setJsessionId("");
       toast.success(`${memberName} connected successfully!`);
@@ -162,10 +214,12 @@ export function ConnectLinkedInModal({
             </div>
             <div>
               <h3 className="text-base font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">
-                Connect LinkedIn
+                {step === "two_factor" ? "Two-Factor Verification" : "Connect LinkedIn"}
               </h3>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                Link an active profile for outreach campaigns
+                {step === "two_factor"
+                  ? "Complete LinkedIn's second factor check to finish connecting"
+                  : "Link an active profile for outreach campaigns"}
               </p>
             </div>
           </div>
@@ -221,7 +275,7 @@ export function ConnectLinkedInModal({
                       <div className="relative">
                         <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                         <input
-                          type="email"
+                          type="text"
                           required
                           placeholder="name@company.com"
                           value={email}
@@ -257,6 +311,57 @@ export function ConnectLinkedInModal({
                         </button>
                       </div>
                     </div>
+
+                    {/* Second Factor (2FA) Preference */}
+                    <div className="space-y-2 pt-1">
+                      <label className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 block">
+                        If LinkedIn asks for a second factor
+                      </label>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setTwoFactorMethod("otp")}
+                          disabled={isSubmitting}
+                          className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                            twoFactorMethod === "otp"
+                              ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 ring-2 ring-emerald-500/15"
+                              : "border-neutral-200 dark:border-neutral-800 bg-neutral-50/40 dark:bg-neutral-950/40 hover:border-neutral-300 dark:hover:border-neutral-700"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span>One-time code</span>
+                          </div>
+                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 leading-snug">
+                            LinkedIn sends a code by SMS or email.
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setTwoFactorMethod("app")}
+                          disabled={isSubmitting}
+                          className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                            twoFactorMethod === "app"
+                              ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 ring-2 ring-emerald-500/15"
+                              : "border-neutral-200 dark:border-neutral-800 bg-neutral-50/40 dark:bg-neutral-950/40 hover:border-neutral-300 dark:hover:border-neutral-700"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                            <Smartphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span>LinkedIn app</span>
+                          </div>
+                          <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 leading-snug">
+                            Approve the sign-in in the mobile app.
+                          </p>
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                        {twoFactorMethod === "otp"
+                          ? "With a one-time code, LinkedIn decides whether to send it by SMS or email."
+                          : "LinkedIn will send a push notification to your signed-in mobile app for approval."}
+                      </p>
+                    </div>
                   </>
                 ) : (
                   <>
@@ -266,7 +371,9 @@ export function ConnectLinkedInModal({
                         <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
                           li_at Cookie
                         </label>
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Required</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                          Required
+                        </span>
                       </div>
                       <input
                         type="text"
@@ -289,7 +396,7 @@ export function ConnectLinkedInModal({
                       </div>
                       <input
                         type="text"
-                        placeholder='ajax:123456789... (optional)'
+                        placeholder="ajax:123456789... (optional)"
                         value={jsessionId}
                         onChange={(e) => setJsessionId(e.target.value)}
                         disabled={isSubmitting}
@@ -298,9 +405,19 @@ export function ConnectLinkedInModal({
                     </div>
 
                     <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950/40 border border-neutral-200/70 dark:border-neutral-800/60 text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed flex items-start gap-2">
-                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">Tip:</span>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">
+                        Tip:
+                      </span>
                       <span>
-                        On LinkedIn, press <kbd className="px-1.5 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 font-mono text-[10px] text-neutral-800 dark:text-neutral-200">F12</kbd> → <strong>Application</strong> → <strong>Cookies</strong> → copy the <code className="text-emerald-600 dark:text-emerald-400 font-mono font-medium">li_at</code> value.
+                        On LinkedIn, press{" "}
+                        <kbd className="px-1.5 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 font-mono text-[10px] text-neutral-800 dark:text-neutral-200">
+                          F12
+                        </kbd>{" "}
+                        → <strong>Application</strong> → <strong>Cookies</strong> → copy the{" "}
+                        <code className="text-emerald-600 dark:text-emerald-400 font-mono font-medium">
+                          li_at
+                        </code>{" "}
+                        value.
                       </span>
                     </div>
                   </>
@@ -326,6 +443,131 @@ export function ConnectLinkedInModal({
                 </button>
               </form>
             </div>
+          ) : step === "two_factor" ? (
+            /* Two-Factor Challenge Step */
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Switch between One-time code and LinkedIn app */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 block">
+                  Choose second factor method
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setTwoFactorMethod("otp")}
+                    disabled={isSubmitting}
+                    className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                      twoFactorMethod === "otp"
+                        ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 ring-2 ring-emerald-500/15"
+                        : "border-neutral-200 dark:border-neutral-800 bg-neutral-50/40 dark:bg-neutral-950/40"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>One-time code</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 leading-snug">
+                      LinkedIn sends a code by SMS or email.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTwoFactorMethod("app")}
+                    disabled={isSubmitting}
+                    className={`text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                      twoFactorMethod === "app"
+                        ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 ring-2 ring-emerald-500/15"
+                        : "border-neutral-200 dark:border-neutral-800 bg-neutral-50/40 dark:bg-neutral-950/40"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                      <Smartphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>LinkedIn app</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 leading-snug">
+                      Approve the sign-in in the mobile app.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {challengeMessage && (
+                <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/50 text-xs text-emerald-900 dark:text-emerald-200">
+                  {challengeMessage}
+                </div>
+              )}
+
+              {twoFactorMethod === "otp" ? (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                    One-Time Verification Code (SMS or Email)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoFocus
+                    required
+                    placeholder="Enter 6-digit code (e.g. 123456)"
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    disabled={isSubmitting}
+                    className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/60 px-3.5 py-2.5 text-sm font-mono tracking-widest text-center text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 placeholder:tracking-normal placeholder:font-sans placeholder:text-xs outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-950 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                  />
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                    With a one-time code, LinkedIn decides whether to send it by SMS or email.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-neutral-50 dark:bg-neutral-950/50 border border-neutral-200/80 dark:border-neutral-800 text-xs text-neutral-600 dark:text-neutral-300 space-y-1.5">
+                  <p className="font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    Approve in your LinkedIn mobile app
+                  </p>
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                    Open the LinkedIn app on your phone, tap <strong>Yes</strong> on the sign-in
+                    notification, then click the button below to complete connection.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    setStep("form");
+                    setVerificationCode("");
+                  }}
+                  className="py-2.5 px-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back</span>
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-medium text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>{progressMsg || "Verifying..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        {twoFactorMethod === "otp"
+                          ? "Verify One-Time Code"
+                          : "I Approved in App — Continue"}
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5 opacity-90" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           ) : (
             /* Success Screen */
             <div className="py-6 text-center space-y-4">
