@@ -240,44 +240,64 @@ async function detectCheckpointKind(
   const lowerText = bodyText.toLowerCase();
 
   const isLoginUrl =
-    currentUrl.includes("/checkpoint/lg/login") &&
+    (currentUrl.includes("/checkpoint/lg/login") || currentUrl.endsWith("/login")) &&
     !currentUrl.includes("/checkpoint/challenge");
 
   const pinLocator = page.locator(PIN_INPUT_SELECTOR).first();
   const hasPinInput = !isLoginUrl && (await pinLocator.isVisible().catch(() => false));
 
-  const captchaFrameCount = await page
-    .locator('iframe[src*="captcha"], iframe[src*="arkose"], #captcha-internal')
+  const hasAppPushText =
+    lowerText.includes("linkedin app") ||
+    lowerText.includes("open your linkedin") ||
+    lowerText.includes("check your phone") ||
+    lowerText.includes("tap yes") ||
+    lowerText.includes("notification we sent") ||
+    lowerText.includes("approve the sign-in") ||
+    lowerText.includes("check your mobile");
+
+  const hasTwoFactorText =
+    lowerText.includes("verification code") ||
+    lowerText.includes("two-step verification") ||
+    lowerText.includes("enter the code") ||
+    lowerText.includes("we sent a code") ||
+    lowerText.includes("verify your identity") ||
+    lowerText.includes("verify with sms") ||
+    lowerText.includes("verify with email") ||
+    lowerText.includes("try another way") ||
+    lowerText.includes("send code");
+
+  // Only match actual VISIBLE interactive CAPTCHA challenge frames.
+  // Never match `iframe[src*="recaptcha"]` generally because LinkedIn embeds an invisible
+  // `recaptcha/enterprise/anchor?...&size=invisible` badge on 100% of login & checkpoint pages!
+  const visibleCaptchaFrameCount = await page
+    .locator(
+      '#captcha-internal:visible, iframe[src*="arkose"]:visible, iframe[src*="funcaptcha"]:visible, iframe[src*="recaptcha/api2/bframe"]:visible, iframe[src*="recaptcha/enterprise/bframe"]:visible'
+    )
     .count()
     .catch(() => 0);
 
+  const hasCaptchaText =
+    lowerText.includes("quick security check") ||
+    lowerText.includes("verify you are a human") ||
+    lowerText.includes("solve this puzzle");
+
   const isCaptcha =
     !hasPinInput &&
-    (sawCaptchaNetwork ||
-      currentUrl.includes("captchaInternal") ||
-      captchaFrameCount > 0 ||
-      lowerText.includes("quick security check") ||
-      lowerText.includes("verify you are a human"));
+    !hasAppPushText &&
+    !hasTwoFactorText &&
+    (currentUrl.includes("captchaInternal") ||
+      visibleCaptchaFrameCount > 0 ||
+      hasCaptchaText ||
+      (sawCaptchaNetwork && lowerText.includes("security check")));
 
-  const isAppPush =
-    !isCaptcha &&
-    (lowerText.includes("linkedin app") ||
-      lowerText.includes("open your linkedin") ||
-      lowerText.includes("check your phone") ||
-      lowerText.includes("tap yes") ||
-      lowerText.includes("notification we sent") ||
-      lowerText.includes("approve the sign-in") ||
-      lowerText.includes("check your mobile"));
+  const isAppPush = !isCaptcha && !hasPinInput && hasAppPushText;
 
   const isCheckpoint =
     !isCaptcha &&
     (currentUrl.includes("/checkpoint/challenge") ||
       hasPinInput ||
       isAppPush ||
-      lowerText.includes("verification code") ||
-      lowerText.includes("two-step verification") ||
-      lowerText.includes("enter the code") ||
-      lowerText.includes("we sent a code"));
+      hasTwoFactorText);
 
   let description = "LinkedIn requested two-factor verification.";
   if (hasPinInput) {
@@ -310,12 +330,17 @@ async function ensurePreferredTwoFactorMethod(
 ): Promise<void> {
   const switchToOtpCombinedSelector = [
     "#try-another-way:visible",
+    'form[action*="try-another-way"] button[type="submit"]:visible',
     'button:has-text("Try another way"):visible',
     'a:has-text("Try another way"):visible',
+    'button:has-text("Verify another way"):visible',
+    'a:has-text("Verify another way"):visible',
     'button:has-text("Verify with SMS"):visible',
     'a:has-text("Verify with SMS"):visible',
     'button:has-text("Verify using SMS"):visible',
     'a:has-text("Verify using SMS"):visible',
+    'button:has-text("Verify with phone"):visible',
+    'a:has-text("Verify with phone"):visible',
     'button:has-text("Verify with email"):visible',
     'a:has-text("Verify with email"):visible',
     'button:has-text("Send code"):visible',
@@ -344,7 +369,14 @@ async function ensurePreferredTwoFactorMethod(
       const switchBtn = page.locator(switchToOtpCombinedSelector).first();
       if (await switchBtn.isVisible().catch(() => false)) {
         await switchBtn.click().catch(() => {});
-        await page.waitForTimeout(1200);
+        await Promise.race([
+          page
+            .locator(PIN_INPUT_SELECTOR)
+            .first()
+            .waitFor({ state: "visible", timeout: 2000 })
+            .catch(() => {}),
+          page.waitForTimeout(1400),
+        ]);
       }
 
       const recheck = await detectCheckpointKind(page);
@@ -361,7 +393,14 @@ async function ensurePreferredTwoFactorMethod(
         const submitChoice = page.locator('button[type="submit"]:visible').first();
         if (await submitChoice.isVisible().catch(() => false)) {
           await submitChoice.click().catch(() => {});
-          await page.waitForTimeout(1200);
+          await Promise.race([
+            page
+              .locator(PIN_INPUT_SELECTOR)
+              .first()
+              .waitFor({ state: "visible", timeout: 2000 })
+              .catch(() => {}),
+            page.waitForTimeout(1400),
+          ]);
         }
       }
     } else if (preferred === "app") {
@@ -653,11 +692,23 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
     timeout: 12000,
   });
 
+  // Allow anti-bot scripts (merchantpool1.linkedin.com, li.protechts.net, recaptcha/enterprise)
+  // to initialize before typing credentials so `apfc` telemetry is populated naturally
+  await page.waitForTimeout(700);
+  await page.mouse.move(180, 260).catch(() => {});
+  await page.mouse.move(480, 320, { steps: 4 }).catch(() => {});
+
   const emailInput = page
     .locator('#username:visible, input[name="session_key"]:visible, input[type="email"]:visible')
     .first();
   await emailInput.waitFor({ state: "visible", timeout: 8000 });
-  await emailInput.fill(email);
+  await emailInput.click().catch(() => {});
+  await emailInput.fill("");
+  await emailInput.pressSequentially(email, { delay: 18 }).catch(async () => {
+    await emailInput.fill(email);
+  });
+
+  await page.waitForTimeout(180);
 
   const passInput = page
     .locator(
@@ -665,7 +716,13 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
     )
     .first();
   await passInput.waitFor({ state: "visible", timeout: 8000 });
-  await passInput.fill(password);
+  await passInput.click().catch(() => {});
+  await passInput.fill("");
+  await passInput.pressSequentially(password, { delay: 18 }).catch(async () => {
+    await passInput.fill(password);
+  });
+
+  await page.waitForTimeout(300);
 
   const submitBtn = page
     .locator(
@@ -676,7 +733,10 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
   const navigationOrOutcomePromise = Promise.race([
     page
       .waitForURL(
-        (u) => !u.pathname.endsWith("/lg/login") && !u.pathname.endsWith("/login"),
+        (u) =>
+          !u.pathname.endsWith("/lg/login") &&
+          !u.pathname.endsWith("/lg/login-submit") &&
+          !u.pathname.endsWith("/login"),
         { timeout: 10000 }
       )
       .catch(() => {}),
@@ -692,10 +752,12 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
       .first()
       .waitFor({ state: "visible", timeout: 10000 })
       .catch(() => {}),
-    page.waitForTimeout(4500),
+    page.waitForTimeout(5000),
   ]);
 
   if (await submitBtn.isVisible().catch(() => false)) {
+    await submitBtn.hover().catch(() => {});
+    await page.waitForTimeout(120);
     await submitBtn.click();
   } else {
     await passInput.press("Enter");
@@ -703,7 +765,7 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
 
   await navigationOrOutcomePromise;
   await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => {});
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(900);
 }
 
 /**
@@ -778,7 +840,7 @@ export async function extractLinkedInSession({
     const context = await createStealthContext(browser, {
       userAgent: restoredChallenge?.userAgent,
       storageState: restoredChallenge?.storageState,
-      blockHeavyResources: true,
+      blockHeavyResources: false,
     });
 
     const page = await context.newPage();
@@ -798,7 +860,7 @@ export async function extractLinkedInSession({
           timeout: 10000,
         })
         .catch(() => {});
-      await page.waitForTimeout(600);
+      await page.waitForTimeout(800);
 
       const currentUrl = page.url();
       if (
@@ -819,6 +881,7 @@ export async function extractLinkedInSession({
     let ensuredMethodOnce = false;
     let unresolvedCheckpointChecks = 0;
     let nonCheckpointChecks = 0;
+    let captchaChecks = 0;
 
     while (Date.now() - overallStart < maxBudgetMs) {
       // 1. Check if li_at session cookie has been granted
@@ -883,13 +946,19 @@ export async function extractLinkedInSession({
       const checkpoint = await detectCheckpointKind(page, sawCaptchaNetwork);
 
       if (checkpoint.isCaptcha) {
-        await safeCloseBrowser(browser);
-        return {
-          success: false,
-          error:
-            "LinkedIn blocked automated cloud login with a bot security puzzle (CAPTCHA), so it did not send a verification code. Please use the 'Paste Cookies' tab and paste your li_at cookie from your browser.",
-        };
+        captchaChecks++;
+        if (captchaChecks >= 2) {
+          await safeCloseBrowser(browser);
+          return {
+            success: false,
+            error:
+              "LinkedIn blocked automated cloud login with a bot security puzzle (CAPTCHA), so it did not send a verification code. Please use the 'Paste Cookies' tab and paste your li_at cookie from your browser.",
+          };
+        }
+        await page.waitForTimeout(800);
+        continue;
       }
+      captchaChecks = 0;
 
       if (checkpoint.isCheckpoint || restoredChallenge?.capturedForm) {
         if (checkpoint.isCheckpoint && !ensuredMethodOnce && !verificationCode) {

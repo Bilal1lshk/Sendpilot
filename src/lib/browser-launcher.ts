@@ -65,6 +65,14 @@ function buildServerlessChromiumArgs(rawSparticuzArgs: string[]): string[] {
     if (arg === "--headless" || arg.startsWith("--headless=")) {
       continue;
     }
+    // Strip flags that break Same-Origin Policy checks inside PerimeterX / reCAPTCHA iframes or disable WebGL
+    if (
+      arg === "--disable-web-security" ||
+      arg === "--allow-running-insecure-content" ||
+      arg === "--disable-webgl"
+    ) {
+      continue;
+    }
     if (arg.startsWith("--disable-features=")) {
       const list = arg.slice("--disable-features=".length).split(",");
       for (const item of list) {
@@ -91,7 +99,6 @@ function buildServerlessChromiumArgs(rawSparticuzArgs: string[]): string[] {
     "--no-sandbox",
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
-    "--disable-gpu",
     "--disable-blink-features=AutomationControlled",
     "--window-size=1280,800",
   ];
@@ -119,9 +126,9 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
     const sparticuzModule = await import("@sparticuz/chromium");
     const sparticuz = sparticuzModule.default || sparticuzModule;
 
-    // Disable SwiftShader WebGL in serverless single-process mode to prevent GPU thread crashes & OOM
+    // Keep graphicsMode enabled so WebGL works (required by LinkedIn anti-bot checks)
     try {
-      sparticuz.setGraphicsMode = false;
+      sparticuz.setGraphicsMode = true;
     } catch {
       // Ignore if read-only in a future version
     }
@@ -175,8 +182,8 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
 /**
  * Creates a stealth BrowserContext without opening/closing any probe page
  * (which would crash `--single-process` Chromium on serverless).
- * Reads `browser.version()` synchronously so the User-Agent matches the real
- * Chromium binary version & platform.
+ * Reads `browser.version()` synchronously so the User-Agent and Client Hints
+ * match the real Chromium binary version & platform without exposing HeadlessChrome or SwiftShader.
  */
 export async function createStealthContext(
   browser: Browser,
@@ -184,6 +191,7 @@ export async function createStealthContext(
 ): Promise<BrowserContext> {
   const rawVersion = (browser.version() || "").replace(/^.*?\//, "").trim();
   const chromeVersion = /^\d+\./.test(rawVersion) ? rawVersion : "153.0.0.0";
+  const majorVersion = chromeVersion.split(".")[0] || "153";
   const isLinux = process.platform === "linux";
 
   const cleanNativeUa =
@@ -196,19 +204,112 @@ export async function createStealthContext(
     viewport: { width: 1280, height: 800 },
     userAgent: cleanNativeUa,
     locale: "en-US",
+    extraHTTPHeaders: {
+      "sec-ch-ua": `"Google Chrome";v="${majorVersion}", "Chromium";v="${majorVersion}", "Not_A Brand";v="24"`,
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": isLinux ? '"Linux"' : '"Windows"',
+    },
     ...(options.storageState ? { storageState: options.storageState } : {}),
   });
 
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => false });
-    if (!(window as unknown as Record<string, unknown>).chrome) {
-      (window as unknown as Record<string, unknown>).chrome = { runtime: {} };
-    }
-    Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
-    Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
-  });
+  await context.addInitScript(
+    ({ major, fullVer, linux }: { major: string; fullVer: string; linux: boolean }) => {
+      Object.defineProperty(Navigator.prototype, "webdriver", {
+        get: () => false,
+        configurable: true,
+      });
 
-  if (options.blockHeavyResources !== false) {
+      const win = window as unknown as Record<string, unknown>;
+      if (!win.chrome) {
+        win.chrome = {
+          app: { isInstalled: false },
+          runtime: {},
+          csi: () => ({}),
+          loadTimes: () => ({}),
+        };
+      }
+
+      Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
+      Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+      Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
+      Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+
+      // Replace HeadlessChrome in navigator.userAgentData across main frame & cross-origin iframes
+      const brands = [
+        { brand: "Google Chrome", version: major },
+        { brand: "Chromium", version: major },
+        { brand: "Not_A Brand", version: "24" },
+      ];
+      const platformName = linux ? "Linux" : "Windows";
+      const uaData = {
+        brands,
+        mobile: false,
+        platform: platformName,
+        toJSON: () => ({ brands, mobile: false, platform: platformName }),
+        getHighEntropyValues: async (hints: string[]) => {
+          const out: Record<string, unknown> = {
+            brands,
+            mobile: false,
+            platform: platformName,
+          };
+          if (Array.isArray(hints)) {
+            if (hints.includes("architecture")) out.architecture = "x86";
+            if (hints.includes("bitness")) out.bitness = "64";
+            if (hints.includes("model")) out.model = "";
+            if (hints.includes("platformVersion"))
+              out.platformVersion = linux ? "6.1.0" : "15.0.0";
+            if (hints.includes("uaFullVersion")) out.uaFullVersion = fullVer;
+            if (hints.includes("fullVersionList")) {
+              out.fullVersionList = [
+                { brand: "Google Chrome", version: fullVer },
+                { brand: "Chromium", version: fullVer },
+                { brand: "Not_A Brand", version: "24.0.0.0" },
+              ];
+            }
+          }
+          return out;
+        },
+      };
+      try {
+        Object.defineProperty(Navigator.prototype, "userAgentData", {
+          get: () => uaData,
+          configurable: true,
+        });
+      } catch {
+        // Ignore if non-configurable
+      }
+
+      // Spoof SwiftShader WebGL vendor/renderer so anti-bot iframes see standard Intel hardware GPU
+      const spoofedVendor = "Google Inc. (Intel)";
+      const spoofedRenderer = linux
+        ? "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6)"
+        : "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)";
+
+      const patchWebGL = (proto: { getParameter?: (p: number) => unknown } | undefined) => {
+        if (!proto || typeof proto.getParameter !== "function") return;
+        const orig = proto.getParameter;
+        const wrapped = function (this: unknown, param: number) {
+          if (param === 37445) return spoofedVendor;
+          if (param === 37446) return spoofedRenderer;
+          return orig.call(this, param);
+        };
+        Object.defineProperty(wrapped, "toString", {
+          value: () => "function getParameter() { [native code] }",
+        });
+        proto.getParameter = wrapped;
+      };
+
+      if (typeof WebGLRenderingContext !== "undefined") {
+        patchWebGL(WebGLRenderingContext.prototype);
+      }
+      if (typeof WebGL2RenderingContext !== "undefined") {
+        patchWebGL(WebGL2RenderingContext.prototype);
+      }
+    },
+    { major: majorVersion, fullVer: chromeVersion, linux: isLinux }
+  );
+
+  if (options.blockHeavyResources === true) {
     await context
       .route("**/*", (route) => {
         const type = route.request().resourceType();
