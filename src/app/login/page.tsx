@@ -126,7 +126,11 @@ export default function LoginPage() {
       });
 
       if (res?.error) {
-        toast.error("Invalid or expired verification code. Please try again.");
+        if (res.error === "CredentialsSignin") {
+          toast.error("Invalid verification code or credentials. Please try again.");
+        } else {
+          toast.error(`Authentication error: ${res.error}. Please try again.`);
+        }
       } else {
         toast.success("Verified and signed in successfully!");
         router.push("/dashboard");

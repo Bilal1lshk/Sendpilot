@@ -75,7 +75,11 @@ export default function RegisterPage() {
       });
 
       if (signInResult?.error) {
-        toast.error("Invalid or expired verification code. Please try again.");
+        if (signInResult.error === "CredentialsSignin") {
+          toast.error("Invalid or expired verification code. Please try again.");
+        } else {
+          toast.error(`Authentication error: ${signInResult.error}. Please try again.`);
+        }
       } else {
         toast.success("Email verified! Let's set up your first campaign.");
         router.push("/get-started");
