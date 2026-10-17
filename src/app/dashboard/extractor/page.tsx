@@ -18,13 +18,10 @@ import {
   Database,
   ExternalLink,
   Loader2,
-  Code2,
   Check,
   Play,
   Ban,
   X,
-  ChevronDown,
-  ChevronUp,
   FileText,
   RefreshCw,
   Globe,
@@ -117,8 +114,6 @@ export default function LeadExtractorPage() {
   const [extractedLeads, setExtractedLeads] = useState<ExtractedLead[]>([]);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [isSavingDb, setIsSavingDb] = useState(false);
-  const [showCodeSnippet, setShowCodeSnippet] = useState(false);
-  const [copiedCode, setCopiedCode] = useState(false);
 
   // Real CSV Upload & Import states
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -452,40 +447,6 @@ export default function LeadExtractorPage() {
     }
   };
 
-  const pythonSnippet = `import { chromium } from "playwright";
-
-export async function extractLeadsFromSearchUrl(searchUrl: string, liAt: string, jSessionId: string) {
-  const cleanSessionId = jSessionId.replace(/^"|"$/g, "");
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    extraHTTPHeaders: { "csrf-token": cleanSessionId },
-  });
-
-  // 1. Inject LinkedIn session cookies (li_at & JSESSIONID)
-  await context.addCookies([
-    { name: "li_at", value: liAt, domain: ".linkedin.com", path: "/", httpOnly: true, secure: true },
-    { name: "JSESSIONID", value: \`"\${cleanSessionId}"\`, domain: ".linkedin.com", path: "/", secure: true },
-  ]);
-
-  const page = await context.newPage();
-  await page.goto(searchUrl || "${searchUrlInput || "https://www.linkedin.com/search/results/people/?keywords=ai%20engineer&origin=FACETED_SEARCH&geoUrn=%5B%22103644278%22%5D"}", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector('a[href*="/in/"]', { timeout: 15000 });
-
-  // 2. Scroll to hydrate lazy-loaded cards & extract leads
-  await page.evaluate(() => window.scrollBy(0, 900));
-  const leads = await page.evaluate(() => {
-    return Array.from(document.querySelectorAll('div[role="listitem"], li.reusable-search__result-container')).map((card) => ({
-      name: card.querySelector('span[aria-hidden="true"]')?.textContent?.trim(),
-      linkedinUrl: (card.querySelector('a[href*="/in/"]') as HTMLAnchorElement)?.href?.split("?")[0],
-      headline: card.querySelector(".entity-result__primary-subtitle")?.textContent?.trim(),
-      location: card.querySelector(".entity-result__secondary-subtitle")?.textContent?.trim(),
-    }));
-  });
-
-  await browser.close();
-  return leads;
-}`;
-
   return (
     <motion.div
       variants={pageVariants}
@@ -670,56 +631,6 @@ export async function extractLeadsFromSearchUrl(searchUrl: string, liAt: string,
                   </button>
                 </div>
               </div>
-            </div>
-
-            {/* Playwright Snippet Disclosure */}
-            <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800">
-              <button
-                type="button"
-                onClick={() => setShowCodeSnippet(!showCodeSnippet)}
-                className="inline-flex items-center gap-2 text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer"
-              >
-                <Code2 className="h-3.5 w-3.5 text-palm-leaf-600" />
-                <span className="font-medium">
-                  {showCodeSnippet
-                    ? "Hide Playwright & Automation Script"
-                    : "View Playwright (li_at + JSESSIONID) Automation Script"}
-                </span>
-                {showCodeSnippet ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-              </button>
-
-              <AnimatePresence>
-                {showCodeSnippet && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mt-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-950 text-neutral-200 p-4 font-mono text-[11px] overflow-hidden relative"
-                  >
-                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-800 text-[10px] text-neutral-400">
-                      <span>src/lib/playwright-linkedin-extractor.ts</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(pythonSnippet);
-                          setCopiedCode(true);
-                          setTimeout(() => setCopiedCode(false), 2000);
-                        }}
-                        className="inline-flex items-center gap-1 text-palm-leaf-400 hover:text-palm-leaf-300"
-                      >
-                        {copiedCode ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                        <span>{copiedCode ? "Copied" : "Copy Code"}</span>
-                      </button>
-                    </div>
-                    <pre className="overflow-x-auto text-neutral-300 leading-relaxed max-h-56">
-                      {pythonSnippet}
-                    </pre>
-                    <div className="mt-3 pt-2 border-t border-neutral-800 text-[10px] text-neutral-400 flex items-center justify-between">
-                      <span>Engine: Playwright Chromium Context (li_at + JSESSIONID cookies)</span>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
           </div>
 

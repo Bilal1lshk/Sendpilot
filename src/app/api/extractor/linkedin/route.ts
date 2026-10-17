@@ -9,6 +9,9 @@ import { decryptConnectionSecrets } from "@/lib/connection-crypto";
 import { extractSearchLeadsWithPlaywright } from "@/lib/playwright-linkedin-extractor";
 import { invalidateDbCache } from "@/lib/db-cache";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 interface ExtractedLead {
   id: string;
   name: string;
