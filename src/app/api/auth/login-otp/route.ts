@@ -51,17 +51,26 @@ export async function POST(req: Request) {
       userName: user.name,
     });
 
+    if (!mailResult.sent) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: mailResult.error || "Failed to deliver verification email. Please check your email or SMTP configuration.",
+        },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       otpRequired: true,
       senderEmail: process.env.SMTP_USER || "contact@mbstack.net",
-      deliveryMode: mailResult.deliveryMode,
-      previewCode: mailResult.previewCode,
+      deliveryMode: "smtp",
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Login OTP error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to send verification code." },
+      { success: false, error: error?.message || "Failed to send verification code." },
       { status: 500 }
     );
   }

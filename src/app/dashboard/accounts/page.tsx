@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ShieldCheck,
@@ -15,6 +15,7 @@ import {
   ExternalLink,
   Power,
   CheckCircle2,
+  KeyRound,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants, drawerVariants } from "@/lib/motion";
@@ -35,10 +36,6 @@ export interface ConnectedAccountData {
   warmupStage: number;
 }
 
-/** Toast message shown when the same LinkedIn member is reconnected. */
-const ALREADY_CONNECTED_MSG =
-  "This LinkedIn account is already connected. Authorization refreshed successfully.";
-
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchAccountsIfNeeded,
@@ -47,8 +44,6 @@ import {
 } from "@/store/slices/databaseSlice";
 
 export default function LinkedInAccountsPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const dispatch = useAppDispatch();
   const { items: accounts, loading: storeLoading, loaded: storeLoaded } = useAppSelector(
     (state) => state.database.accounts
@@ -71,83 +66,9 @@ export default function LinkedInAccountsPage() {
     }
   };
 
-  // ── Handle OAuth redirect-back params ──────────────────────────
-  const handleOAuthResult = useEffectEvent(async (
-    status: string | null,
-    connectionId: string | null,
-    error: string | null
-  ) => {
-    const hasOAuthParams = Boolean(status || connectionId || error);
-    const loadedAccounts = await fetchAccounts(hasOAuthParams);
-    if (status === "connected") {
-      const connectedAccount = loadedAccounts.find((account) => account.id === connectionId);
-      if (!connectedAccount) {
-        toast.error("The verified LinkedIn account could not be loaded");
-        router.replace("/dashboard/accounts");
-        return;
-      }
-
-      const correctAccount = window.confirm(
-        `Connected as ${connectedAccount.name}. Is this the right LinkedIn account?`
-      );
-      if (correctAccount) {
-        const response = await fetch(`/api/linkedin/accounts/${encodeURIComponent(connectedAccount.id)}/confirm`, { method: "POST" });
-        if (response.ok) toast.success(`Connected as ${connectedAccount.name}`);
-        else toast.error("Could not confirm this LinkedIn account");
-      } else {
-        await fetch(`/api/linkedin/accounts?id=${encodeURIComponent(connectedAccount.id)}`, { method: "DELETE" });
-        await fetchAccounts(true);
-        toast.info("Account removed.");
-      }
-      router.replace("/dashboard/accounts");
-    } else if (status === "already_connected") {
-      toast.success(ALREADY_CONNECTED_MSG);
-      router.replace("/dashboard/accounts");
-    } else if (status === "verification_failed") {
-      toast.error("LinkedIn could not verify this account. Please reconnect and try again.");
-      router.replace("/dashboard/accounts");
-    } else if (error) {
-      toast.error(`LinkedIn connection error: ${decodeURIComponent(error)}`);
-      router.replace("/dashboard/accounts");
-    }
-  });
-
   useEffect(() => {
-    const task = window.setTimeout(() => {
-      void handleOAuthResult(
-        searchParams.get("status"),
-        searchParams.get("id"),
-        searchParams.get("error")
-      );
-    }, 0);
-    return () => window.clearTimeout(task);
-  }, [searchParams]);
-
-  // ── Listen for popup completion events ─────────────────────────
-  useEffect(() => {
-    const handleMessage = async (event: MessageEvent) => {
-      if (event.data?.type === "LINKEDIN_AUTH_SUCCESS") {
-        toast.dismiss("li-connect");
-        const { status, id } = event.data;
-        await fetchAccounts(true);
-        if (status === "connected") {
-          if (id) {
-            await fetch(`/api/linkedin/accounts/${encodeURIComponent(id)}/confirm`, { method: "POST" });
-            await fetchAccounts(true);
-          }
-          toast.success("New LinkedIn account successfully added to workspace!");
-        } else if (status === "already_connected") {
-          toast.info("This LinkedIn account is already connected. Authorization refreshed.");
-        }
-      } else if (event.data?.type === "LINKEDIN_AUTH_ERROR") {
-        toast.dismiss("li-connect");
-        toast.error(event.data.error || "LinkedIn authorization failed");
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  });
+    fetchAccounts();
+  }, []);
 
   // ── Account actions ─────────────────────────────────────────────
   const verifyAccount = async (id: string) => {
@@ -166,9 +87,8 @@ export default function LinkedInAccountsPage() {
     }
   };
 
-  const reconnect = (_id: string) => {
-    toast.loading("Redirecting to LinkedIn to reconnect...");
-    window.location.href = "/api/auth/linkedin/authorize";
+  const reconnect = (_id?: string) => {
+    setConnectModalOpen(true);
   };
 
   const handleDisconnect = async (id: string, name: string) => {
@@ -363,7 +283,7 @@ export default function LinkedInAccountsPage() {
           <div>
             <button
               type="button"
-              onClick={() => { window.location.href = "/api/auth/linkedin/authorize"; }}
+              onClick={handleAddAccount}
               className="inline-flex items-center gap-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-4 py-2 text-xs font-semibold shadow-xs transition-all cursor-pointer"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -588,7 +508,7 @@ export default function LinkedInAccountsPage() {
                       What we store
                     </h4>
                     <p className="text-neutral-500 dark:text-neutral-400">
-                      We store your profile name and avatar with OAuth credentials encrypted on the server. Credentials are never included in account responses.
+                      We store your profile name and avatar with session credentials encrypted on the server using AES-256-GCM. Credentials are never included in account responses.
                     </p>
                   </div>
 
@@ -597,7 +517,7 @@ export default function LinkedInAccountsPage() {
                       What we never do
                     </h4>
                     <p className="text-neutral-500 dark:text-neutral-400">
-                      We never ask for your LinkedIn password, never scrape private inboxes without permission, and never send high-volume mass spam.
+                      We never store your LinkedIn password in plain text, never scrape private inboxes without permission, and never send high-volume mass spam.
                     </p>
                   </div>
 

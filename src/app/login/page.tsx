@@ -58,7 +58,6 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [senderEmail, setSenderEmail] = useState("contact@mbstack.net");
-  const [previewCode, setPreviewCode] = useState<string | null>(null);
 
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +77,6 @@ export default function LoginPage() {
       }
 
       setSenderEmail(data.senderEmail || "contact@mbstack.net");
-      setPreviewCode(data.previewCode || null);
       setOtp("");
       setStep("otp");
       toast.success(`Verification code sent to ${email.trim()}`);
@@ -102,7 +100,6 @@ export default function LoginPage() {
         toast.error(data.error || "Failed to resend verification code");
         return;
       }
-      setPreviewCode(data.previewCode || null);
       toast.success("A new 6-digit verification code has been sent.");
     } catch {
       toast.error("Failed to resend verification code.");
@@ -311,29 +308,6 @@ export default function LoginPage() {
                   .
                 </p>
               </div>
-
-              {previewCode && (
-                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-amber-700 dark:text-amber-300">
-                      SMTP Preview Mode ({senderEmail})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setOtp(previewCode)}
-                      className="text-[11px] font-semibold underline text-amber-800 dark:text-amber-200 cursor-pointer"
-                    >
-                      Auto-fill code
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-neutral-600 dark:text-neutral-300">
-                    Your verification code is:{" "}
-                    <code className="font-mono font-bold text-sm tracking-widest px-1.5 py-0.5 rounded bg-white/80 dark:bg-black/60 text-neutral-900 dark:text-white">
-                      {previewCode}
-                    </code>
-                  </p>
-                </div>
-              )}
 
               <form onSubmit={handleVerifyOtp} className="space-y-4">
                 <div className="space-y-1.5">

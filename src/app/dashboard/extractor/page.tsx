@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -21,20 +21,14 @@ import {
   Code2,
   Check,
   Play,
-  MapPin,
-  Briefcase,
   Ban,
   X,
   ChevronDown,
   ChevronUp,
   FileText,
   RefreshCw,
-  Mail,
   Globe,
-  GraduationCap,
-  Award,
   ShieldCheck,
-  UserCheck,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { pageVariants, cardVariants } from "@/lib/motion";
@@ -83,38 +77,39 @@ import { fetchLeadsIfNeeded, fetchOverviewIfNeeded } from "@/store/slices/databa
 
 export default function LeadExtractorPage() {
   const dispatch = useAppDispatch();
-  const [activeSource, setActiveSource] = useState<string>("LinkedIn Profile URL");
+  const [activeSource, setActiveSource] = useState<string>("LinkedIn Search");
 
-  // Single Profile Scraping State
-  const [profileUrlInput, setProfileUrlInput] = useState("https://www.linkedin.com/in/ali-gujranwala");
-  const [isScrapingProfile, setIsScrapingProfile] = useState(false);
-  const [profileScrapeStep, setProfileScrapeStep] = useState<string>("");
-  const [scrapedProfile, setScrapedProfile] = useState<ScrapedProfile | null>(null);
-  const [isSavingProfileToDb, setIsSavingProfileToDb] = useState(false);
-  const [profileSavedSuccess, setProfileSavedSuccess] = useState(false);
-
-  const PROFILE_PRESETS = [
-    { label: "Ali (from Gujranwala)", url: "https://www.linkedin.com/in/ali-gujranwala" },
-    { label: "Graphic Designer Search", url: "https://www.linkedin.com/search/results/people/?keywords=graphic%20designer&origin=SWITCH_SEARCH_VERTICAL" },
-    { label: "Software Engineer Search", url: "https://www.linkedin.com/search/results/people/?keywords=software%20engineer&origin=SWITCH_SEARCH_VERTICAL" },
-    { label: "Bill Gates", url: "https://www.linkedin.com/in/williamhgates" },
-    { label: "Satya Nadella", url: "https://www.linkedin.com/in/satyanadella" },
-  ];
-
-  // LinkedIn Search Mode & Inputs
-  const [searchMethod, setSearchMethod] = useState<"keywords" | "search_url" | "raw_html">("keywords");
-  const [searchUrlInput, setSearchUrlInput] = useState<string>("https://www.linkedin.com/search/results/people/?keywords=graphic%20designer&origin=SWITCH_SEARCH_VERTICAL");
-  const [rawHtmlInput, setRawHtmlInput] = useState<string>("");
-
-  // Extracted leads detected from Search URL in Profile Tab
-  const [detectedSearchLeads, setDetectedSearchLeads] = useState<ExtractedLead[]>([]);
-  const [detectedSearchQuery, setDetectedSearchQuery] = useState<string>("");
-
-  // LinkedIn Extractor Inputs
-  const [keywords, setKeywords] = useState("Graphic Designer");
-  const [location, setLocation] = useState("");
+  // LinkedIn Search URL Input
+  const [searchUrlInput, setSearchUrlInput] = useState<string>(
+    "https://www.linkedin.com/search/results/people/?keywords=ai%20engineer&origin=FACETED_SEARCH&geoUrn=%5B%22103644278%22%5D"
+  );
+  const [connectedAccountName, setConnectedAccountName] = useState<string>("");
   const [maxLeads, setMaxLeads] = useState<number>(10);
-  const [engineMode, setEngineMode] = useState<"live" | "fast">("live");
+  const [extractedQueryLabel, setExtractedQueryLabel] = useState<string>("ai engineer");
+
+  // Ensure no credentials are kept in localStorage and check active LinkedIn connection status
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("sendpilot_li_at_cookie");
+      localStorage.removeItem("sendpilot_jsession_id");
+    }
+
+    let cancelled = false;
+    fetch("/api/extractor/linkedin")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled || !data) return;
+        if (data.linkedinName) {
+          setConnectedAccountName(data.linkedinName);
+        }
+      })
+      .catch(() => {
+        // ignore network error
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // LinkedIn Extraction State
   const [isExtracting, setIsExtracting] = useState(false);
@@ -139,181 +134,78 @@ export default function LeadExtractorPage() {
     Array<{ file: string; date: string; count: number; status: string }>
   >([]);
 
-  // Sources Cards
+  // Sources Cards (single unified LinkedIn Search URL extractor)
   const SOURCES = [
-    { name: "LinkedIn Profile URL", desc: "Paste any LinkedIn profile link to scrape deep profile info", icon: ExternalLink },
-    { name: "LinkedIn Search", desc: "Extract people profiles directly with keywords & location", icon: LinkedInIcon },
+    {
+      name: "LinkedIn Search",
+      desc: "Paste any LinkedIn people search URL to extract leads via Playwright",
+      icon: LinkedInIcon,
+    },
     { name: "Sales Navigator", desc: "Sync saved lead lists and account searches", icon: Search },
     { name: "CSV / Excel Upload", desc: "Import spreadsheets with names, emails, and titles", icon: FileSpreadsheet },
     { name: "Post Commenters", desc: "Pull leads who liked or commented on any post", icon: Sparkles },
     { name: "Event Attendees", desc: "Extract attendees from LinkedIn audio/live events", icon: Users },
   ];
 
-  const PRESETS = [
-    { kw: "Marketing Data Analyst", loc: "Berlin" },
-    { kw: "Head of Growth", loc: "London" },
-    { kw: "VP of Product", loc: "San Francisco" },
-    { kw: "Director of RevOps", loc: "New York" },
+  const SEARCH_URL_PRESETS = [
+    {
+      label: "AI Engineer (United States)",
+      url: "https://www.linkedin.com/search/results/people/?keywords=ai%20engineer&origin=FACETED_SEARCH&geoUrn=%5B%22103644278%22%5D",
+    },
+    {
+      label: "Full Stack Developer",
+      url: "https://www.linkedin.com/search/results/people/?keywords=full%20stack%20developer&origin=FACETED_SEARCH&geoUrn=%5B%22103644278%22%5D",
+    },
+    {
+      label: "Head of Growth",
+      url: "https://www.linkedin.com/search/results/people/?keywords=head%20of%20growth&origin=FACETED_SEARCH&geoUrn=%5B%22101165590%22%5D",
+    },
+    {
+      label: "SaaS Founder / CEO",
+      url: "https://www.linkedin.com/search/results/people/?keywords=saas%20founder%20ceo&origin=FACETED_SEARCH&geoUrn=%5B%22103644278%22%5D",
+    },
   ];
 
-  // ===================== PROFILE URL SCRAPER HANDLERS ===================== //
-  const handleRunProfileScraper = async () => {
-    if (!profileUrlInput.trim()) {
-      toast.error("Please enter a LinkedIn profile URL");
+  // Parse human-readable query label from a LinkedIn Search URL
+  const getQueryLabelFromUrl = (rawUrl: string): string => {
+    try {
+      const parsed = new URL(rawUrl);
+      const kw = parsed.searchParams.get("keywords");
+      if (kw && kw.trim()) return decodeURIComponent(kw.trim());
+    } catch {
+      // ignore
+    }
+    return "LinkedIn Search";
+  };
+
+  // Trigger LinkedIn Extraction via Playwright + Search URL (credentials resolved server-side from DB)
+  const handleRunLinkedInExtractor = async () => {
+    if (!searchUrlInput.trim()) {
+      toast.error("Please enter a LinkedIn People Search URL");
       return;
     }
 
-    setIsScrapingProfile(true);
-    setScrapedProfile(null);
-    setProfileSavedSuccess(false);
-    setProfileScrapeStep("1/4: Launching Selenium Chrome WebDriver...");
-
-    const t1 = setTimeout(() => {
-      setProfileScrapeStep("2/4: Loading profile page & navigating anti-bot barriers...");
-    }, 1500);
-
-    const t2 = setTimeout(() => {
-      setProfileScrapeStep("3/4: Parsing profile card, headline, experience & about bio...");
-    }, 3200);
-
-    const t3 = setTimeout(() => {
-      setProfileScrapeStep("4/4: Calculating ICP qualification & email address...");
-    }, 4800);
-
-    try {
-      const res = await fetch("/api/extractor/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: profileUrlInput,
-          saveToWorkspace: false,
-        }),
-      });
-
-      const data = await res.json();
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-
-      if (data.success) {
-        if (data.isSearchUrl && Array.isArray(data.leads) && data.leads.length > 0) {
-          setDetectedSearchLeads(data.leads);
-          setDetectedSearchQuery(data.keywords || "Graphic Designer");
-          setExtractedLeads(data.leads);
-          setSelectedLeadIds(data.leads.map((l: ExtractedLead) => l.id));
-          setScrapedProfile(null);
-          setImportHistory((prev) => [
-            {
-              file: `LinkedIn Search: "${data.keywords || "Candidates"}" (${data.leads.length} profiles)`,
-              date: "Just now",
-              count: data.leads.length,
-              status: "Extracted",
-            },
-            ...prev,
-          ]);
-          toast.success(`Search URL detected! Extracted ${data.leads.length} profiles matching "${data.keywords || "Graphic Designer"}"!`);
-        } else if (data.profile) {
-          setScrapedProfile(data.profile);
-          setDetectedSearchLeads([]);
-          setImportHistory((prev) => [
-            {
-              file: `Profile: ${data.profile.name} (${data.profile.company || "LinkedIn"})`,
-              date: "Just now",
-              count: 1,
-              status: "Extracted",
-            },
-            ...prev,
-          ]);
-          toast.success(`Scraped profile for ${data.profile.name}!`);
-        } else {
-          toast.error(data.error || "Failed to scrape profile");
-        }
-      } else {
-        toast.error(data.error || "Failed to scrape profile");
-      }
-    } catch {
-      toast.error("Network error while communicating with profile scraper");
-    } finally {
-      setIsScrapingProfile(false);
-      setProfileScrapeStep("");
-    }
-  };
-
-  const handleSaveProfileToDb = async () => {
-    if (!scrapedProfile) return;
-    setIsSavingProfileToDb(true);
-
-    try {
-      const res = await fetch("/api/extractor/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: scrapedProfile.linkedinUrl,
-          saveToWorkspace: true,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success && data.savedToWorkspace) {
-        setProfileSavedSuccess(true);
-        dispatch(fetchLeadsIfNeeded({ force: true }));
-        dispatch(fetchOverviewIfNeeded({ force: true }));
-        toast.success(`Saved ${scrapedProfile.name} to your Leads database!`);
-      } else {
-        toast.error(data.error || "Could not save profile to database");
-      }
-    } catch {
-      toast.error("Network error while saving profile to database");
-    } finally {
-      setIsSavingProfileToDb(false);
-    }
-  };
-
-  const handleExportProfileCsv = () => {
-    if (!scrapedProfile) return;
-    const headers = ["First Name", "Last Name", "Full Name", "Title", "Company", "Location", "Email", "LinkedIn URL", "ICP Score"];
-    const row = [
-      `"${scrapedProfile.firstName || ""}"`,
-      `"${scrapedProfile.lastName || ""}"`,
-      `"${scrapedProfile.name || ""}"`,
-      `"${scrapedProfile.title || scrapedProfile.headline || ""}"`,
-      `"${scrapedProfile.company || ""}"`,
-      `"${scrapedProfile.location || ""}"`,
-      `"${scrapedProfile.email || ""}"`,
-      `"${scrapedProfile.linkedinUrl || ""}"`,
-      `"${scrapedProfile.icpScore || 90}"`,
-    ];
-    const csvContent = "data:text/csv;charset=utf-8," + encodeURIComponent([headers.join(","), row.join(",")].join("\n"));
-    const link = document.createElement("a");
-    link.setAttribute("href", csvContent);
-    link.setAttribute("download", `${scrapedProfile.name.toLowerCase().replace(/\s+/g, "_")}_linkedin_lead.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success("Profile exported to CSV");
-  };
-
-  // Trigger LinkedIn Extraction via API & Selenium
-  const handleRunLinkedInExtractor = async () => {
     setIsExtracting(true);
     setExtractedLeads([]);
     setSelectedLeadIds([]);
 
-    const searchDesc =
-      searchMethod === "search_url"
-        ? "LinkedIn Search URL"
-        : searchMethod === "raw_html"
-        ? "LinkedIn Raw HTML Source"
-        : `"${keywords}" ${location ? `in "${location}"` : ""}`;
+    const queryLabel = getQueryLabelFromUrl(searchUrlInput.trim());
+    setExtractedQueryLabel(queryLabel);
 
-    setExtractionStep("1/4: Initializing Chrome WebDriver with Selenium...");
+    setExtractionStep(
+      "1/4: Launching Playwright Chromium with your encrypted LinkedIn session..."
+    );
 
     const t1 = setTimeout(() => {
-      setExtractionStep(`2/4: Searching LinkedIn for ${searchDesc}...`);
+      setExtractionStep(
+        `2/4: Opening LinkedIn Search URL (${queryLabel}) with authenticated session...`
+      );
     }, 1200);
 
     const t2 = setTimeout(() => {
-      setExtractionStep("3/4: Parsing profile cards, headlines & company data...");
+      setExtractionStep(
+        "3/4: Scrolling & extracting profile cards, headlines & Voyager JSON..."
+      );
     }, 2800);
 
     const t3 = setTimeout(() => {
@@ -321,38 +213,12 @@ export default function LeadExtractorPage() {
     }, 4200);
 
     try {
-      const payload: any = {
+      const payload = {
+        searchUrl: searchUrlInput.trim(),
         maxLeads,
-        mode: engineMode,
+        mode: "playwright",
         saveToWorkspace: false,
       };
-
-      if (searchMethod === "search_url") {
-        if (!searchUrlInput.trim()) {
-          toast.error("Please enter a LinkedIn search URL");
-          setIsExtracting(false);
-          setExtractionStep("");
-          return;
-        }
-        payload.searchUrl = searchUrlInput.trim();
-      } else if (searchMethod === "raw_html") {
-        if (!rawHtmlInput.trim()) {
-          toast.error("Please paste LinkedIn search HTML source");
-          setIsExtracting(false);
-          setExtractionStep("");
-          return;
-        }
-        payload.rawHtml = rawHtmlInput.trim();
-      } else {
-        if (!keywords.trim()) {
-          toast.error("Please enter search keywords or a job title");
-          setIsExtracting(false);
-          setExtractionStep("");
-          return;
-        }
-        payload.keywords = keywords.trim();
-        payload.location = location.trim();
-      }
 
       const res = await fetch("/api/extractor/linkedin", {
         method: "POST",
@@ -368,9 +234,12 @@ export default function LeadExtractorPage() {
       if (data.success && Array.isArray(data.leads)) {
         setExtractedLeads(data.leads);
         setSelectedLeadIds(data.leads.map((l: ExtractedLead) => l.id));
+        if (data.keywords) {
+          setExtractedQueryLabel(data.keywords);
+        }
         setImportHistory((prev) => [
           {
-            file: `LinkedIn Search: ${data.keywords || searchDesc} (${data.leads.length} leads)`,
+            file: `LinkedIn Search: ${data.keywords || queryLabel} (${data.leads.length} leads)`,
             date: "Just now",
             count: data.leads.length,
             status: "Extracted",
@@ -412,7 +281,7 @@ export default function LeadExtractorPage() {
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
-    const filename = `linkedin_leads_${keywords.toLowerCase().replace(/\s+/g, "_")}_${location.toLowerCase().replace(/\s+/g, "_")}.csv`;
+    const filename = `linkedin_leads_${extractedQueryLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")}.csv`;
     link.setAttribute("href", encodedUri);
     link.setAttribute("download", filename);
     document.body.appendChild(link);
@@ -583,38 +452,39 @@ export default function LeadExtractorPage() {
     }
   };
 
-  const pythonSnippet = `from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-import csv
-import time
+  const pythonSnippet = `import { chromium } from "playwright";
 
-# 1. Initialize Chrome with Selenium (or provide custom driver path)
-# s = Service("C:/Users/DELL/OneDrive/Desktop/chromedriver_win32/chromedriver.exe")
-driver = webdriver.Chrome()
+export async function extractLeadsFromSearchUrl(searchUrl: string, liAt: string, jSessionId: string) {
+  const cleanSessionId = jSessionId.replace(/^"|"$/g, "");
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    extraHTTPHeaders: { "csrf-token": cleanSessionId },
+  });
 
-# 2. Navigate to LinkedIn Search
-search_url = "https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(
-    keywords + " " + location
-  )}&origin=GLOBAL_SEARCH_HEADER"
-driver.get(search_url)
+  // 1. Inject LinkedIn session cookies (li_at & JSESSIONID)
+  await context.addCookies([
+    { name: "li_at", value: liAt, domain: ".linkedin.com", path: "/", httpOnly: true, secure: true },
+    { name: "JSESSIONID", value: \`"\${cleanSessionId}"\`, domain: ".linkedin.com", path: "/", secure: true },
+  ]);
 
-# 3. Extract profiles & save to CSV
-time.sleep(3)
-results = driver.find_elements(By.CSS_SELECTOR, "li.reusable-search__result-container")
-leads = []
+  const page = await context.newPage();
+  await page.goto(searchUrl || "${searchUrlInput || "https://www.linkedin.com/search/results/people/?keywords=ai%20engineer&origin=FACETED_SEARCH&geoUrn=%5B%22103644278%22%5D"}", { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('a[href*="/in/"]', { timeout: 15000 });
 
-for item in results:
-    name = item.find_element(By.CSS_SELECTOR, "span.entity-result__title-text a span").text
-    headline = item.find_element(By.CSS_SELECTOR, "div.entity-result__primary-subtitle").text
-    leads.append({"name": name, "title": headline})
+  // 2. Scroll to hydrate lazy-loaded cards & extract leads
+  await page.evaluate(() => window.scrollBy(0, 900));
+  const leads = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('div[role="listitem"], li.reusable-search__result-container')).map((card) => ({
+      name: card.querySelector('span[aria-hidden="true"]')?.textContent?.trim(),
+      linkedinUrl: (card.querySelector('a[href*="/in/"]') as HTMLAnchorElement)?.href?.split("?")[0],
+      headline: card.querySelector(".entity-result__primary-subtitle")?.textContent?.trim(),
+      location: card.querySelector(".entity-result__secondary-subtitle")?.textContent?.trim(),
+    }));
+  });
 
-with open("leads.csv", "w", newline="", encoding="utf-8") as f:
-    writer = csv.DictWriter(f, fieldnames=["name", "title"])
-    writer.writeheader()
-    writer.writerows(leads)
-
-driver.quit()`;
+  await browser.close();
+  return leads;
+}`;
 
   return (
     <motion.div
@@ -657,8 +527,8 @@ driver.quit()`;
         )}
       </motion.div>
 
-      {/* 6 Source Cards in Clean Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3.5">
+      {/* Source Cards in Clean Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3.5">
         {SOURCES.map((source) => {
           const Icon = source.icon;
           const isSelected = activeSource === source.name;
@@ -701,447 +571,14 @@ driver.quit()`;
         })}
       </div>
 
-      {/* ==================== TAB 0: LinkedIn Profile URL Scraper ==================== */}
-      {activeSource === "LinkedIn Profile URL" && (
-        <motion.div
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-        >
-          {/* Profile URL Input Card */}
-          <div className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800 pb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-[#0a66c2]/10 text-[#0a66c2] flex items-center justify-center">
-                  <ExternalLink className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                    LinkedIn Profile & Search URL Scraper
-                  </h3>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Paste a profile URL (e.g. <span className="font-semibold text-neutral-700 dark:text-neutral-300">ali from gujranwala</span>) for one person, or a LinkedIn <span className="font-semibold text-neutral-700 dark:text-neutral-300">people search URL</span> to extract multiple profiles.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800 text-[11px] font-semibold">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  <span>Selenium Automation Active</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Quick Presets */}
-            <div className="flex items-center gap-2 flex-wrap text-xs">
-              <span className="text-neutral-400 text-[11px] font-medium">Quick Presets:</span>
-              {PROFILE_PRESETS.map((p, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    setProfileUrlInput(p.url);
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-800/60 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200/60 dark:border-neutral-800 text-[11px] transition-colors cursor-pointer"
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Input & Scrape Button */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
-                <Globe className="h-3.5 w-3.5 text-neutral-400" />
-                <span>LinkedIn Profile URL or Slug</span>
-              </label>
-              <div className="flex flex-col sm:flex-row gap-2.5">
-                <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400">
-                    <LinkedInIcon className="h-4 w-4" />
-                  </div>
-                  <input
-                    type="text"
-                    value={profileUrlInput}
-                    onChange={(e) => setProfileUrlInput(e.target.value)}
-                    placeholder="https://www.linkedin.com/in/ali-gujranwala or ali from gujranwala"
-                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-xs focus:outline-none focus:border-palm-leaf-500 font-medium"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  disabled={isScrapingProfile}
-                  onClick={handleRunProfileScraper}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-6 py-2.5 text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-50 shrink-0 transition-colors"
-                >
-                  {isScrapingProfile ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Scraping Profile...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-4 w-4" />
-                      <span>Scrape Profile</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* In-progress banner */}
-            {isScrapingProfile && (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 rounded-xl bg-palm-leaf-50/70 dark:bg-palm-leaf-950/40 border border-palm-leaf-200 dark:border-palm-leaf-800 flex items-center gap-3"
-              >
-                <div className="h-8 w-8 rounded-lg bg-palm-leaf-600 text-white flex items-center justify-center shrink-0">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
-                    {profileScrapeStep || "Extracting LinkedIn Profile data..."}
-                  </h4>
-                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                    Running headless Chrome automation via Python Selenium engine.
-                  </p>
-                </div>
-              </motion.div>
-            )}
-          </div>
-
-          {/* Scraped Profile Result Preview */}
-          {scrapedProfile && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-6"
-            >
-              {/* Profile Card Header Banner */}
-              <div className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs space-y-6">
-                <div className="flex flex-col md:flex-row md:items-start justify-between gap-5 border-b border-neutral-100 dark:border-neutral-800 pb-6">
-                  {/* Avatar & Core Bio */}
-                  <div className="flex items-start gap-4">
-                    {scrapedProfile.avatar ? (
-                      <img
-                        src={scrapedProfile.avatar}
-                        alt={scrapedProfile.name}
-                        className="h-16 w-16 rounded-2xl object-cover border border-neutral-200 dark:border-neutral-800 shadow-2xs"
-                      />
-                    ) : (
-                      <div className="h-16 w-16 rounded-2xl bg-gradient-to-tr from-palm-leaf-600 via-palm-leaf-500 to-emerald-400 text-white flex items-center justify-center font-bold text-2xl shadow-2xs">
-                        {scrapedProfile.firstName ? scrapedProfile.firstName[0] : scrapedProfile.name[0]}
-                      </div>
-                    )}
-
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
-                          {scrapedProfile.name}
-                        </h2>
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-[#0a66c2] text-[10px] font-semibold border border-blue-200/50 dark:border-blue-900">
-                          <CheckCircle2 className="h-3 w-3" />
-                          <span>Verified</span>
-                        </span>
-                      </div>
-
-                      <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
-                        {scrapedProfile.title || scrapedProfile.headline}
-                      </p>
-
-                      <div className="flex items-center gap-3 text-xs text-neutral-500 dark:text-neutral-400 pt-1 flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <Briefcase className="h-3.5 w-3.5 text-neutral-400" />
-                          <span>{scrapedProfile.company}</span>
-                        </span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-3.5 w-3.5 text-neutral-400" />
-                          <span>{scrapedProfile.location}</span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ICP Score & Action Buttons */}
-                  <div className="flex flex-col sm:flex-row md:flex-col items-start sm:items-center md:items-end gap-3 shrink-0">
-                    <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800 px-3 py-1.5 rounded-xl">
-                      <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                      <div className="text-right">
-                        <span className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                          {scrapedProfile.icpScore}% ICP Match
-                        </span>
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block font-medium">
-                          High Fit Candidate
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleExportProfileCsv}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 text-xs font-semibold shadow-2xs cursor-pointer transition-colors"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        <span>Export CSV</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={isSavingProfileToDb || profileSavedSuccess}
-                        onClick={handleSaveProfileToDb}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-60 transition-colors"
-                      >
-                        {isSavingProfileToDb ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : profileSavedSuccess ? (
-                          <Check className="h-3.5 w-3.5" />
-                        ) : (
-                          <Database className="h-3.5 w-3.5" />
-                        )}
-                        <span>
-                          {profileSavedSuccess ? "Saved to CRM Leads" : "Save Lead to CRM"}
-                        </span>
-                      </button>
-
-                      <a
-                        href={scrapedProfile.linkedinUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-colors"
-                        title="Open on LinkedIn"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Profile Detail Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                  {/* Left Column: About, Experience & Education */}
-                  <div className="lg:col-span-7 space-y-4">
-                    {/* About Section */}
-                    <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 space-y-1.5">
-                      <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
-                        <FileText className="h-3.5 w-3.5 text-neutral-500" />
-                        <span>About & Summary</span>
-                      </h4>
-                      <p className="text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
-                        {scrapedProfile.about}
-                      </p>
-                    </div>
-
-                    {/* Experience Section */}
-                    {scrapedProfile.experience && scrapedProfile.experience.length > 0 && (
-                      <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 space-y-2">
-                        <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
-                          <Briefcase className="h-3.5 w-3.5 text-neutral-500" />
-                          <span>Experience Highlights</span>
-                        </h4>
-                        <div className="space-y-1.5">
-                          {scrapedProfile.experience.map((exp, idx) => (
-                            <div key={idx} className="flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300">
-                              <span className="h-1.5 w-1.5 rounded-full bg-palm-leaf-500 shrink-0" />
-                              <span>{exp}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Education */}
-                    {scrapedProfile.education && (
-                      <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 space-y-1">
-                        <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
-                          <GraduationCap className="h-3.5 w-3.5 text-neutral-500" />
-                          <span>Education</span>
-                        </h4>
-                        <p className="text-xs text-neutral-600 dark:text-neutral-300">
-                          {scrapedProfile.education}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Right Column: Contact Credentials & Skills */}
-                  <div className="lg:col-span-5 space-y-4">
-                    {/* Contact Credentials Card */}
-                    <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 space-y-3">
-                      <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
-                        <Mail className="h-3.5 w-3.5 text-neutral-500" />
-                        <span>Direct Contact Credentials</span>
-                      </h4>
-
-                      {/* Email */}
-                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800 text-xs">
-                        <div className="truncate pr-2">
-                          <span className="text-[10px] text-neutral-400 block font-medium">Business Email</span>
-                          <span className="font-semibold text-neutral-900 dark:text-neutral-100 truncate">{scrapedProfile.email}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(scrapedProfile.email);
-                            toast.success("Email copied to clipboard!");
-                          }}
-                          className="p-1.5 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 hover:text-neutral-900 cursor-pointer"
-                          title="Copy email"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-
-                      {/* Profile URL */}
-                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800 text-xs">
-                        <div className="truncate pr-2">
-                          <span className="text-[10px] text-neutral-400 block font-medium">LinkedIn URL</span>
-                          <span className="font-medium text-neutral-600 dark:text-neutral-400 truncate text-[11px] block">{scrapedProfile.linkedinUrl}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(scrapedProfile.linkedinUrl);
-                            toast.success("Profile URL copied to clipboard!");
-                          }}
-                          className="p-1.5 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 hover:text-neutral-900 cursor-pointer"
-                          title="Copy URL"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Skills Tags */}
-                    {scrapedProfile.skills && scrapedProfile.skills.length > 0 && (
-                      <div className="p-4 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-100 dark:border-neutral-800 space-y-2">
-                        <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
-                          <Award className="h-3.5 w-3.5 text-neutral-500" />
-                          <span>Extracted Skills & Expertise</span>
-                        </h4>
-                        <div className="flex flex-wrap gap-1.5">
-                          {scrapedProfile.skills.map((skill, idx) => (
-                            <span
-                              key={idx}
-                              className="px-2 py-0.5 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200/70 dark:border-neutral-800 text-[11px] font-medium text-neutral-700 dark:text-neutral-300"
-                            >
-                              {skill}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Saved to CRM Success Notification */}
-                {profileSavedSuccess && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-3.5 rounded-xl bg-palm-leaf-50 dark:bg-palm-leaf-950/40 border border-palm-leaf-200 dark:border-palm-leaf-800 flex items-center justify-between text-xs"
-                  >
-                    <div className="flex items-center gap-2 text-palm-leaf-900 dark:text-palm-leaf-200 font-semibold">
-                      <CheckCircle2 className="h-4 w-4 text-palm-leaf-600" />
-                      <span>{scrapedProfile.name} is now saved into your Leads CRM!</span>
-                    </div>
-                    <Link
-                      href="/dashboard/leads"
-                      className="inline-flex items-center gap-1 font-semibold text-palm-leaf-700 dark:text-palm-leaf-400 hover:underline"
-                    >
-                      <span>View Leads CRM</span>
-                      <ArrowRight className="h-3 w-3" />
-                    </Link>
-                  </motion.div>
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Multi-profile results from a Search URL */}
-          {!scrapedProfile && detectedSearchLeads.length > 0 && !isScrapingProfile && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xs overflow-hidden"
-            >
-              <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800">
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-xl bg-palm-leaf-100 dark:bg-palm-leaf-950 flex items-center justify-center text-palm-leaf-700 dark:text-palm-leaf-300">
-                    <Users className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
-                      {detectedSearchLeads.length} profiles found for &quot;{detectedSearchQuery}&quot;
-                    </h4>
-                    <p className="text-[11px] text-neutral-500">Search URL detected — showing all matching candidates.</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={handleExportCsv} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer">
-                    <Download className="h-3.5 w-3.5 text-palm-leaf-600" />
-                    <span>Export CSV</span>
-                  </button>
-                  <button type="button" onClick={handleSaveToDatabase} disabled={isSavingDb} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white text-xs font-semibold cursor-pointer disabled:opacity-50">
-                    {isSavingDb ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
-                    <span>Save All to CRM</span>
-                  </button>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-neutral-50/70 dark:bg-neutral-950/40 text-[11px] font-medium text-neutral-500 uppercase tracking-wider">
-                    <tr>
-                      <th className="py-3 px-4">Contact</th>
-                      <th className="py-3 px-4">Headline & Company</th>
-                      <th className="py-3 px-4">Location</th>
-                      <th className="py-3 px-4">ICP</th>
-                      <th className="py-3 px-4">Profile</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-                    {detectedSearchLeads.map((lead) => (
-                      <tr key={lead.id} className="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40">
-                        <td className="py-3 px-4">
-                          <span className="font-semibold text-neutral-900 dark:text-neutral-100 block">{lead.name}</span>
-                          <span className="text-[11px] text-neutral-400 font-mono">{lead.email}</span>
-                        </td>
-                        <td className="py-3 px-4 text-neutral-700 dark:text-neutral-300">
-                          <span className="font-medium block">{lead.title}</span>
-                          <span className="text-[11px] text-neutral-400">{lead.company}</span>
-                        </td>
-                        <td className="py-3 px-4 text-neutral-500">{lead.location}</td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-palm-leaf-50 text-palm-leaf-800 dark:bg-palm-leaf-950 dark:text-palm-leaf-300">{lead.icpScore}%</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <a href={lead.linkedinUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[#0a66c2] hover:underline">
-                            <span>Open</span>
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </motion.div>
-          )}
-        </motion.div>
-      )}
-
-      {/* ==================== TAB 1: LinkedIn Search Extractor ==================== */}
+      {/* ==================== TAB 1: Unified LinkedIn Search URL Extractor ==================== */}
       {activeSource === "LinkedIn Search" && (
         <motion.div
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
-          {/* LinkedIn Search Configuration Card */}
+          {/* LinkedIn Search URL Configuration Card */}
           <div className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-100 dark:border-neutral-800 pb-4">
               <div className="flex items-center gap-2.5">
@@ -1150,150 +587,59 @@ driver.quit()`;
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                    LinkedIn People Search Extractor
+                    LinkedIn People Search URL Extractor
                   </h3>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Selenium WebDriver engine configured to extract profiles, titles, and locations.
+                    Paste any LinkedIn people search URL to extract leads using your connected LinkedIn account.
                   </p>
                 </div>
               </div>
 
-              {/* Engine Toggle */}
-              <div className="flex items-center gap-1.5 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-xl text-xs">
-                <button
-                  type="button"
-                  onClick={() => setEngineMode("live")}
-                  className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer ${
-                    engineMode === "live"
-                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-2xs"
-                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
-                  }`}
-                >
-                  Selenium Live Chrome
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEngineMode("fast")}
-                  className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer ${
-                    engineMode === "fast"
-                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-2xs"
-                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
-                  }`}
-                >
-                  Fast AI Mode
-                </button>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800 text-[11px] font-semibold">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span>
+                    {connectedAccountName
+                      ? `Connected (${connectedAccountName})`
+                      : "Playwright Session Active"}
+                  </span>
+                </span>
               </div>
             </div>
 
-            {/* Preset quick pills */}
+            {/* Quick Search URL Presets */}
             <div className="flex items-center gap-2 flex-wrap text-xs">
-              <span className="text-neutral-400 text-[11px] font-medium">Quick Presets:</span>
-              {PRESETS.map((p, idx) => (
+              <span className="text-neutral-400 text-[11px] font-medium">Quick Search URLs:</span>
+              {SEARCH_URL_PRESETS.map((p, idx) => (
                 <button
                   key={idx}
                   type="button"
-                  onClick={() => {
-                    setKeywords(p.kw);
-                    setLocation(p.loc);
-                  }}
+                  onClick={() => setSearchUrlInput(p.url)}
                   className="px-2.5 py-1 rounded-lg bg-neutral-50 hover:bg-neutral-100 dark:bg-neutral-800/60 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200/60 dark:border-neutral-800 text-[11px] transition-colors cursor-pointer"
                 >
-                  {p.kw} • {p.loc}
+                  {p.label}
                 </button>
               ))}
             </div>
 
-            {/* Search Method Toggle */}
-            <div className="flex items-center gap-1.5 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-xl text-xs w-fit">
-              {([
-                { id: "keywords", label: "Keywords" },
-                { id: "search_url", label: "LinkedIn Search URL" },
-                { id: "raw_html", label: "Paste Page HTML (exact data)" },
-              ] as const).map((m) => (
-                <button
-                  key={m.id}
-                  id={`search-method-${m.id}`}
-                  type="button"
-                  onClick={() => setSearchMethod(m.id)}
-                  className={`px-3 py-1 rounded-lg font-medium transition-all cursor-pointer ${
-                    searchMethod === m.id
-                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-2xs"
-                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-
-            {searchMethod === "search_url" && (
-              <div className="flex flex-col sm:flex-row gap-2.5">
+            {/* Unified Search URL + Max Leads + Extract Leads Button */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+              <div className="md:col-span-8 space-y-1.5">
+                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5 text-neutral-400" />
+                  <span>LinkedIn People Search URL</span>
+                </label>
                 <input
                   id="search-url-input"
                   type="text"
                   value={searchUrlInput}
                   onChange={(e) => setSearchUrlInput(e.target.value)}
-                  placeholder="https://www.linkedin.com/search/results/people/?keywords=graphic%20designer"
-                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-xs focus:outline-none focus:border-palm-leaf-500 font-medium"
-                />
-                <button type="button" disabled={isExtracting} onClick={handleRunLinkedInExtractor} className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-5 py-2.5 text-xs font-semibold cursor-pointer disabled:opacity-50">
-                  {isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-3.5 w-3.5 fill-current" />}
-                  <span>{isExtracting ? "Extracting..." : "Extract Profiles"}</span>
-                </button>
-              </div>
-            )}
-
-            {searchMethod === "raw_html" && (
-              <div className="space-y-2">
-                <p className="text-[11px] text-neutral-500">
-                  Open the search page in your logged-in browser → right-click → <b>View Page Source</b> (or Ctrl+U) → copy everything and paste here. This extracts the real names, headlines & locations shown on that page.
-                </p>
-                <textarea
-                  id="raw-html-input"
-                  value={rawHtmlInput}
-                  onChange={(e) => setRawHtmlInput(e.target.value)}
-                  rows={6}
-                  placeholder="<!DOCTYPE html> ... paste LinkedIn search page source here"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-[11px] font-mono focus:outline-none focus:border-palm-leaf-500"
-                />
-                <button type="button" disabled={isExtracting} onClick={handleRunLinkedInExtractor} className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-5 py-2.5 text-xs font-semibold cursor-pointer disabled:opacity-50">
-                  {isExtracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Code2 className="h-3.5 w-3.5" />}
-                  <span>{isExtracting ? "Parsing..." : "Parse HTML"}</span>
-                </button>
-              </div>
-            )}
-
-            {/* Search Input Form */}
-            <div className={`grid grid-cols-1 md:grid-cols-12 gap-3.5 ${searchMethod !== "keywords" ? "hidden" : ""}`}>
-              <div className="md:col-span-5 space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
-                  <Briefcase className="h-3.5 w-3.5 text-neutral-400" />
-                  <span>Keywords / Job Title</span>
-                </label>
-                <input
-                  type="text"
-                  value={keywords}
-                  onChange={(e) => setKeywords(e.target.value)}
-                  placeholder="e.g. Marketing Data Analyst"
+                  placeholder="https://www.linkedin.com/search/results/people/?keywords=ai%20engineer&origin=FACETED_SEARCH&geoUrn=%5B%22103644278%22%5D"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-xs focus:outline-none focus:border-palm-leaf-500 font-medium"
                 />
               </div>
 
               <div className="md:col-span-4 space-y-1.5">
-                <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 flex items-center gap-1.5">
-                  <MapPin className="h-3.5 w-3.5 text-neutral-400" />
-                  <span>Location / City</span>
-                </label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g. Berlin"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 text-xs focus:outline-none focus:border-palm-leaf-500 font-medium"
-                />
-              </div>
-
-              <div className="md:col-span-3 space-y-1.5">
                 <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                   Max Leads
                 </label>
@@ -1313,20 +659,20 @@ driver.quit()`;
                     type="button"
                     disabled={isExtracting}
                     onClick={handleRunLinkedInExtractor}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-5 py-2.5 text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-50 shrink-0 transition-colors"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-5 py-2.5 text-xs font-semibold cursor-pointer disabled:opacity-50 shrink-0 shadow-xs transition-colors"
                   >
                     {isExtracting ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Play className="h-3.5 w-3.5 fill-current" />
                     )}
-                    <span>{isExtracting ? "Extracting..." : "Run"}</span>
+                    <span>{isExtracting ? "Extracting..." : "Extract Leads"}</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Python Selenium Snippet Disclosure */}
+            {/* Playwright Snippet Disclosure */}
             <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800">
               <button
                 type="button"
@@ -1335,7 +681,9 @@ driver.quit()`;
               >
                 <Code2 className="h-3.5 w-3.5 text-palm-leaf-600" />
                 <span className="font-medium">
-                  {showCodeSnippet ? "Hide Selenium Python Script" : "View Selenium Python Automation Script"}
+                  {showCodeSnippet
+                    ? "Hide Playwright & Automation Script"
+                    : "View Playwright (li_at + JSESSIONID) Automation Script"}
                 </span>
                 {showCodeSnippet ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
               </button>
@@ -1349,7 +697,7 @@ driver.quit()`;
                     className="mt-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-950 text-neutral-200 p-4 font-mono text-[11px] overflow-hidden relative"
                   >
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-neutral-800 text-[10px] text-neutral-400">
-                      <span>scripts/linkedin_extractor.py</span>
+                      <span>src/lib/playwright-linkedin-extractor.ts</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -1367,7 +715,7 @@ driver.quit()`;
                       {pythonSnippet}
                     </pre>
                     <div className="mt-3 pt-2 border-t border-neutral-800 text-[10px] text-neutral-400 flex items-center justify-between">
-                      <span>CLI execution: python scripts/linkedin_extractor.py --keywords &quot;{keywords}&quot; --location &quot;{location}&quot;</span>
+                      <span>Engine: Playwright Chromium Context (li_at + JSESSIONID cookies)</span>
                     </div>
                   </motion.div>
                 )}
@@ -1387,7 +735,7 @@ driver.quit()`;
               </div>
               <div className="space-y-1 flex-1">
                 <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
-                  Extracting Leads from LinkedIn
+                  Extracting Leads from LinkedIn Search URL
                 </h4>
                 <p className="text-xs text-palm-leaf-800 dark:text-palm-leaf-300 font-medium">
                   {extractionStep}
@@ -1410,7 +758,7 @@ driver.quit()`;
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
-                      {extractedLeads.length} Leads Extracted for &quot;{keywords}&quot; in {location}
+                      {extractedLeads.length} Leads Extracted for &quot;{extractedQueryLabel}&quot;
                     </h4>
                     <p className="text-[11px] text-neutral-500">
                       Ready to export to CSV or import directly into SendPilot database.

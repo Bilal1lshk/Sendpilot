@@ -5,13 +5,14 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   X,
   CheckCircle2,
-  ExternalLink,
   Loader2,
   ArrowRight,
-  Copy,
-  Check,
-  ShieldCheck,
-  Globe,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Cookie,
+  KeyRound,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { toast } from "sonner";
@@ -42,341 +43,319 @@ export function ConnectLinkedInModal({
   onConnected,
   defaultUserName = "LinkedIn User",
 }: ConnectLinkedInModalProps) {
-  const [authCode, setAuthCode] = useState("");
-  const [profileName, setProfileName] = useState(defaultUserName);
-  const [accountType, setAccountType] = useState<"Sales Navigator" | "LinkedIn Premium" | "LinkedIn Free">("Sales Navigator");
-  const [dailyCap, setDailyCap] = useState(25);
+  const [activeTab, setActiveTab] = useState<"auto" | "manual">("auto");
+
+  // Auto method fields
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Manual method fields
+  const [liAt, setLiAt] = useState("");
+  const [jsessionId, setJsessionId] = useState("");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [progressMsg, setProgressMsg] = useState("");
   const [step, setStep] = useState<"form" | "success">("form");
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccountData | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      fetch("/api/auth/linkedin/authorize?mode=manual&json=true")
-        .then((r) => r.json())
-        .then((data) => {
-          if (data?.url) setAuthUrl(data.url);
-        })
-        .catch((err) => {
-          console.warn("Failed to fetch pre-signed manual authorization URL:", err);
-        });
+      setIsSubmitting(false);
+      setProgressMsg("");
+      setStep("form");
+      setPassword("");
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
-  const handleOpenAuthUrl = () => {
-    const targetUrl = authUrl || "/api/auth/linkedin/authorize?mode=manual";
-    window.open(targetUrl, "_blank");
-  };
-
-  const handleCopyLink = async () => {
-    const targetUrl = authUrl || `${window.location.origin}/api/auth/linkedin/authorize?mode=manual`;
-    try {
-      await navigator.clipboard.writeText(targetUrl);
-      setCopied(true);
-      toast.success("Authorization link copied to clipboard! Open in an Incognito window or another browser.");
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      toast.error("Failed to copy link to clipboard");
-    }
-  };
-
-  const handleConnect = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!authCode.trim()) {
-      toast.error("Please paste the authorization code or redirect URL");
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
-      // Extract code if user pasted full redirect URL
-      let cleanCode = authCode.trim();
-      let extractedRedirectUri: string | undefined = undefined;
+      let payload: Record<string, unknown> = {};
 
-      if (cleanCode.includes("http://") || cleanCode.includes("https://")) {
-        try {
-          const parsed = new URL(cleanCode);
-          const codeParam = parsed.searchParams.get("code");
-          if (codeParam) {
-            cleanCode = codeParam;
-            extractedRedirectUri = `${parsed.origin}${parsed.pathname}`;
-          }
-        } catch {
-          const match = cleanCode.match(/[?&]code=([^&#]+)/);
-          if (match) cleanCode = decodeURIComponent(match[1]);
+      if (activeTab === "auto") {
+        if (!email.trim() || !password) {
+          toast.error("Please enter both your LinkedIn email and password.");
+          setIsSubmitting(false);
+          return;
         }
-      } else if (cleanCode.includes("code=")) {
-        const match = cleanCode.match(/(?:^|[?&])code=([^&#]+)/);
-        if (match) cleanCode = decodeURIComponent(match[1]);
+        setProgressMsg("Connecting to LinkedIn in background...");
+        payload = {
+          method: "playwright",
+          email: email.trim(),
+          password,
+        };
+      } else {
+        if (!liAt.trim()) {
+          toast.error("Please enter your li_at session cookie.");
+          setIsSubmitting(false);
+          return;
+        }
+        setProgressMsg("Verifying session cookie with LinkedIn...");
+        payload = {
+          method: "manual",
+          li_at: liAt.trim(),
+          jsessionId: jsessionId.trim(),
+        };
       }
 
-      const res = await fetch("/api/linkedin/connect", {
+      const res = await fetch("/api/linkedin/extract-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: cleanCode,
-          redirectUri: extractedRedirectUri,
-          accountType,
-          dailyCap,
-          profileName,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
-      if (!res.ok || !data.success) {
-        toast.error(data.error || "Failed to exchange authorization code with LinkedIn");
-        setIsSubmitting(false);
-        return;
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Failed to authenticate LinkedIn account.");
       }
 
-      const safeAccount = data.account;
-      const mappedAccount: ConnectedAccountData = {
-        id: safeAccount.id,
-        name: safeAccount.linkedinName || profileName || "LinkedIn Account",
-        headline: "LinkedIn Profile",
-        type: accountType,
-        photo: safeAccount.linkedinAvatar || "",
+      const memberName = data.profile?.name || data.profile?.firstName || defaultUserName;
+      const mapped: ConnectedAccountData = {
+        id: data.connectionId || `li_${Date.now()}`,
+        name: memberName,
+        headline: data.profile?.headline || "LinkedIn Profile",
+        type: "Sales Navigator",
+        photo: "",
         status: "Active",
         connectedDate: new Date().toLocaleDateString(),
         usedToday: 0,
-        dailyCap,
+        dailyCap: 25,
         warmupStage: 1,
       };
 
-      setConnectedAccount(mappedAccount);
+      setConnectedAccount(mapped);
       setStep("success");
-      onConnected(mappedAccount);
-
-      if (data.alreadyConnected) {
-        toast.info("This LinkedIn account is already connected to your workspace. Credentials refreshed!");
-      } else {
-        toast.success("New LinkedIn account successfully added to workspace!");
-      }
-    } catch (err: any) {
-      console.error("LinkedIn connect error:", err);
-      toast.error("Network error while connecting LinkedIn account");
+      onConnected(mapped);
+      setEmail("");
+      setPassword("");
+      setLiAt("");
+      setJsessionId("");
+      toast.success(`${memberName} connected successfully!`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Connection failed.";
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
+      setProgressMsg("");
     }
   };
 
-  const handleFinish = () => {
-    setStep("form");
-    setAuthCode("");
-    setConnectedAccount(null);
-    onClose();
-  };
+  if (!isOpen) return null;
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="fixed inset-0 bg-black/80 backdrop-blur-xs"
-        />
-
-        {/* Modal Dialog */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 8 }}
-          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="relative w-full max-w-xl rounded-2xl border border-neutral-800 bg-[#121415] text-neutral-100 shadow-2xl overflow-hidden z-10"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-neutral-800/80 px-6 py-4">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-[#0a66c2]/10 border border-[#0a66c2]/20 flex items-center justify-center text-[#0a66c2]">
-                <LinkedInIcon className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-white">
-                  Add LinkedIn Account
-                </h3>
-                <p className="text-xs text-neutral-400">
-                  Connect multiple profiles to your workspace via redirect URL
-                </p>
-              </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        className="w-full max-w-md rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-neutral-100 dark:border-neutral-800/80">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+              <LinkedInIcon className="h-5 w-5" />
             </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-1 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors cursor-pointer"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div>
+              <h3 className="text-base font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">
+                Connect LinkedIn
+              </h3>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                Link an active profile for outreach campaigns
+              </p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/60 transition-colors cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
-          {/* Modal Body */}
-          <div className="p-6 space-y-5">
-            {step === "form" ? (
-              <form onSubmit={handleConnect} className="space-y-5">
-                {/* Notice banner */}
-                <div className="rounded-xl border border-blue-900/40 bg-blue-950/20 p-3.5 flex items-start gap-3">
-                  <Globe className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-neutral-300 leading-relaxed">
-                    This method uses LinkedIn&apos;s Developer Redirect URL. It prevents LinkedIn from automatically re-connecting whichever profile is active in your current browser, allowing you to add separate accounts cleanly.
-                  </p>
-                </div>
-
-                {/* Step 1: Authorization Link */}
-                <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-white uppercase tracking-wider">
-                      1. Open Authorization Link
-                    </span>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2 py-0.5 rounded">
-                      scope: openid profile email
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-neutral-300 leading-relaxed">
-                    Open this link in an <strong className="text-white">Incognito / Private window</strong> or another browser profile where you sign into your other LinkedIn account:
-                  </p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleCopyLink}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700/60 text-white py-2.5 px-3 text-xs font-medium transition-all cursor-pointer"
-                    >
-                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 text-neutral-300" />}
-                      <span>{copied ? "Copied to Clipboard!" : "Copy Link for Incognito"}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleOpenAuthUrl}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0a66c2] hover:bg-[#004182] text-white py-2.5 px-3 text-xs font-semibold shadow-xs transition-all cursor-pointer"
-                    >
-                      <LinkedInIcon className="h-4 w-4" />
-                      <span>Open in New Window</span>
-                      <ExternalLink className="h-3.5 w-3.5 ml-0.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Step 2: Paste Code */}
-                <div className="space-y-3">
-                  <label className="text-xs font-semibold text-white uppercase tracking-wider block">
-                    2. Paste Redirect URL or Code
-                  </label>
-
-                  <textarea
-                    rows={2}
-                    value={authCode}
-                    onChange={(e) => setAuthCode(e.target.value)}
-                    placeholder="Paste the code or full redirect URL here (e.g. https://www.linkedin.com/developers/tools/oauth/redirect?code=AQRO... or AQRO...)"
-                    className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5 text-xs text-white placeholder-neutral-500 font-mono focus:outline-hidden focus:border-neutral-600"
-                    required
-                  />
-                  <p className="text-[11px] text-neutral-400">
-                    After authorizing, LinkedIn redirects to <code className="text-neutral-300">https://www.linkedin.com/developers/tools/oauth/redirect?code=...</code>. Copy the address bar URL or the <code className="text-emerald-400">code</code> parameter and paste it above.
-                  </p>
-                </div>
-
-                {/* Account Details & Limits */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-300 mb-1">
-                      Account Tier
-                    </label>
-                    <select
-                      value={accountType}
-                      onChange={(e) => setAccountType(e.target.value as any)}
-                      className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white"
-                    >
-                      <option value="Sales Navigator">Sales Navigator</option>
-                      <option value="LinkedIn Premium">LinkedIn Premium</option>
-                      <option value="LinkedIn Free">LinkedIn Free</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-300 mb-1">
-                      Daily Safety Cap
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={5}
-                        max={50}
-                        value={dailyCap}
-                        onChange={(e) => setDailyCap(Number(e.target.value))}
-                        className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-white"
-                      />
-                      <span className="text-xs text-neutral-400 shrink-0">req/day</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Step 3: Connect Button */}
-                <div className="pt-2">
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || !authCode.trim()}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-3 text-xs font-semibold shadow-xs transition-all cursor-pointer"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Verifying &amp; Connecting Account...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Finish &amp; Connect LinkedIn Account</span>
-                        <ArrowRight className="h-4 w-4" />
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="py-6 text-center space-y-4">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-950/60 text-emerald-400 border border-emerald-800/40">
-                  <CheckCircle2 className="h-8 w-8 stroke-[2.5]" />
-                </div>
-
-                <div className="space-y-1">
-                  <h4 className="text-base font-semibold text-white">
-                    LinkedIn Account Connected!
-                  </h4>
-                  <p className="text-xs text-neutral-400 max-w-sm mx-auto">
-                    <span className="font-semibold text-neutral-200">{connectedAccount?.name || profileName}</span> is now active in your workspace with {dailyCap} daily requests limit.
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-neutral-300 max-w-md mx-auto flex items-center justify-between">
-                  <span className="text-neutral-400">Status</span>
-                  <span className="inline-flex items-center gap-1.5 text-emerald-400 font-semibold">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Active
-                  </span>
-                </div>
-
+        {/* Body */}
+        <div className="p-5">
+          {step === "form" ? (
+            <div className="space-y-4">
+              {/* Segmented Control / Tabs */}
+              <div className="grid grid-cols-2 p-1 rounded-xl bg-neutral-100 dark:bg-neutral-800/60 text-xs font-medium">
                 <button
                   type="button"
-                  onClick={handleFinish}
-                  className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                  onClick={() => setActiveTab("auto")}
+                  className={`py-2 px-3 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 ${
+                    activeTab === "auto"
+                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-semibold shadow-xs"
+                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  }`}
                 >
-                  View in Accounts Dashboard
+                  <KeyRound className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Automatic Login</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("manual")}
+                  className={`py-2 px-3 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 ${
+                    activeTab === "manual"
+                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-semibold shadow-xs"
+                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  }`}
+                >
+                  <Cookie className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Paste Cookies</span>
                 </button>
               </div>
-            )}
-          </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
+
+              <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+                {activeTab === "auto" ? (
+                  <>
+                    {/* Email Input */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        LinkedIn Email or Phone
+                      </label>
+                      <div className="relative">
+                        <Mail className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="email"
+                          required
+                          placeholder="name@company.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          disabled={isSubmitting}
+                          className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/60 pl-10 pr-3.5 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-950 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Password Input */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        LinkedIn Password
+                      </label>
+                      <div className="relative">
+                        <Lock className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type={showPassword ? "text" : "password"}
+                          required
+                          placeholder="••••••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          disabled={isSubmitting}
+                          className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/60 pl-10 pr-10 py-2.5 text-xs text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-950 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors cursor-pointer"
+                        >
+                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* li_at cookie */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                          li_at Cookie
+                        </label>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Required</span>
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        placeholder="AQEDAQ..."
+                        value={liAt}
+                        onChange={(e) => setLiAt(e.target.value)}
+                        disabled={isSubmitting}
+                        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/60 px-3.5 py-2.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-950 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                      />
+                    </div>
+
+                    {/* JSESSIONID cookie */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                          JSESSIONID Cookie
+                        </label>
+                        <span className="text-[10px] text-neutral-400">Optional</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder='ajax:123456789... (optional)'
+                        value={jsessionId}
+                        onChange={(e) => setJsessionId(e.target.value)}
+                        disabled={isSubmitting}
+                        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/60 px-3.5 py-2.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-950 focus:ring-2 focus:ring-emerald-500/20 transition-all disabled:opacity-50"
+                      />
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950/40 border border-neutral-200/70 dark:border-neutral-800/60 text-[11px] text-neutral-500 dark:text-neutral-400 leading-relaxed flex items-start gap-2">
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">Tip:</span>
+                      <span>
+                        On LinkedIn, press <kbd className="px-1.5 py-0.5 rounded bg-neutral-200/80 dark:bg-neutral-800 font-mono text-[10px] text-neutral-800 dark:text-neutral-200">F12</kbd> → <strong>Application</strong> → <strong>Cookies</strong> → copy the <code className="text-emerald-600 dark:text-emerald-400 font-mono font-medium">li_at</code> value.
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {/* Submit button */}
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full mt-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-medium text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>{progressMsg || "Connecting..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Connect LinkedIn Account</span>
+                      <ArrowRight className="w-3.5 h-3.5 opacity-90" />
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          ) : (
+            /* Success Screen */
+            <div className="py-6 text-center space-y-4">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
+                <CheckCircle2 className="h-8 w-8 stroke-[2.5]" />
+              </div>
+
+              <div className="space-y-1">
+                <h4 className="text-base font-bold text-neutral-900 dark:text-neutral-100">
+                  LinkedIn Connected!
+                </h4>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="font-semibold text-neutral-800 dark:text-neutral-200">
+                    {connectedAccount?.name}
+                  </span>{" "}
+                  is now connected and verified for outreach.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
   );
 }

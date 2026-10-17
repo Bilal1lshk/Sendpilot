@@ -29,15 +29,27 @@ export async function POST(req: Request) {
     const { code } = await issueOtpCode(email, purpose, 10);
     const mailResult = await sendOtpEmail(email, code);
 
+    if (!mailResult.sent) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: mailResult.error || "Failed to deliver verification code. Please check your email or SMTP configuration.",
+        },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       message: `Verification code sent to ${email}.`,
-      deliveryMode: mailResult.deliveryMode,
-      previewCode: mailResult.previewCode,
+      deliveryMode: "smtp",
     });
-  } catch {
+  } catch (error: any) {
     return NextResponse.json(
-      { success: false, error: "Failed to send verification code. Please try again." },
+      {
+        success: false,
+        error: error?.message || "Failed to send verification code. Please try again.",
+      },
       { status: 500 }
     );
   }

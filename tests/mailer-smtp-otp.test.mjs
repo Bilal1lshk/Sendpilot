@@ -31,7 +31,8 @@ test("sendOtpEmail supports both (to, code) and object signatures", async () => 
   // 1. Direct (to, code) signature
   const res1 = await sendOtpEmail(testEmail, "123456");
   assert.ok(res1);
-  assert.ok(res1.deliveryMode === "smtp" || res1.deliveryMode === "preview");
+  assert.equal(res1.deliveryMode, "smtp");
+  assert.equal(res1.previewCode, undefined);
 
   // 2. Object signature
   const res2 = await sendOtpEmail({
@@ -40,7 +41,8 @@ test("sendOtpEmail supports both (to, code) and object signatures", async () => 
     purpose: "login_otp",
   });
   assert.ok(res2);
-  assert.ok(res2.deliveryMode === "smtp" || res2.deliveryMode === "preview");
+  assert.equal(res2.deliveryMode, "smtp");
+  assert.equal(res2.previewCode, undefined);
 });
 
 test("issueOtpCode and verifyOtpCode round-trip correctly", async () => {
