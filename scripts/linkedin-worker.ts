@@ -1,4 +1,5 @@
 import http from "node:http";
+import fs from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { extractLinkedInSession, type ExtractedSessionResult } from "@/lib/linkedin-session-extractor";
 
@@ -16,6 +17,8 @@ const useCloudflareOnly = args.includes("--cf") || args.includes("--cloudflare")
 let activeTunnelUrl: string | null = null;
 let tunnelProviderName = "Unknown";
 let tunnelProcess: ChildProcess | null = null;
+let isShuttingDown = false;
+let reconnectTimer: NodeJS.Timeout | null = null;
 
 // In-memory cache for successfully extracted sessions (5-minute TTL)
 const sessionCache = new Map<string, { result: ExtractedSessionResult; timestamp: number }>();
@@ -23,6 +26,26 @@ const sessionCache = new Map<string, { result: ExtractedSessionResult; timestamp
 function log(level: "INFO" | "WARN" | "ERROR", message: string) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [${level}] ${message}`);
+}
+
+function scheduleTunnelReconnect(port: number) {
+  if (isShuttingDown || disableTunnel) return;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(async () => {
+    if (isShuttingDown) return;
+    log("INFO", "Re-establishing public tunnel connection...");
+    await startTunnel(port);
+  }, 3000);
+}
+
+function persistTunnelUrl(url: string | null) {
+  try {
+    if (url) {
+      fs.writeFileSync(".tunnel-url", url, "utf8");
+    } else {
+      if (fs.existsSync(".tunnel-url")) fs.unlinkSync(".tunnel-url");
+    }
+  } catch {}
 }
 
 function spawnTool(commandArgs: string[]): ChildProcess {
@@ -54,6 +77,7 @@ function startLocaltunnel(port: number): Promise<string> {
         resolved = true;
         activeTunnelUrl = match[0];
         tunnelProviderName = "Localtunnel";
+        persistTunnelUrl(activeTunnelUrl);
         printBanner(port, activeTunnelUrl, tunnelProviderName);
         resolve(match[0]);
       }
@@ -73,6 +97,8 @@ function startLocaltunnel(port: number): Promise<string> {
     child.on("exit", (code) => {
       log("WARN", `Localtunnel process exited with code ${code}`);
       activeTunnelUrl = null;
+      persistTunnelUrl(null);
+      scheduleTunnelReconnect(port);
     });
 
     setTimeout(() => {
@@ -103,6 +129,7 @@ function startCloudflareTunnel(port: number): Promise<string> {
         resolved = true;
         activeTunnelUrl = match[0];
         tunnelProviderName = "Cloudflare Quick Tunnel";
+        persistTunnelUrl(activeTunnelUrl);
         printBanner(port, activeTunnelUrl, tunnelProviderName);
         resolve(match[0]);
       } else if (text.includes("failed to request quick Tunnel") && !resolved) {
@@ -125,11 +152,14 @@ function startCloudflareTunnel(port: number): Promise<string> {
     });
 
     child.on("exit", (code) => {
+      log("WARN", `Cloudflare tunnel process exited with code ${code}`);
       if (!resolved) {
         resolved = true;
         resolve("");
       }
       activeTunnelUrl = null;
+      persistTunnelUrl(null);
+      scheduleTunnelReconnect(port);
     });
 
     // Timeout safety fallback: if Cloudflare hangs on regional ISP firewall
@@ -159,8 +189,9 @@ function startServeoTunnel(port: number): Promise<string> {
       "ssh",
       [
         "-o", "StrictHostKeyChecking=no",
-        "-o", "ServerAliveInterval=15",
-        "-o", "ServerAliveCountMax=4",
+        "-o", "TCPKeepAlive=yes",
+        "-o", "ServerAliveInterval=10",
+        "-o", "ServerAliveCountMax=3",
         "-o", "ExitOnForwardFailure=yes",
         "-R", remoteForward,
         "serveo.net",
@@ -178,6 +209,7 @@ function startServeoTunnel(port: number): Promise<string> {
         resolved = true;
         activeTunnelUrl = match[0];
         tunnelProviderName = "Serveo (SSH Tunnel)";
+        persistTunnelUrl(activeTunnelUrl);
         printBanner(port, activeTunnelUrl, tunnelProviderName);
         resolve(match[0]);
       }
@@ -197,6 +229,8 @@ function startServeoTunnel(port: number): Promise<string> {
     child.on("exit", (code) => {
       log("WARN", `Serveo tunnel process exited with code ${code}`);
       activeTunnelUrl = null;
+      persistTunnelUrl(null);
+      scheduleTunnelReconnect(port);
     });
 
     setTimeout(() => {
@@ -420,6 +454,9 @@ server.listen(PORT, HOST, async () => {
 
 // Clean termination handlers
 function handleShutdown(signal: string) {
+  isShuttingDown = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  persistTunnelUrl(null);
   log("INFO", `Received ${signal}. Shutting down worker...`);
   if (tunnelProcess) {
     try {
