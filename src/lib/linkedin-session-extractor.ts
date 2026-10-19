@@ -1015,15 +1015,80 @@ export async function extractLinkedInSession({
     let captchaChecks = 0;
 
     while (Date.now() - overallStart < maxBudgetMs) {
-      // 1. Check if li_at session cookie has been granted
-      const cookies = await context.cookies();
-      const liAtCookie = cookies.find((c) => c.name === "li_at" && isValidLiAtValue(c.value));
-      const jsessionIdCookie = cookies.find((c) => c.name === "JSESSIONID");
+      // 1. Check if li_at session cookie has been granted across all LinkedIn domains
+      const cookies = await context.cookies().catch(() => []);
+      const liAtCookie = cookies.find(
+        (c) => (c.name.toLowerCase() === "li_at" || c.name === "li_at") && isValidLiAtValue(c.value)
+      );
+      const jsessionIdCookie = cookies.find(
+        (c) => c.name.toLowerCase() === "jsessionid" || c.name === "JSESSIONID"
+      );
 
       if (liAtCookie && isValidLiAtValue(liAtCookie.value)) {
-        foundLiAt = liAtCookie.value;
+        foundLiAt = liAtCookie.value.trim().replace(/^["']|["']$/g, "");
         foundJsessionId = (jsessionIdCookie?.value || "").replace(/^"+|"+$/g, "");
+        onProgress?.("LinkedIn session cookie (li_at) captured successfully!");
         break;
+      }
+
+      // 1b. Check if the browser has already navigated to an authenticated LinkedIn page
+      const currentUrl = page.url();
+      const isAuthenticatedUrl =
+        currentUrl.includes("/feed") ||
+        currentUrl.includes("/in/") ||
+        currentUrl.includes("/mynetwork") ||
+        currentUrl.includes("/messaging") ||
+        currentUrl.includes("/notifications") ||
+        (!currentUrl.includes("/login") &&
+          !currentUrl.includes("/uas/") &&
+          !currentUrl.includes("/checkpoint/") &&
+          currentUrl.includes("linkedin.com"));
+
+      if (isAuthenticatedUrl && !foundLiAt) {
+        onProgress?.("Authenticated destination reached, extracting session cookies...");
+        for (let p = 0; p < 6; p++) {
+          await page.waitForTimeout(400);
+          const freshCookies = await context.cookies().catch(() => []);
+          const match = freshCookies.find(
+            (c) => (c.name.toLowerCase() === "li_at" || c.name === "li_at") && isValidLiAtValue(c.value)
+          );
+          if (match) {
+            foundLiAt = match.value.trim().replace(/^["']|["']$/g, "");
+            const js = freshCookies.find(
+              (c) => c.name.toLowerCase() === "jsessionid" || c.name === "JSESSIONID"
+            );
+            foundJsessionId = (js?.value || "").replace(/^"+|"+$/g, "");
+            break;
+          }
+        }
+        if (foundLiAt) {
+          onProgress?.("LinkedIn session cookie captured on authenticated feed!");
+          break;
+        }
+      }
+
+      // 1c. Auto-dismiss post-login prompts ("Remember me", "Save device", "Not now", "Skip", "Dismiss")
+      const interstitialBtn = page
+        .locator(
+          'button:has-text("Remember"):visible, button:has-text("Yes"):visible, button:has-text("Save"):visible, button:has-text("Not now"):visible, button:has-text("Skip"):visible, button:has-text("Dismiss"):visible, button:has-text("Continue"):visible, a:has-text("Skip"):visible, a:has-text("Not now"):visible'
+        )
+        .first();
+      if (await interstitialBtn.isVisible().catch(() => false)) {
+        onProgress?.("Passing post-login interstitial prompt...");
+        await interstitialBtn.click().catch(() => {});
+        await page.waitForTimeout(500);
+        const postDismissCookies = await context.cookies().catch(() => []);
+        const match = postDismissCookies.find(
+          (c) => (c.name.toLowerCase() === "li_at" || c.name === "li_at") && isValidLiAtValue(c.value)
+        );
+        if (match) {
+          foundLiAt = match.value.trim().replace(/^["']|["']$/g, "");
+          const js = postDismissCookies.find(
+            (c) => c.name.toLowerCase() === "jsessionid" || c.name === "JSESSIONID"
+          );
+          foundJsessionId = (js?.value || "").replace(/^"+|"+$/g, "");
+          break;
+        }
       }
 
       // 2. Check for invalid email/password
@@ -1206,13 +1271,15 @@ export async function extractLinkedInSession({
             Date.now() - overallStart < maxBudgetMs - 1500
           ) {
             await page.waitForTimeout(750);
-            const pollCookies = await context.cookies();
+            const pollCookies = await context.cookies().catch(() => []);
             const pollLiAt = pollCookies.find(
-              (c) => c.name === "li_at" && isValidLiAtValue(c.value)
+              (c) => (c.name.toLowerCase() === "li_at" || c.name === "li_at") && isValidLiAtValue(c.value)
             );
-            const pollJsession = pollCookies.find((c) => c.name === "JSESSIONID");
+            const pollJsession = pollCookies.find(
+              (c) => c.name.toLowerCase() === "jsessionid" || c.name === "JSESSIONID"
+            );
             if (pollLiAt && isValidLiAtValue(pollLiAt.value)) {
-              foundLiAt = pollLiAt.value;
+              foundLiAt = pollLiAt.value.trim().replace(/^["']|["']$/g, "");
               foundJsessionId = (pollJsession?.value || "").replace(/^"+|"+$/g, "");
               break;
             }
@@ -1267,10 +1334,9 @@ export async function extractLinkedInSession({
           };
         }
       } else {
-        nonCheckpointChecks++;
-        if (nonCheckpointChecks >= 3) {
-          break;
-        }
+        // Non-checkpoint state: credentials submitted, waiting for session resolution
+        const elapsedSec = Math.round((Date.now() - overallStart) / 1000);
+        onProgress?.(`Awaiting session cookies... (${elapsedSec}s, ${page.url().slice(0, 45)})`);
       }
 
       await page.waitForTimeout(800);
