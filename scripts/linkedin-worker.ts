@@ -23,9 +23,6 @@ let reconnectTimer: NodeJS.Timeout | null = null;
 // In-memory cache for successfully extracted sessions (5-minute TTL)
 const sessionCache = new Map<string, { result: ExtractedSessionResult; timestamp: number }>();
 
-// In-memory cache for successfully extracted sessions (5-minute TTL)
-const sessionCache = new Map<string, { result: ExtractedSessionResult; timestamp: number }>();
-
 function log(level: "INFO" | "WARN" | "ERROR", message: string) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [${level}] ${message}`);
