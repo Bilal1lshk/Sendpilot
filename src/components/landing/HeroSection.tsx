@@ -60,7 +60,7 @@ export function HeroSection() {
               </Link>
 
               <Link
-                href="#how-it-works"
+                href="/how-it-works"
                 className="inline-flex items-center gap-1.5 text-sm font-semibold text-neutral-700 hover:text-black transition-colors py-2 px-1 rounded-md"
               >
                 <span>See how it works</span>

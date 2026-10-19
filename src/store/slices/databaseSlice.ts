@@ -75,6 +75,10 @@ export interface RawLeadPayload {
   jobTitle?: string;
   title?: string;
   company?: string;
+  location?: string;
+  industry?: string;
+  group?: string;
+  tags?: string[];
   email?: string;
   linkedinUrl?: string;
   icpScore?: number;

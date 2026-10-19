@@ -57,9 +57,15 @@ export async function POST(req: Request, { params }: Ctx) {
       return NextResponse.json({ success: false, error: "Launch or resume the campaign before sending" }, { status: 400 });
     }
     if (event === "sent") {
-      const connection = campaign.senderAccountId
+      let connection = campaign.senderAccountId
         ? await LinkedInConnection.findOne({ id: campaign.senderAccountId, userId: ctx.userId })
         : null;
+      if (!connection) {
+        connection = await LinkedInConnection.findOne({ userId: ctx.userId, confirmedAt: { $ne: null } }).sort({ updatedAt: -1 });
+        if (connection) {
+          await Campaign.updateOne({ _id: campaign._id }, { senderAccountId: connection.id, senderName: connection.linkedinName });
+        }
+      }
       if (!connection) return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
       if (!connection.confirmedAt) {
         return NextResponse.json({ success: false, error: "Confirm the LinkedIn sender account before sending" }, { status: 409 });

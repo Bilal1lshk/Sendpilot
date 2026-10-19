@@ -202,11 +202,11 @@ export default function GetStartedPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.25 }}
-              className="rounded-2xl border border-palm-leaf-200/80 dark:border-palm-leaf-900/60 bg-palm-leaf-50/60 dark:bg-palm-leaf-950/20 p-6 shadow-xs"
+              className="rounded-2xl border border-emerald-200/80 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/20 p-6 shadow-xs"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-palm-leaf-600 text-white shadow-2xs">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-2xs">
                     <CheckCircle2 className="h-5 w-5 stroke-[2.5]" />
                   </div>
                   <div>
@@ -221,7 +221,7 @@ export default function GetStartedPage() {
 
                 <Link
                   href="/dashboard"
-                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 active:scale-[0.99] text-white px-4 py-2 text-xs font-semibold shadow-xs transition-all shrink-0"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 dark:text-neutral-900 text-white px-4 py-2 text-xs font-semibold shadow-xs transition-colors shrink-0"
                 >
                   <span>Open dashboard</span>
                   <ArrowRight className="h-3.5 w-3.5" />

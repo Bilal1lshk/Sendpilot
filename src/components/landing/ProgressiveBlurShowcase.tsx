@@ -189,9 +189,6 @@ export function ProgressiveBlurShowcase() {
 
   return (
     <section className="py-20 md:py-28 bg-neutral-50/60 dark:bg-neutral-950/60 border-y border-neutral-200 dark:border-neutral-800 relative overflow-hidden">
-      {/* Background ambient glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-12">
         {/* Section Header */}
         <div className="max-w-3xl mx-auto text-center space-y-4">
@@ -213,7 +210,7 @@ export function ProgressiveBlurShowcase() {
             transition={{ duration: 0.35, delay: 0.05 }}
             className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-50 leading-tight"
           >
-            Live Outbound Feed with Progressive Blur
+            Live Activity & Conversion Stream
           </motion.h2>
 
           <motion.p
@@ -223,7 +220,7 @@ export function ProgressiveBlurShowcase() {
             transition={{ duration: 0.35, delay: 0.1 }}
             className="text-base sm:text-lg text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto"
           >
-            Watch leads, AI personalized touches, and booked meetings stream in with high-performance WebGL & layered backdrop blur transitions.
+            Monitor real-time prospect discovery, AI-crafted touches, and confirmed demo bookings across active campaigns.
           </motion.p>
         </div>
 
@@ -333,8 +330,7 @@ export function ProgressiveBlurShowcase() {
                             duration: 0.2,
                             delay: Math.min(index * 0.025, 0.35),
                           }}
-                          whileHover={{ scale: 1.012, x: 2 }}
-                          className="bg-card flex h-16 w-full items-center justify-between px-5 rounded-xl border border-neutral-200/90 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xs hover:border-emerald-500/50 transition-all cursor-default"
+                          className="bg-card flex h-16 w-full items-center justify-between px-5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xs hover:border-neutral-400 dark:hover:border-neutral-700 transition-colors cursor-default"
                         >
                           <div className="flex items-center gap-3">
                             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800 font-mono text-xs font-bold text-neutral-700 dark:text-neutral-300">
@@ -393,12 +389,7 @@ export function ProgressiveBlurShowcase() {
                               delay: idx * 0.04,
                               ease: "easeOut",
                             }}
-                            whileHover={{
-                              scale: 1.01,
-                              x: 3,
-                              transition: { duration: 0.15 },
-                            }}
-                            className="flex items-start justify-between gap-4 p-4 rounded-xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xs hover:border-emerald-500/40 hover:shadow-sm transition-all"
+                            className="flex items-start justify-between gap-4 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xs hover:border-neutral-400 dark:hover:border-neutral-700 transition-colors"
                           >
                             <div className="flex items-start gap-3.5">
                               <div

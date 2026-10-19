@@ -70,6 +70,19 @@ export async function POST(req: Request) {
     const name = String(body.name || "").trim();
     if (!name) return NextResponse.json({ success: false, error: "Campaign name is required" }, { status: 400 });
 
+    // Concurrency & double-click duplicate protection
+    const recentDuplicate = await Campaign.findOne({
+      userId: ctx.userId,
+      name,
+      createdAt: { $gte: new Date(Date.now() - 4000) },
+    }).lean();
+    if (recentDuplicate) {
+      return NextResponse.json(
+        { success: false, error: "Duplicate submission: campaign was just created." },
+        { status: 409 }
+      );
+    }
+
     const steps = body.steps === undefined ? DEFAULT_STEPS : sanitizeSteps(body.steps);
     if (!steps) return NextResponse.json({ success: false, error: "Invalid sequence steps" }, { status: 400 });
     if (!steps.some((s) => s.type !== "wait")) {
@@ -77,11 +90,17 @@ export async function POST(req: Request) {
     }
 
     let senderName = "";
-    const senderAccountId = String(body.senderAccountId || "");
+    let senderAccountId = String(body.senderAccountId || "");
     if (senderAccountId) {
       const connection = await LinkedInConnection.findOne({ id: senderAccountId, userId: ctx.userId });
       if (!connection) return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
       senderName = connection.linkedinName;
+    } else {
+      const activeConn = await LinkedInConnection.findOne({ userId: ctx.userId, confirmedAt: { $ne: null } }).sort({ updatedAt: -1 });
+      if (activeConn) {
+        senderAccountId = activeConn.id;
+        senderName = activeConn.linkedinName;
+      }
     }
 
     const launch = Boolean(body.launch);
@@ -105,6 +124,8 @@ export async function POST(req: Request) {
       dailyCap: Math.max(1, Math.min(100, Number(body.dailyCap) || 20)),
       senderAccountId,
       senderName,
+      flowId: body.flowId || undefined,
+      flowName: body.flowName || undefined,
       timezone: body.timezone || undefined,
       workingHours: body.workingHours || undefined,
       status: launch ? "active" : "draft",

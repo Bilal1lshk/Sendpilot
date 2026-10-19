@@ -106,34 +106,34 @@ export function FeaturesSection() {
             return (
               <div
                 key={feat.title}
-                className="group relative rounded-3xl border border-neutral-200 bg-white p-8 shadow-xs hover:shadow-md hover:border-palm-leaf-300 transition-all duration-200 flex flex-col justify-between"
+                className="group relative rounded-2xl border border-neutral-200 bg-white p-7 shadow-xs hover:border-neutral-400 transition-colors duration-150 flex flex-col justify-between"
               >
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-palm-leaf-50 text-palm-leaf-700 group-hover:bg-palm-leaf-600 group-hover:text-white transition-colors duration-200">
-                      <Icon className="h-6 w-6 stroke-[1.8]" />
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-100 text-neutral-800 group-hover:bg-neutral-900 group-hover:text-white transition-colors duration-150">
+                      <Icon className="h-5 w-5 stroke-[1.8]" />
                     </div>
-                    <span className="text-[11px] font-semibold text-palm-leaf-800 bg-palm-leaf-50 px-3 py-1 rounded-full border border-palm-leaf-200">
+                    <span className="text-[11px] font-semibold text-neutral-700 bg-neutral-100 px-2.5 py-0.5 rounded-full border border-neutral-200/60">
                       {feat.badge}
                     </span>
                   </div>
 
                   <div className="space-y-2">
-                    <h3 className="text-xl font-bold text-black flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-black flex items-center justify-between">
                       <span>{feat.title}</span>
                     </h3>
-                    <p className="text-sm text-neutral-600 leading-relaxed">
+                    <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed">
                       {feat.description}
                     </p>
                   </div>
                 </div>
 
-                <div className="pt-6 mt-6 border-t border-neutral-100 flex items-center justify-between text-xs font-semibold text-neutral-500">
-                  <span className="flex items-center gap-1.5 text-palm-leaf-700">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-palm-leaf-600" />
+                <div className="pt-5 mt-5 border-t border-neutral-100 flex items-center justify-between text-xs font-semibold text-neutral-500">
+                  <span className="flex items-center gap-1.5 text-emerald-700">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                     {feat.highlight}
                   </span>
-                  <span className="text-neutral-400 group-hover:text-palm-leaf-600 transition-colors">
+                  <span className="text-neutral-400 group-hover:text-neutral-900 transition-colors">
                     Explore &rarr;
                   </span>
                 </div>

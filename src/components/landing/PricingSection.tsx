@@ -90,11 +90,13 @@ export function PricingSection() {
             <button
               type="button"
               onClick={() => setIsAnnual(!isAnnual)}
-              className="relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-palm-leaf-600 transition-colors duration-200 ease-in-out focus:outline-none"
+              className={`relative inline-flex h-6 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                isAnnual ? "bg-neutral-900" : "bg-neutral-300"
+              }`}
               aria-label="Toggle annual billing"
             >
               <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
                   isAnnual ? "translate-x-6" : "translate-x-0"
                 }`}
               />
@@ -107,7 +109,7 @@ export function PricingSection() {
               >
                 Annual
               </span>
-              <span className="text-[10px] font-bold text-palm-leaf-900 bg-palm-leaf-200 px-2 py-0.5 rounded-full">
+              <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200/60 px-2 py-0.5 rounded-full">
                 Save 20%
               </span>
             </div>
@@ -122,16 +124,16 @@ export function PricingSection() {
             return (
               <div
                 key={tier.name}
-                className={`rounded-3xl p-8 flex flex-col justify-between transition-all duration-300 relative ${
+                className={`rounded-2xl p-7 sm:p-8 flex flex-col justify-between transition-colors duration-150 relative ${
                   tier.isPopular
-                    ? "bg-white border-2 border-palm-leaf-500 shadow-xl shadow-palm-leaf-500/10 scale-102 lg:-translate-y-2"
-                    : "bg-white border border-neutral-200 shadow-xs hover:shadow-md"
+                    ? "bg-white border-2 border-neutral-900 shadow-sm"
+                    : "bg-white border border-neutral-200 shadow-xs hover:border-neutral-300"
                 }`}
               >
                 {tier.isPopular && (
                   <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-palm-leaf-600 text-white text-[11px] font-bold tracking-wider uppercase shadow-xs">
-                      <Sparkles className="h-3 w-3" />
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900 text-white text-[11px] font-semibold tracking-wider uppercase shadow-xs">
+                      <Sparkles className="h-3 w-3 text-emerald-400" />
                       Most Popular
                     </span>
                   </div>
@@ -148,7 +150,7 @@ export function PricingSection() {
                   </div>
 
                   <div className="flex items-baseline gap-1">
-                    <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-black">
+                    <span className="text-4xl sm:text-5xl font-extrabold tracking-tight text-black font-mono">
                       ${price}
                     </span>
                     <span className="text-xs text-neutral-500 font-medium">
@@ -167,7 +169,7 @@ export function PricingSection() {
                           key={feat}
                           className="flex items-start gap-2.5 text-xs text-neutral-700"
                         >
-                          <Check className="h-4 w-4 text-palm-leaf-600 shrink-0 stroke-[2.5] mt-0.5" />
+                          <Check className="h-4 w-4 text-emerald-600 shrink-0 stroke-[2.5] mt-0.5" />
                           <span>{feat}</span>
                         </li>
                       ))}
@@ -178,10 +180,10 @@ export function PricingSection() {
                 <div className="pt-8">
                   <Link
                     href={tier.ctaHref}
-                    className={`w-full inline-flex items-center justify-center gap-2 rounded-2xl py-3 text-xs font-semibold transition-all ${
+                    className={`w-full inline-flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-semibold transition-colors ${
                       tier.isPopular
-                        ? "bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white shadow-md shadow-palm-leaf-600/25"
-                        : "border border-neutral-200 hover:bg-neutral-50 text-neutral-800"
+                        ? "bg-neutral-900 hover:bg-neutral-800 text-white shadow-xs"
+                        : "border border-neutral-200 hover:bg-neutral-50 text-neutral-900"
                     }`}
                   >
                     <span>{tier.ctaText}</span>

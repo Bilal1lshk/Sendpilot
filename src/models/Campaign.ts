@@ -19,6 +19,8 @@ export interface ICampaign extends Document {
   status: CampaignStatus;
   senderAccountId: string;
   senderName: string;
+  flowId?: string;
+  flowName?: string;
   steps: ICampaignStep[];
   dailyCap: number;
   timezone: string;
@@ -45,6 +47,8 @@ const CampaignSchema = new Schema<ICampaign>(
     status: { type: String, enum: CAMPAIGN_STATUSES, default: "draft" },
     senderAccountId: { type: String, default: "" },
     senderName: { type: String, default: "" },
+    flowId: { type: String, default: "" },
+    flowName: { type: String, default: "" },
     steps: { type: [StepSchema], default: [] },
     dailyCap: { type: Number, default: 20, min: 1, max: 100 },
     timezone: { type: String, default: "Asia/Karachi" },

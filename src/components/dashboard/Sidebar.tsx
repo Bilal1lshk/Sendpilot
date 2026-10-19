@@ -186,7 +186,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
                 className="group flex w-full items-center justify-between rounded-xl p-1 text-left hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80 transition-colors"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-palm-leaf-600 text-white font-bold text-xs tracking-tight shadow-xs">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-bold text-xs tracking-tight shadow-xs">
                     SP
                   </div>
                   <div className="truncate">
@@ -228,7 +228,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
                           }}
                           className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs text-left transition-colors ${
                             currentWorkspace === ws.name
-                              ? "bg-palm-leaf-50 dark:bg-palm-leaf-950/40 text-palm-leaf-900 dark:text-palm-leaf-300 font-semibold"
+                              ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 font-semibold"
                               : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100/80 dark:hover:bg-neutral-800/80"
                           }`}
                         >
@@ -239,7 +239,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
                             </span>
                           </div>
                           {currentWorkspace === ws.name && (
-                            <Check className="h-3.5 w-3.5 text-palm-leaf-600 shrink-0 ml-2" />
+                            <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0 ml-2" />
                           )}
                         </button>
                       ))}
@@ -258,7 +258,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
               </AnimatePresence>
             </div>
           ) : (
-            <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-palm-leaf-600 text-white font-bold text-xs shadow-xs">
+            <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-bold text-xs shadow-xs">
               SP
             </div>
           )}
@@ -289,15 +289,15 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
                 title={collapsed ? item.name : undefined}
                 className={`relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors ${
                   isActive
-                    ? "text-palm-leaf-950 dark:text-palm-leaf-200 font-semibold"
+                    ? "text-neutral-900 dark:text-white font-semibold"
                     : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60 font-normal"
                 } ${collapsed ? "justify-center px-0" : ""}`}
               >
-                {/* Active Background Pill + Sliding Green Left Bar */}
+                {/* Active Background Pill + Left Indicator */}
                 {isActive && (
                   <motion.div
                     layoutId="sidebar-active-indicator"
-                    className="absolute inset-0 rounded-lg bg-palm-leaf-50/90 dark:bg-palm-leaf-950/40 border-l-2 border-palm-leaf-600"
+                    className="absolute inset-0 rounded-lg bg-neutral-100 dark:bg-neutral-800 border-l-2 border-neutral-900 dark:border-white"
                     transition={{
                       type: "spring",
                       stiffness: 380,
@@ -310,7 +310,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
                   <Icon
                     className={`h-4 w-4 shrink-0 transition-colors ${
                       isActive
-                        ? "text-palm-leaf-600 dark:text-palm-leaf-400"
+                        ? "text-neutral-900 dark:text-white"
                         : "text-neutral-400"
                     }`}
                   />
@@ -321,7 +321,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
                     <span
                       className={`ml-auto text-[10px] font-medium px-1.5 py-0.2 rounded-full ${
                         isActive
-                          ? "bg-palm-leaf-200/60 dark:bg-palm-leaf-900 text-palm-leaf-800 dark:text-palm-leaf-300"
+                          ? "bg-neutral-200 dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 font-semibold"
                           : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500"
                       }`}
                     >
@@ -352,7 +352,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
                   initial={{ width: 0 }}
                   animate={{ width: `${Math.min(100, Math.max(totalLeads > 0 ? 4 : 0, Math.round((totalLeads / 1000) * 100)))}%` }}
                   transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                  className="h-full rounded-full bg-palm-leaf-500"
+                  className="h-full rounded-full bg-emerald-600 dark:bg-emerald-500"
                 />
               </div>
               <p className="mt-1.5 text-[10px] text-neutral-400">
@@ -376,7 +376,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
             title={collapsed ? "Style Guide" : undefined}
             className={`group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60 transition-colors ${
               pathname === "/dashboard/style-guide"
-                ? "text-palm-leaf-800 dark:text-palm-leaf-300 font-semibold"
+                ? "text-neutral-900 dark:text-white font-semibold"
                 : ""
             } ${collapsed ? "justify-center px-0" : ""}`}
           >
@@ -390,7 +390,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
             title={collapsed ? "Settings" : undefined}
             className={`group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60 transition-colors ${
               pathname.startsWith("/dashboard/settings")
-                ? "text-palm-leaf-800 dark:text-palm-leaf-300 font-semibold"
+                ? "text-neutral-900 dark:text-white font-semibold"
                 : ""
             } ${collapsed ? "justify-center px-0" : ""}`}
           >
@@ -401,7 +401,7 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
           {/* User profile & Sign out */}
           <div className="flex items-center justify-between pt-2 border-t border-neutral-100 dark:border-neutral-800">
             <div className={`flex items-center gap-2 min-w-0 ${collapsed ? "justify-center w-full" : ""}`}>
-              <div className="h-6 w-6 rounded-md bg-palm-leaf-100 dark:bg-palm-leaf-950 text-palm-leaf-800 dark:text-palm-leaf-300 font-bold text-xs flex items-center justify-center overflow-hidden shrink-0 border border-palm-leaf-300/40">
+              <div className="h-6 w-6 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 font-bold text-xs flex items-center justify-center overflow-hidden shrink-0 border border-neutral-200 dark:border-neutral-700">
                 {user?.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img

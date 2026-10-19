@@ -18,6 +18,7 @@ export interface ILead extends Document {
   icpScore: number;
   source: LeadSource;
   tags: string[];
+  group: string;
   status: LeadStatus;
   notes: string;
   isSample: boolean;
@@ -39,6 +40,7 @@ const LeadSchema = new Schema<ILead>(
     icpScore: { type: Number, default: 0, min: 0, max: 100 },
     source: { type: String, enum: LEAD_SOURCES, default: "manual" },
     tags: { type: [String], default: [] },
+    group: { type: String, default: "", index: true, trim: true },
     status: { type: String, enum: LEAD_STATUSES, default: "new", index: true },
     notes: { type: String, default: "" },
     isSample: { type: Boolean, default: false },
@@ -55,6 +57,7 @@ LeadSchema.index(
   { userId: 1, linkedinUrl: 1 },
   { unique: true, partialFilterExpression: { linkedinUrl: { $type: "string" } } }
 );
+LeadSchema.index({ userId: 1, group: 1 });
 LeadSchema.index({ userId: 1, createdAt: -1 });
 LeadSchema.index({ firstName: "text", lastName: "text", company: "text", title: "text", email: "text" });
 

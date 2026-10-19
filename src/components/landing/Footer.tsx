@@ -8,7 +8,7 @@ export function Footer() {
     <footer className="bg-white border-t border-neutral-200 text-neutral-600 pt-16 pb-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
         {/* Pre-Footer Conversion Banner */}
-        <div className="rounded-3xl bg-neutral-50 border border-neutral-200 p-8 sm:p-12 text-black flex flex-col md:flex-row items-center justify-between gap-8 shadow-xs">
+        <div className="rounded-2xl bg-neutral-50 border border-neutral-200 p-8 sm:p-12 text-black flex flex-col md:flex-row items-center justify-between gap-8 shadow-xs">
           <div className="space-y-2 text-center md:text-left">
             <h3 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-black">
               Ready to turn leads into high-converting conversations?
@@ -21,14 +21,14 @@ export function Footer() {
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto shrink-0">
             <Link
               href="/get-started"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-black hover:bg-neutral-800 text-white px-6 py-3.5 text-xs font-bold transition-all shadow-xs cursor-pointer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-black hover:bg-neutral-800 text-white px-6 py-3.5 text-xs font-bold transition-colors shadow-xs cursor-pointer"
             >
               <span>Get Started Free</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
             <Link
               href="/login"
-              className="inline-flex items-center justify-center rounded-2xl border border-neutral-300 hover:bg-neutral-100 px-6 py-3.5 text-xs font-semibold text-black transition-colors cursor-pointer"
+              className="inline-flex items-center justify-center rounded-xl border border-neutral-300 hover:bg-neutral-100 px-6 py-3.5 text-xs font-semibold text-black transition-colors cursor-pointer"
             >
               Sign In
             </Link>
@@ -62,11 +62,11 @@ export function Footer() {
               Product
             </div>
             <ul className="space-y-2 text-neutral-500">
-              <li><a href="#solution" className="hover:text-black transition-colors">Workspace</a></li>
-              <li><a href="#features" className="hover:text-black transition-colors">AI Lead Scoring</a></li>
-              <li><a href="#ai-assistant" className="hover:text-black transition-colors">AI Sales Copilot</a></li>
-              <li><a href="#features" className="hover:text-black transition-colors">Pipeline Tracker</a></li>
-              <li><a href="#pricing" className="hover:text-black transition-colors">Pricing Plans</a></li>
+              <li><Link href="/product" className="hover:text-black transition-colors">Workspace Overview</Link></li>
+              <li><Link href="/features" className="hover:text-black transition-colors">AI Lead Scoring</Link></li>
+              <li><Link href="/ai-assistant" className="hover:text-black transition-colors">AI Sales Copilot</Link></li>
+              <li><Link href="/features" className="hover:text-black transition-colors">Pipeline Tracker</Link></li>
+              <li><Link href="/pricing" className="hover:text-black transition-colors">Pricing Plans</Link></li>
             </ul>
           </div>
 
@@ -77,10 +77,10 @@ export function Footer() {
             </div>
             <ul className="space-y-2 text-neutral-500">
               <li><Link href="/get-started" className="hover:text-black transition-colors">Onboarding Guide</Link></li>
-              <li><a href="#how-it-works" className="hover:text-black transition-colors">How It Works</a></li>
-              <li><span className="hover:text-black transition-colors cursor-pointer">Best Practices</span></li>
-              <li><span className="hover:text-black transition-colors cursor-pointer">Sample CSV Templates</span></li>
-              <li><span className="hover:text-black transition-colors cursor-pointer">API Documentation</span></li>
+              <li><Link href="/how-it-works" className="hover:text-black transition-colors">How It Works</Link></li>
+              <li><Link href="/features" className="hover:text-black transition-colors">Platform Features</Link></li>
+              <li><Link href="/ai-assistant" className="hover:text-black transition-colors">Copilot Assistant</Link></li>
+              <li><Link href="/pricing" className="hover:text-black transition-colors">Plan Comparison</Link></li>
             </ul>
           </div>
 

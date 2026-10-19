@@ -190,9 +190,9 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
           <button
             type="button"
             onClick={() => setSearchModalOpen(true)}
-            className="group flex items-center gap-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 px-3 py-1.5 text-xs text-neutral-500 hover:border-palm-leaf-400 dark:hover:border-palm-leaf-600 hover:bg-white dark:hover:bg-neutral-900 transition-all shadow-2xs"
+            className="group flex items-center gap-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 px-3 py-1.5 text-xs text-neutral-500 hover:border-neutral-400 dark:hover:border-neutral-700 hover:bg-white dark:hover:bg-neutral-900 transition-colors shadow-2xs"
           >
-            <Search className="h-3.5 w-3.5 text-neutral-400 group-hover:text-palm-leaf-600" />
+            <Search className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200" />
             <span className="hidden sm:inline text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-300">
               Search leads, campaigns...
             </span>
@@ -207,7 +207,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
             <button
               type="button"
               onClick={() => setNewDropdownOpen(!newDropdownOpen)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs hover:shadow-sm transition-all"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 dark:text-neutral-900 text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs transition-colors"
             >
               <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
               <span>New</span>
@@ -221,9 +221,9 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                 <Link
                   href="/dashboard/campaigns"
                   onClick={() => setNewDropdownOpen(false)}
-                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-palm-leaf-50 dark:hover:bg-palm-leaf-950/40 hover:text-palm-leaf-900 transition-colors"
+                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 transition-colors"
                 >
-                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-palm-leaf-100 text-palm-leaf-700 dark:bg-palm-leaf-900/60 dark:text-palm-leaf-300">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
                     <Send className="h-3 w-3" />
                   </div>
                   <div>
@@ -235,9 +235,9 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                 <Link
                   href="/dashboard/extractor"
                   onClick={() => setNewDropdownOpen(false)}
-                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-palm-leaf-50 dark:hover:bg-palm-leaf-950/40 hover:text-palm-leaf-900 transition-colors"
+                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 transition-colors"
                 >
-                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-palm-leaf-100 text-palm-leaf-700 dark:bg-palm-leaf-900/60 dark:text-palm-leaf-300">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
                     <Upload className="h-3 w-3" />
                   </div>
                   <div>
@@ -249,9 +249,9 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                 <Link
                   href="/dashboard/leads"
                   onClick={() => setNewDropdownOpen(false)}
-                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-palm-leaf-50 dark:hover:bg-palm-leaf-950/40 hover:text-palm-leaf-900 transition-colors"
+                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 transition-colors"
                 >
-                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-palm-leaf-100 text-palm-leaf-700 dark:bg-palm-leaf-900/60 dark:text-palm-leaf-300">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
                     <UserPlus className="h-3 w-3" />
                   </div>
                   <div>
@@ -263,7 +263,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                 <Link
                   href="/dashboard/accounts"
                   onClick={() => setNewDropdownOpen(false)}
-                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-palm-leaf-50 dark:hover:bg-palm-leaf-950/40 hover:text-palm-leaf-900 transition-colors"
+                  className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 transition-colors"
                 >
                   <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#0a66c2]/10 text-[#0a66c2] dark:bg-[#0a66c2]/20">
                     <span className="font-bold text-[10px]">in</span>
@@ -286,7 +286,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
               aria-label="Notifications"
             >
               <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-palm-leaf-500 ring-2 ring-white dark:ring-neutral-900" />
+              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-neutral-900" />
             </button>
 
             {bellOpen && (
@@ -295,7 +295,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                   <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
                     Notifications
                   </h4>
-                  <span className="text-[10px] font-semibold text-palm-leaf-700 dark:text-palm-leaf-400 cursor-pointer hover:underline">
+                  <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 cursor-pointer hover:underline">
                     Mark all read
                   </span>
                 </div>
@@ -306,7 +306,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                       key={n.id}
                       className={`p-2.5 rounded-xl border text-xs transition-colors ${
                         !n.read
-                          ? "bg-palm-leaf-50/50 dark:bg-palm-leaf-950/20 border-palm-leaf-200/50 dark:border-palm-leaf-900/40"
+                          ? "bg-neutral-50 dark:bg-neutral-800/40 border-neutral-200 dark:border-neutral-700"
                           : "bg-neutral-50/60 dark:bg-neutral-950/40 border-neutral-100 dark:border-neutral-800"
                       }`}
                     >
@@ -333,7 +333,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
             <button
               type="button"
               onClick={() => setAvatarOpen(!avatarOpen)}
-              className="flex h-8 w-8 items-center justify-center rounded-xl bg-palm-leaf-100 dark:bg-palm-leaf-950/80 text-palm-leaf-800 dark:text-palm-leaf-300 font-bold text-xs ring-1 ring-palm-leaf-300/40 overflow-hidden hover:opacity-90 transition-opacity"
+              className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 font-bold text-xs ring-1 ring-neutral-200 dark:ring-neutral-700 overflow-hidden hover:opacity-90 transition-opacity"
               aria-label="User menu"
             >
               {user?.image ? (
@@ -374,10 +374,10 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                     className="flex w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                   >
                     <span className="flex items-center gap-1.5">
-                      <Sparkles className="h-3 w-3 text-palm-leaf-600" />
+                      <Sparkles className="h-3 w-3 text-emerald-600" />
                       Get Started Checklist
                     </span>
-                    <span className="text-[9px] bg-palm-leaf-100 text-palm-leaf-800 dark:bg-palm-leaf-950 dark:text-palm-leaf-300 font-bold px-1.5 py-0.5 rounded-full">
+                    <span className="text-[9px] bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold px-1.5 py-0.5 rounded-full border border-emerald-200/60">
                       Onboarding
                     </span>
                   </Link>
@@ -404,7 +404,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
           <div className="w-full max-w-lg rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden animate-in zoom-in-95">
             {/* Input */}
             <div className="flex items-center gap-3 border-b border-neutral-100 dark:border-neutral-800 px-4 py-3">
-              <Search className="h-4 w-4 text-palm-leaf-600 shrink-0" />
+              <Search className="h-4 w-4 text-neutral-400 shrink-0" />
               <input
                 type="text"
                 autoFocus
@@ -437,11 +437,11 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                       setSearchModalOpen(false);
                       router.push(item.link);
                     }}
-                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-palm-leaf-50 dark:hover:bg-palm-leaf-950/40 group transition-colors"
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 group transition-colors"
                   >
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 group-hover:bg-palm-leaf-200/60 group-hover:text-palm-leaf-900">
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 group-hover:text-neutral-900 dark:group-hover:text-neutral-100">
                           {item.type}
                         </span>
                         <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
@@ -452,7 +452,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                         {item.hint}
                       </span>
                     </div>
-                    <ArrowRight className="h-3.5 w-3.5 text-neutral-300 group-hover:text-palm-leaf-600 transition-colors" />
+                    <ArrowRight className="h-3.5 w-3.5 text-neutral-300 group-hover:text-neutral-900 dark:group-hover:text-neutral-100 transition-colors" />
                   </button>
                 ))
               ) : (

@@ -41,7 +41,7 @@ export async function GET(_req: Request, { params }: Ctx) {
   }
 }
 
-const EDITABLE = ["firstName", "lastName", "title", "company", "location", "notes"] as const;
+const EDITABLE = ["firstName", "lastName", "title", "company", "location", "notes", "group"] as const;
 
 export async function PATCH(req: Request, { params }: Ctx) {
   const ctx = await requireUser();

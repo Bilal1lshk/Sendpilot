@@ -40,7 +40,7 @@ export function ProgressBar({
           initial={{ width: 0 }}
           animate={{ width: `${percentage}%` }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="h-full rounded-full bg-palm-leaf-500"
+          className="h-full rounded-full bg-emerald-600 dark:bg-emerald-500"
         />
       </div>
     </div>

@@ -124,15 +124,15 @@ export default function DashboardOverviewPage() {
         <div className="flex items-center gap-2.5">
           <Link
             href="/get-started"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:border-palm-leaf-400 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:border-neutral-400 dark:hover:border-neutral-600 transition-colors"
           >
-            <Sparkles className="h-3.5 w-3.5 text-palm-leaf-600" />
+            <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
             <span>Checklist</span>
           </Link>
 
           <Link
             href="/dashboard/campaigns"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 active:scale-[0.99] text-white px-3.5 py-1.5 text-xs font-medium shadow-xs transition-all"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 dark:text-neutral-900 text-white px-3.5 py-1.5 text-xs font-medium shadow-xs transition-colors"
           >
             <Send className="h-3.5 w-3.5" />
             <span>New campaign</span>
@@ -350,7 +350,7 @@ export default function DashboardOverviewPage() {
                 <div className="flex items-center justify-center gap-2 pt-2 flex-wrap">
                   <Link
                     href="/dashboard/extractor"
-                    className="px-3.5 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs shadow-xs transition-colors"
+                    className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 dark:text-neutral-900 text-white font-semibold text-xs shadow-xs transition-colors"
                   >
                     Extract from LinkedIn
                   </Link>

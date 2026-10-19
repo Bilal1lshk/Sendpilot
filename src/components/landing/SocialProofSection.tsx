@@ -29,7 +29,7 @@ export function SocialProofSection() {
               key={logo.name}
               className="flex items-center gap-2 group transition-opacity hover:opacity-100"
             >
-              <div className="h-6 w-1.5 rounded-full bg-palm-leaf-500/40 group-hover:bg-palm-leaf-500 transition-colors" />
+              <div className="h-5 w-1 rounded-full bg-neutral-300 group-hover:bg-neutral-800 transition-colors" />
               <span className="font-extrabold text-sm sm:text-base tracking-widest text-neutral-600 group-hover:text-black transition-colors">
                 {logo.tag}
               </span>
@@ -39,8 +39,8 @@ export function SocialProofSection() {
 
         {/* 3 Metric Highlights */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
-          <div className="p-6 rounded-2xl border border-neutral-200 bg-white shadow-2xs text-center space-y-1.5">
-            <div className="text-3xl sm:text-4xl font-extrabold text-palm-leaf-600 tracking-tight">
+          <div className="p-6 rounded-xl border border-neutral-200 bg-white shadow-xs text-center space-y-1.5">
+            <div className="text-3xl sm:text-4xl font-extrabold text-neutral-900 font-mono tracking-tight">
               10,000+
             </div>
             <div className="text-sm font-semibold text-black">
@@ -51,8 +51,8 @@ export function SocialProofSection() {
             </p>
           </div>
 
-          <div className="p-6 rounded-2xl border border-neutral-200 bg-white shadow-2xs text-center space-y-1.5">
-            <div className="text-3xl sm:text-4xl font-extrabold text-palm-leaf-600 tracking-tight">
+          <div className="p-6 rounded-xl border border-neutral-200 bg-white shadow-xs text-center space-y-1.5">
+            <div className="text-3xl sm:text-4xl font-extrabold text-neutral-900 font-mono tracking-tight">
               85%
             </div>
             <div className="text-sm font-semibold text-black">
@@ -63,8 +63,8 @@ export function SocialProofSection() {
             </p>
           </div>
 
-          <div className="p-6 rounded-2xl border border-neutral-200 bg-white shadow-2xs text-center space-y-1.5">
-            <div className="text-3xl sm:text-4xl font-extrabold text-palm-leaf-600 tracking-tight">
+          <div className="p-6 rounded-xl border border-neutral-200 bg-white shadow-xs text-center space-y-1.5">
+            <div className="text-3xl sm:text-4xl font-extrabold text-neutral-900 font-mono tracking-tight">
               3&times;
             </div>
             <div className="text-sm font-semibold text-black">

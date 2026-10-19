@@ -48,7 +48,7 @@ export function AiAssistantSection() {
         </div>
 
         {/* Chat-Style Interface Mockup */}
-        <div className="max-w-3xl mx-auto rounded-3xl border border-neutral-200 bg-white p-6 sm:p-8 shadow-xs space-y-6">
+        <div className="max-w-3xl mx-auto rounded-2xl border border-neutral-200 bg-white p-6 sm:p-8 shadow-xs space-y-6">
           {/* User Message Bubble */}
           <div className="flex items-start gap-3.5 justify-end">
             <div className="max-w-lg rounded-2xl bg-neutral-900 text-white p-4 shadow-xs space-y-1">
@@ -70,10 +70,10 @@ export function AiAssistantSection() {
               <Bot className="h-5 w-5" />
             </div>
 
-            <div className="flex-1 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 shadow-sm space-y-5">
+            <div className="flex-1 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 shadow-xs space-y-5">
               <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-palm-leaf-600" />
+                  <Sparkles className="h-4 w-4 text-emerald-600" />
                   <span className="text-xs font-bold text-neutral-900">
                     SendPilot Copilot Analysis
                   </span>
@@ -90,7 +90,7 @@ export function AiAssistantSection() {
               {/* 4 Stats Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
-                  <div className="text-xl font-bold text-neutral-900">
+                  <div className="text-xl font-bold text-neutral-900 font-mono">
                     24
                   </div>
                   <div className="text-[11px] text-neutral-500 font-medium">
@@ -99,7 +99,7 @@ export function AiAssistantSection() {
                 </div>
 
                 <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
-                  <div className="text-xl font-bold text-palm-leaf-600">
+                  <div className="text-xl font-bold text-neutral-900 font-mono">
                     87%
                   </div>
                   <div className="text-[11px] text-neutral-500 font-medium">
@@ -108,7 +108,7 @@ export function AiAssistantSection() {
                 </div>
 
                 <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
-                  <div className="text-xl font-bold text-palm-leaf-700">
+                  <div className="text-xl font-bold text-emerald-700 font-mono">
                     8
                   </div>
                   <div className="text-[11px] text-neutral-500 font-medium">
@@ -117,7 +117,7 @@ export function AiAssistantSection() {
                 </div>
 
                 <div className="p-3 rounded-xl bg-neutral-50 border border-neutral-100 text-center">
-                  <div className="text-xl font-bold text-neutral-900">
+                  <div className="text-xl font-bold text-neutral-900 font-mono">
                     5
                   </div>
                   <div className="text-[11px] text-neutral-500 font-medium">
@@ -146,7 +146,7 @@ export function AiAssistantSection() {
                           {lead.role} at {lead.company}
                         </span>
                       </div>
-                      <span className="font-bold text-palm-leaf-800 bg-palm-leaf-100 px-2.5 py-0.5 rounded-full text-[11px]">
+                      <span className="font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2.5 py-0.5 rounded-full text-[11px]">
                         {lead.score}% Score
                       </span>
                     </div>
@@ -162,7 +162,7 @@ export function AiAssistantSection() {
                 <div className="flex items-center gap-2">
                   <Link
                     href="/get-started"
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white text-xs font-semibold transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold transition-colors"
                   >
                     <span>Draft Outreach</span>
                     <ArrowRight className="h-3 w-3" />
@@ -178,11 +178,11 @@ export function AiAssistantSection() {
               type="text"
               readOnly
               value="Draft a 3-step follow-up for leads that didn't reply to email #1..."
-              className="w-full pl-4 pr-12 py-3 rounded-2xl bg-white border border-neutral-200 text-xs text-neutral-600 outline-none shadow-2xs"
+              className="w-full pl-4 pr-12 py-3 rounded-xl bg-white border border-neutral-200 text-xs text-neutral-600 outline-none shadow-xs"
             />
             <button
               type="button"
-              className="absolute right-2 top-3.5 h-8 w-8 rounded-xl bg-palm-leaf-600 text-white flex items-center justify-center hover:bg-palm-leaf-700 transition-colors"
+              className="absolute right-2 top-3.5 h-8 w-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center hover:bg-neutral-800 transition-colors"
             >
               <Send className="h-3.5 w-3.5" />
             </button>
@@ -193,9 +193,9 @@ export function AiAssistantSection() {
         <div className="text-center pt-4">
           <Link
             href="/get-started"
-            className="inline-flex items-center gap-2 rounded-2xl bg-neutral-900 hover:bg-black text-white px-7 py-3.5 text-sm font-semibold shadow-md transition-all hover:gap-2.5"
+            className="inline-flex items-center gap-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white px-7 py-3.5 text-sm font-semibold shadow-xs transition-colors"
           >
-            <Sparkles className="h-4 w-4 text-palm-leaf-400" />
+            <Sparkles className="h-4 w-4 text-emerald-400" />
             <span>Meet Your AI Assistant</span>
           </Link>
         </div>
