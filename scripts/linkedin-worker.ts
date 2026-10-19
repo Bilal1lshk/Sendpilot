@@ -17,6 +17,9 @@ let activeTunnelUrl: string | null = null;
 let tunnelProviderName = "Unknown";
 let tunnelProcess: ChildProcess | null = null;
 
+// In-memory cache for successfully extracted sessions (5-minute TTL)
+const sessionCache = new Map<string, { result: ExtractedSessionResult; timestamp: number }>();
+
 function log(level: "INFO" | "WARN" | "ERROR", message: string) {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [${level}] ${message}`);
@@ -335,6 +338,17 @@ const server = http.createServer(async (req, res) => {
         }
 
         const maskedEmail = email.replace(/(^.{2})(.*)(@.*)/, "$1***$3");
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Check if session was already extracted recently (e.g. from previous attempt)
+        const cached = sessionCache.get(normalizedEmail);
+        if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000 && !verificationCode) {
+          log("INFO", `[${maskedEmail}] Reusing freshly extracted active session from memory cache (instant response)`);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(cached.result));
+          return;
+        }
+
         log(
           "INFO",
           `Starting extraction for ${maskedEmail} (2FA: ${twoFactorMethod || "otp"}, hasCode: ${Boolean(
@@ -363,15 +377,11 @@ const server = http.createServer(async (req, res) => {
           },
         });
 
-        // Determine HTTP response code based on outcome
-        let statusCode = 200;
-        if (result.proxyError) {
-          statusCode = 502;
-        } else if (result.requiresTwoFactor) {
-          statusCode = 202;
-        } else if (!result.success || !result.li_at) {
-          statusCode = 400;
+        if (result.success && result.li_at) {
+          sessionCache.set(normalizedEmail, { result, timestamp: Date.now() });
         }
+
+        const statusCode = result.requiresTwoFactor ? 202 : 200;
 
         log(
           "INFO",
