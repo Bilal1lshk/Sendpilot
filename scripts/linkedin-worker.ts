@@ -149,12 +149,17 @@ function startServeoTunnel(port: number): Promise<string> {
   return new Promise((resolve) => {
     log("INFO", "Initiating SSH Tunnel via Serveo (serveo.net)...");
 
+    const customSubdomain = (process.env.WORKER_SUBDOMAIN || process.env.SERVE_SUBDOMAIN || "").trim();
+    const remoteForward = customSubdomain ? `${customSubdomain}:80:127.0.0.1:${port}` : `80:127.0.0.1:${port}`;
+
     const child = spawn(
       "ssh",
       [
         "-o", "StrictHostKeyChecking=no",
-        "-o", "ServerAliveInterval=30",
-        "-R", `80:127.0.0.1:${port}`,
+        "-o", "ServerAliveInterval=15",
+        "-o", "ServerAliveCountMax=4",
+        "-o", "ExitOnForwardFailure=yes",
+        "-R", remoteForward,
         "serveo.net",
       ],
       { stdio: ["ignore", "pipe", "pipe"] }
@@ -234,11 +239,14 @@ function printBanner(port: number, tunnelUrl: string | null, providerName = "Tun
   if (tunnelUrl) {
     console.log(`  ${providerName.padEnd(20)} \x1b[32m${tunnelUrl}\x1b[0m`);
     console.log("-".repeat(72));
-    console.log("  Instructions for Vercel / Remote Production:");
-    console.log("  Set the following environment variable in your Vercel Dashboard:");
-    console.log(`  \x1b[36mLINKEDIN_WORKER_URL=${tunnelUrl}\x1b[0m`);
+    console.log("  HOW TO CONNECT WITH SENDPILOT (Choose Option A or B):");
+    console.log("  Option A (Instant - Recommended):");
+    console.log("  1. In SendPilot, click '⚙️ Local Runner Tunnel URL'");
+    console.log(`  2. Paste this URL: \x1b[36m${tunnelUrl}\x1b[0m`);
+    console.log("  Option B (Permanent via Vercel):");
+    console.log(`  Set Vercel Env:      \x1b[36mLINKEDIN_WORKER_URL=${tunnelUrl}\x1b[0m`);
     if (WORKER_SECRET) {
-      console.log(`  \x1b[36mLINKEDIN_WORKER_SECRET=${WORKER_SECRET}\x1b[0m`);
+      console.log(`  Vercel Env Secret:   \x1b[36mLINKEDIN_WORKER_SECRET=${WORKER_SECRET}\x1b[0m`);
     }
   } else {
     console.log("  Tunnel:              (Disabled or failed to connect)");

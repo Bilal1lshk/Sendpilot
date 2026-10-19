@@ -60,6 +60,29 @@ export default function ConnectStepPage() {
   const [progressMsg, setProgressMsg] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
 
+  // Runner URL state (persisted in localStorage)
+  const [workerUrl, setWorkerUrl] = useState("");
+  const [showRunnerConfig, setShowRunnerConfig] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("sendpilot_worker_url");
+      if (saved) setWorkerUrl(saved);
+    } catch {}
+  }, []);
+
+  const handleWorkerUrlChange = (val: string) => {
+    setWorkerUrl(val);
+    try {
+      if (val.trim()) {
+        localStorage.setItem("sendpilot_worker_url", val.trim());
+      } else {
+        localStorage.removeItem("sendpilot_worker_url");
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     async function load() {
       try {
@@ -83,6 +106,7 @@ export default function ConnectStepPage() {
     e.preventDefault();
     setIsConnecting(true);
     setProxyError(null);
+    setFormError(null);
 
     try {
       let payload: Record<string, unknown> = {};
@@ -113,6 +137,7 @@ export default function ConnectStepPage() {
           twoFactorMethod,
           verificationCode: verificationCode.trim() || undefined,
           pendingChallengeToken,
+          workerUrl: workerUrl.trim() || undefined,
         };
       } else {
         if (!liAt.trim()) {
@@ -202,6 +227,7 @@ export default function ConnectStepPage() {
       toast.success(`${memberName} connected successfully!`);
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : "Authentication error.";
+      setFormError(errorMsg);
       toast.error(errorMsg);
     } finally {
       setIsConnecting(false);
@@ -446,6 +472,32 @@ export default function ConnectStepPage() {
                       </div>
                     )}
 
+                    {(!email || !password) && (
+                      <div className="space-y-2 p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800">
+                        <p className="text-[11px] font-medium text-neutral-700 dark:text-neutral-300">
+                          LinkedIn Account Credentials (needed to resume session)
+                        </p>
+                        <input
+                          type="email"
+                          required
+                          placeholder="LinkedIn Email or Phone"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          disabled={isConnecting}
+                          className="w-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs text-neutral-900 dark:text-neutral-100 outline-none focus:border-emerald-500"
+                        />
+                        <input
+                          type="password"
+                          required
+                          placeholder="LinkedIn Password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          disabled={isConnecting}
+                          className="w-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs text-neutral-900 dark:text-neutral-100 outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    )}
+
                     {twoFactorMethod === "otp" ? (
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
@@ -473,6 +525,39 @@ export default function ConnectStepPage() {
                         </p>
                       </div>
                     )}
+
+                    {/* Local Runner URL Configuration */}
+                    <div className="pt-1 border-t border-neutral-100 dark:border-neutral-800/80">
+                      <button
+                        type="button"
+                        onClick={() => setShowRunnerConfig(!showRunnerConfig)}
+                        className="text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 flex items-center justify-between w-full py-1 font-medium transition-colors cursor-pointer"
+                      >
+                        <span>⚙️ Local Runner Tunnel URL</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                          {workerUrl ? "Configured ✓" : "Configure (Optional)"}
+                        </span>
+                      </button>
+
+                      {showRunnerConfig && (
+                        <div className="mt-2 p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-1.5">
+                          <label className="text-[11px] font-medium text-neutral-700 dark:text-neutral-300 block">
+                            Active Tunnel URL (from terminal)
+                          </label>
+                          <input
+                            type="url"
+                            placeholder="https://07d1c59b...serveousercontent.com"
+                            value={workerUrl}
+                            onChange={(e) => handleWorkerUrlChange(e.target.value)}
+                            disabled={isConnecting}
+                            className="w-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500"
+                          />
+                          <p className="text-[10px] text-neutral-500 dark:text-neutral-400 leading-tight">
+                            Paste the tunnel URL from your <code className="text-emerald-600 font-mono">npm run worker</code> terminal. Saved in your browser so you don&apos;t have to update Vercel environment variables.
+                          </p>
+                        </div>
+                      )}
+                    </div>
 
                     <div className="flex items-center gap-2 pt-1">
                       <button
@@ -559,6 +644,39 @@ export default function ConnectStepPage() {
                             </button>
                           </div>
                         </div>
+
+                        {/* Local Runner URL Configuration */}
+                        <div className="pt-1 border-t border-neutral-100 dark:border-neutral-800/80">
+                          <button
+                            type="button"
+                            onClick={() => setShowRunnerConfig(!showRunnerConfig)}
+                            className="text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 flex items-center justify-between w-full py-1 font-medium transition-colors cursor-pointer"
+                          >
+                            <span>⚙️ Local Runner Tunnel URL</span>
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                              {workerUrl ? "Configured ✓" : "Configure (Optional)"}
+                            </span>
+                          </button>
+
+                          {showRunnerConfig && (
+                            <div className="mt-2 p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-1.5">
+                              <label className="text-[11px] font-medium text-neutral-700 dark:text-neutral-300 block">
+                                Active Tunnel URL (from terminal)
+                              </label>
+                              <input
+                                type="url"
+                                placeholder="https://07d1c59b...serveousercontent.com"
+                                value={workerUrl}
+                                onChange={(e) => handleWorkerUrlChange(e.target.value)}
+                                disabled={isConnecting}
+                                className="w-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500"
+                              />
+                              <p className="text-[10px] text-neutral-500 dark:text-neutral-400 leading-tight">
+                                Paste the tunnel URL from your <code className="text-emerald-600 font-mono">npm run worker</code> terminal. Saved in your browser so you don&apos;t have to update Vercel environment variables.
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <>
@@ -603,6 +721,23 @@ export default function ConnectStepPage() {
                           💡 <strong>How to find it:</strong> On linkedin.com, press <kbd className="px-1 py-0.5 rounded bg-neutral-200 dark:bg-neutral-800 font-mono text-[10px]">F12</kbd> $\rightarrow$ <strong>Application</strong> $\rightarrow$ <strong>Cookies</strong> $\rightarrow$ copy the <code className="text-emerald-600 dark:text-emerald-400">li_at</code> value.
                         </div>
                       </>
+                    )}
+
+                    {formError && (
+                      <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/25 text-red-900 dark:text-red-200 text-xs space-y-2 mb-2">
+                        <p className="leading-snug">{formError}</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormError(null);
+                            setAwaitingTwoFactor(true);
+                            setTwoFactorMethod("otp");
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] transition-colors cursor-pointer inline-flex items-center gap-1"
+                        >
+                          <span>Already received a LinkedIn code? Enter OTP now →</span>
+                        </button>
+                      </div>
                     )}
 
                     {/* Submit Button */}

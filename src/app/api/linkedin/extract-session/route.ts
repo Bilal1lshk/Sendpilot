@@ -147,7 +147,11 @@ export async function POST(req: Request) {
     const normalized2FA: TwoFactorMethod = twoFactorMethod === "app" ? "app" : "otp";
 
     let result: ExtractedSessionResult;
-    const workerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
+    const clientWorkerUrl =
+      typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
+        ? body.workerUrl.trim()
+        : undefined;
+    const workerUrl = (clientWorkerUrl || process.env.LINKEDIN_WORKER_URL?.trim())?.replace(/\/+$/, "");
 
     if (workerUrl) {
       // Offload Playwright browser extraction to dedicated local runner / Cloudflare tunnel
