@@ -244,15 +244,15 @@ export function ConnectLinkedInModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/60 backdrop-blur-xs overflow-y-auto overscroll-contain">
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        className="w-full max-w-md rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden"
+        className="w-full max-w-lg max-h-[min(90dvh,760px)] flex flex-col rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden my-auto"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-neutral-100 dark:border-neutral-800/80">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-neutral-100 dark:border-neutral-800/80 shrink-0">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
               <LinkedInIcon className="h-5 w-5" />
@@ -278,7 +278,7 @@ export function ConnectLinkedInModal({
         </div>
 
         {/* Body */}
-        <div className="p-5">
+        <div className="p-4 sm:p-5 pb-6 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] flex-1">
           {step === "form" ? (
             <div className="space-y-4">
               {/* Segmented Control / Tabs */}
