@@ -78,6 +78,8 @@ export function ConnectLinkedInModal({
   const [workerUrl, setWorkerUrl] = useState("");
   const [showRunnerConfig, setShowRunnerConfig] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [testingTunnel, setTestingTunnel] = useState(false);
+  const [tunnelTestStatus, setTunnelTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
     try {
@@ -88,6 +90,7 @@ export function ConnectLinkedInModal({
 
   const handleWorkerUrlChange = (val: string) => {
     setWorkerUrl(val);
+    setTunnelTestStatus(null);
     try {
       if (val.trim()) {
         localStorage.setItem("sendpilot_worker_url", val.trim());
@@ -95,6 +98,37 @@ export function ConnectLinkedInModal({
         localStorage.removeItem("sendpilot_worker_url");
       }
     } catch {}
+  };
+
+  const handleTestTunnel = async () => {
+    if (!workerUrl.trim()) return;
+    setTestingTunnel(true);
+    setTunnelTestStatus(null);
+    try {
+      const clean = workerUrl.trim().replace(/\/+$/, "");
+      const res = await fetch(`${clean}/health`, {
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        setTunnelTestStatus({
+          ok: true,
+          msg: `✓ Tunnel online & responding (service: ${data?.service || "LinkedIn Worker"})`,
+        });
+      } else {
+        setTunnelTestStatus({
+          ok: false,
+          msg: `✕ Tunnel returned HTTP ${res.status}. This tunnel URL has expired or disconnected. Check your npm run worker terminal for the fresh URL.`,
+        });
+      }
+    } catch {
+      setTunnelTestStatus({
+        ok: false,
+        msg: "✕ Cannot connect to tunnel (Offline / expired). Make sure 'npm run worker' is running in your terminal.",
+      });
+    } finally {
+      setTestingTunnel(false);
+    }
   };
 
   useEffect(() => {
@@ -244,15 +278,15 @@ export function ConnectLinkedInModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/60 backdrop-blur-xs overflow-y-auto overscroll-contain">
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        className="w-full max-w-md rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden"
+        className="w-full max-w-lg max-h-[min(90dvh,760px)] flex flex-col rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-2xl overflow-hidden my-auto"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-neutral-100 dark:border-neutral-800/80">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-neutral-100 dark:border-neutral-800/80 shrink-0">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
               <LinkedInIcon className="h-5 w-5" />
@@ -278,7 +312,7 @@ export function ConnectLinkedInModal({
         </div>
 
         {/* Body */}
-        <div className="p-5">
+        <div className="p-4 sm:p-5 pb-6 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] flex-1">
           {step === "form" ? (
             <div className="space-y-4">
               {/* Segmented Control / Tabs */}
@@ -422,18 +456,33 @@ export function ConnectLinkedInModal({
                       </button>
 
                       {showRunnerConfig && (
-                        <div className="mt-2 p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-1.5">
+                        <div className="mt-2 p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-2">
                           <label className="text-[11px] font-medium text-neutral-700 dark:text-neutral-300 block">
                             Active Tunnel URL (from terminal)
                           </label>
-                          <input
-                            type="url"
-                            placeholder="https://07d1c59b...serveousercontent.com"
-                            value={workerUrl}
-                            onChange={(e) => handleWorkerUrlChange(e.target.value)}
-                            disabled={isSubmitting}
-                            className="w-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500"
-                          />
+                          <div className="flex gap-2 items-center">
+                            <input
+                              type="url"
+                              placeholder="https://07d1c59b...serveousercontent.com"
+                              value={workerUrl}
+                              onChange={(e) => handleWorkerUrlChange(e.target.value)}
+                              disabled={isSubmitting}
+                              className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleTestTunnel}
+                              disabled={testingTunnel || !workerUrl.trim()}
+                              className="px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-[11px] font-medium text-neutral-700 dark:text-neutral-200 transition-colors disabled:opacity-50 cursor-pointer shrink-0"
+                            >
+                              {testingTunnel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Test URL"}
+                            </button>
+                          </div>
+                          {tunnelTestStatus && (
+                            <p className={`text-[11px] font-medium leading-tight ${tunnelTestStatus.ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
+                              {tunnelTestStatus.msg}
+                            </p>
+                          )}
                           <p className="text-[10px] text-neutral-500 dark:text-neutral-400 leading-tight">
                             Paste the tunnel URL from your <code className="text-emerald-600 font-mono">npm run worker</code> terminal. Saved in your browser so you don&apos;t have to update Vercel environment variables.
                           </p>
@@ -694,18 +743,33 @@ export function ConnectLinkedInModal({
                 </button>
 
                 {showRunnerConfig && (
-                  <div className="mt-2 p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-1.5">
+                  <div className="mt-2 p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-2">
                     <label className="text-[11px] font-medium text-neutral-700 dark:text-neutral-300 block">
                       Active Tunnel URL (from terminal)
                     </label>
-                    <input
-                      type="url"
-                      placeholder="https://07d1c59b...serveousercontent.com"
-                      value={workerUrl}
-                      onChange={(e) => handleWorkerUrlChange(e.target.value)}
-                      disabled={isSubmitting}
-                      className="w-full rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500"
-                    />
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="url"
+                        placeholder="https://07d1c59b...serveousercontent.com"
+                        value={workerUrl}
+                        onChange={(e) => handleWorkerUrlChange(e.target.value)}
+                        disabled={isSubmitting}
+                        className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleTestTunnel}
+                        disabled={testingTunnel || !workerUrl.trim()}
+                        className="px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-[11px] font-medium text-neutral-700 dark:text-neutral-200 transition-colors disabled:opacity-50 cursor-pointer shrink-0"
+                      >
+                        {testingTunnel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Test URL"}
+                      </button>
+                    </div>
+                    {tunnelTestStatus && (
+                      <p className={`text-[11px] font-medium leading-tight ${tunnelTestStatus.ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
+                        {tunnelTestStatus.msg}
+                      </p>
+                    )}
                     <p className="text-[10px] text-neutral-500 dark:text-neutral-400 leading-tight">
                       Paste the tunnel URL from your <code className="text-emerald-600 font-mono">npm run worker</code> terminal. Saved in your browser so you don&apos;t have to update Vercel environment variables.
                     </p>
