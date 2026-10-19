@@ -908,15 +908,11 @@ export async function extractLinkedInSession({
       };
     }
     if (httpAttempt.success && httpAttempt.li_at) {
-      const verification = await verifyLinkedInSession(
-        httpAttempt.li_at,
-        httpAttempt.jsessionId
-      );
       return {
         success: true,
         li_at: httpAttempt.li_at,
         jsessionId: httpAttempt.jsessionId,
-        profile: verification.profile,
+        profile: { firstName: "", lastName: "", headline: "LinkedIn Profile" },
         fingerprint,
         proxySessionId: proxyConfig?.sessionId,
         bytesTransferred: 0,
@@ -1328,11 +1324,36 @@ export async function extractLinkedInSession({
       };
     }
 
-    onProgress?.("Verifying session with LinkedIn Voyager API...");
+    onProgress?.("Extracting authenticated profile session...");
+    let profile: { firstName?: string; lastName?: string; headline?: string } = {
+      firstName: "",
+      lastName: "",
+      headline: "LinkedIn Profile",
+    };
+
+    try {
+      const domProfile = await page.evaluate(() => {
+        const nameEl = document.querySelector<HTMLElement>(
+          '.feed-identity-module__actor-meta .feed-identity-module__name, .profile-rail-card__actor-link, h1'
+        );
+        const nameText = nameEl?.innerText?.trim() || "";
+        const parts = nameText.split(/\s+/);
+        const headlineEl = document.querySelector<HTMLElement>(
+          '.feed-identity-module__actor-meta .feed-identity-module__headline'
+        );
+        return {
+          firstName: parts[0] || "",
+          lastName: parts.slice(1).join(" ") || "",
+          headline: headlineEl?.innerText?.trim() || "LinkedIn Profile",
+        };
+      });
+      if (domProfile?.firstName) {
+        profile = domProfile;
+      }
+    } catch {}
+
     await safeCloseBrowser(browser);
     browser = null;
-
-    const verification = await verifyLinkedInSession(foundLiAt, foundJsessionId);
 
     console.log(
       `[session-extractor] Login completed for ${email.slice(0, 3)}***. Transferred approx ${(sessionBytesTransferred / 1024).toFixed(1)} KB over network.`
@@ -1342,7 +1363,7 @@ export async function extractLinkedInSession({
       success: true,
       li_at: foundLiAt,
       jsessionId: foundJsessionId,
-      profile: verification.profile,
+      profile,
       fingerprint,
       proxySessionId: proxyConfig?.sessionId,
       bytesTransferred: sessionBytesTransferred,
