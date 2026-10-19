@@ -142,7 +142,71 @@ function startCloudflareTunnel(port: number): Promise<string> {
 }
 
 /**
- * Tunnel coordinator: Tries Cloudflare first, falls back to Localtunnel automatically.
+ * Starts a Serveo SSH tunnel (serveo.net) - rock-solid, zero gateway timeouts (supports long-running logins),
+ * and connects natively via OpenSSH built into Windows.
+ */
+function startServeoTunnel(port: number): Promise<string> {
+  return new Promise((resolve) => {
+    log("INFO", "Initiating SSH Tunnel via Serveo (serveo.net)...");
+
+    const customSubdomain = (process.env.WORKER_SUBDOMAIN || process.env.SERVE_SUBDOMAIN || "").trim();
+    const remoteForward = customSubdomain ? `${customSubdomain}:80:127.0.0.1:${port}` : `80:127.0.0.1:${port}`;
+
+    const child = spawn(
+      "ssh",
+      [
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "ServerAliveInterval=15",
+        "-o", "ServerAliveCountMax=4",
+        "-o", "ExitOnForwardFailure=yes",
+        "-R", remoteForward,
+        "serveo.net",
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] }
+    );
+
+    tunnelProcess = child;
+    let resolved = false;
+
+    const handleOutput = (data: Buffer) => {
+      const text = data.toString();
+      const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.serveousercontent\.com/);
+      if (match && !resolved) {
+        resolved = true;
+        activeTunnelUrl = match[0];
+        tunnelProviderName = "Serveo (SSH Tunnel)";
+        printBanner(port, activeTunnelUrl, tunnelProviderName);
+        resolve(match[0]);
+      }
+    };
+
+    child.stdout?.on("data", handleOutput);
+    child.stderr?.on("data", handleOutput);
+
+    child.on("error", (err) => {
+      log("ERROR", `Failed to spawn ssh: ${err.message}`);
+      if (!resolved) {
+        resolved = true;
+        resolve("");
+      }
+    });
+
+    child.on("exit", (code) => {
+      log("WARN", `Serveo tunnel process exited with code ${code}`);
+      activeTunnelUrl = null;
+    });
+
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve("");
+      }
+    }, 12000);
+  });
+}
+
+/**
+ * Tunnel coordinator: Tries Serveo (SSH) first, then Localtunnel, then Cloudflare.
  */
 async function startTunnel(port: number): Promise<string> {
   if (useLocaltunnelOnly) {
@@ -153,13 +217,18 @@ async function startTunnel(port: number): Promise<string> {
     return await startCloudflareTunnel(port);
   }
 
-  // 1. Attempt Cloudflare
-  const cfUrl = await startCloudflareTunnel(port);
-  if (cfUrl) return cfUrl;
+  // 1. Primary: Serveo (SSH tunnel) - fast, stable, no gateway timeouts
+  const serveoUrl = await startServeoTunnel(port);
+  if (serveoUrl) return serveoUrl;
 
-  // 2. Fallback to Localtunnel
-  log("INFO", "Falling back to Localtunnel (instant HTTPS tunneling)...");
-  return await startLocaltunnel(port);
+  // 2. Secondary: Localtunnel
+  log("INFO", "Falling back to Localtunnel...");
+  const ltUrl = await startLocaltunnel(port);
+  if (ltUrl) return ltUrl;
+
+  // 3. Tertiary: Cloudflare
+  log("INFO", "Falling back to Cloudflare...");
+  return await startCloudflareTunnel(port);
 }
 
 function printBanner(port: number, tunnelUrl: string | null, providerName = "Tunnel") {
@@ -170,11 +239,14 @@ function printBanner(port: number, tunnelUrl: string | null, providerName = "Tun
   if (tunnelUrl) {
     console.log(`  ${providerName.padEnd(20)} \x1b[32m${tunnelUrl}\x1b[0m`);
     console.log("-".repeat(72));
-    console.log("  Instructions for Vercel / Remote Production:");
-    console.log("  Set the following environment variable in your Vercel Dashboard:");
-    console.log(`  \x1b[36mLINKEDIN_WORKER_URL=${tunnelUrl}\x1b[0m`);
+    console.log("  HOW TO CONNECT WITH SENDPILOT (Choose Option A or B):");
+    console.log("  Option A (Instant - Recommended):");
+    console.log("  1. In SendPilot, click '⚙️ Local Runner Tunnel URL'");
+    console.log(`  2. Paste this URL: \x1b[36m${tunnelUrl}\x1b[0m`);
+    console.log("  Option B (Permanent via Vercel):");
+    console.log(`  Set Vercel Env:      \x1b[36mLINKEDIN_WORKER_URL=${tunnelUrl}\x1b[0m`);
     if (WORKER_SECRET) {
-      console.log(`  \x1b[36mLINKEDIN_WORKER_SECRET=${WORKER_SECRET}\x1b[0m`);
+      console.log(`  Vercel Env Secret:   \x1b[36mLINKEDIN_WORKER_SECRET=${WORKER_SECRET}\x1b[0m`);
     }
   } else {
     console.log("  Tunnel:              (Disabled or failed to connect)");

@@ -708,7 +708,7 @@ export async function verifyProxyConnection(
   browser: Browser,
   proxy?: ProxyConfig
 ): Promise<{ ip: string; country?: string; timezone?: string } | null> {
-  if (process.env.NODE_ENV === "production" && process.env.DEBUG_PROXY !== "true") {
+  if (!proxy?.server || process.env.DEBUG_PROXY !== "true") {
     return null;
   }
   let context: BrowserContext | null = null;

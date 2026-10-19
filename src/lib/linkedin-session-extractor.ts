@@ -284,12 +284,16 @@ async function detectCheckpointKind(
   // Only match actual VISIBLE interactive CAPTCHA challenge frames.
   // Never match `iframe[src*="recaptcha"]` generally because LinkedIn embeds an invisible
   // `recaptcha/enterprise/anchor?...&size=invisible` badge on 100% of login & checkpoint pages!
-  const visibleCaptchaFrameCount = await page
-    .locator(
-      '#captcha-internal:visible, iframe[src*="arkose"]:visible, iframe[src*="funcaptcha"]:visible, iframe[src*="recaptcha/api2/bframe"]:visible, iframe[src*="recaptcha/enterprise/bframe"]:visible'
-    )
-    .count()
-    .catch(() => 0);
+  const hasVisibleCaptchaFrame = await page
+    .evaluate(() => {
+      const el = document.querySelector(
+        '#captcha-internal, iframe[src*="arkose"], iframe[src*="funcaptcha"], iframe[src*="recaptcha/api2/bframe"], iframe[src*="recaptcha/enterprise/bframe"]'
+      );
+      if (!el) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 30 && rect.height > 30;
+    })
+    .catch(() => false);
 
   const hasCaptchaText =
     lowerText.includes("quick security check") ||
@@ -301,7 +305,7 @@ async function detectCheckpointKind(
     !hasAppPushText &&
     !hasTwoFactorText &&
     (currentUrl.includes("captchaInternal") ||
-      visibleCaptchaFrameCount > 0 ||
+      hasVisibleCaptchaFrame ||
       hasCaptchaText ||
       (sawCaptchaNetwork && lowerText.includes("security check")));
 
@@ -388,9 +392,9 @@ async function ensurePreferredTwoFactorMethod(
           page
             .locator(PIN_INPUT_SELECTOR)
             .first()
-            .waitFor({ state: "visible", timeout: 2000 })
+            .waitFor({ state: "visible", timeout: 1500 })
             .catch(() => {}),
-          page.waitForTimeout(1400),
+          page.waitForTimeout(400),
         ]);
       }
 
@@ -404,7 +408,7 @@ async function ensurePreferredTwoFactorMethod(
         .first();
       if (await smsOrEmailRadio.isVisible().catch(() => false)) {
         await smsOrEmailRadio.click().catch(() => {});
-        await page.waitForTimeout(250);
+        await page.waitForTimeout(150);
         const submitChoice = page.locator('button[type="submit"]:visible').first();
         if (await submitChoice.isVisible().catch(() => false)) {
           await submitChoice.click().catch(() => {});
@@ -412,9 +416,9 @@ async function ensurePreferredTwoFactorMethod(
             page
               .locator(PIN_INPUT_SELECTOR)
               .first()
-              .waitFor({ state: "visible", timeout: 2000 })
+              .waitFor({ state: "visible", timeout: 1500 })
               .catch(() => {}),
-            page.waitForTimeout(1400),
+            page.waitForTimeout(400),
           ]);
         }
       }
@@ -423,7 +427,7 @@ async function ensurePreferredTwoFactorMethod(
       const appBtn = page.locator(appCombinedSelector).first();
       if (await appBtn.isVisible().catch(() => false)) {
         await appBtn.click().catch(() => {});
-        await page.waitForTimeout(1200);
+        await page.waitForTimeout(300);
       }
       return;
     }
@@ -777,21 +781,17 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
 
   // Allow anti-bot scripts (merchantpool1.linkedin.com, li.protechts.net, recaptcha/enterprise)
   // to initialize before typing credentials so `apfc` telemetry is populated naturally
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(200);
   await page.mouse.move(180, 260).catch(() => {});
-  await page.mouse.move(480, 320, { steps: 4 }).catch(() => {});
 
   const emailInput = page
     .locator('#username:visible, input[name="session_key"]:visible, input[type="email"]:visible')
     .first();
   await emailInput.waitFor({ state: "visible", timeout: 8000 });
   await emailInput.click().catch(() => {});
-  await emailInput.fill("");
-  await emailInput.pressSequentially(email, { delay: 18 }).catch(async () => {
-    await emailInput.fill(email);
-  });
+  await emailInput.fill(email);
 
-  await page.waitForTimeout(180);
+  await page.waitForTimeout(100);
 
   const passInput = page
     .locator(
@@ -800,12 +800,9 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
     .first();
   await passInput.waitFor({ state: "visible", timeout: 8000 });
   await passInput.click().catch(() => {});
-  await passInput.fill("");
-  await passInput.pressSequentially(password, { delay: 18 }).catch(async () => {
-    await passInput.fill(password);
-  });
+  await passInput.fill(password);
 
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(150);
 
   const submitBtn = page
     .locator(
@@ -847,8 +844,8 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
   }
 
   await navigationOrOutcomePromise;
-  await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => {});
-  await page.waitForTimeout(900);
+  await page.waitForLoadState("domcontentloaded", { timeout: 2500 }).catch(() => {});
+  await page.waitForTimeout(200);
 }
 
 /**
@@ -869,8 +866,8 @@ export async function extractLinkedInSession({
   onProgress,
 }: ExtractOptions): Promise<ExtractedSessionResult> {
   const overallStart = Date.now();
-  // Cap total execution budget to 25s so Vercel never hits FUNCTION_INVOCATION_TIMEOUT
-  const maxBudgetMs = Math.min(timeout || 24000, 25000);
+  // Use passed timeout (e.g. 45s for worker runner) or default 24s for Vercel
+  const maxBudgetMs = timeout || 24000;
 
   let restoredChallenge: PendingChallengePayload | null = null;
   if (pendingChallengeToken) {
@@ -960,8 +957,8 @@ export async function extractLinkedInSession({
       };
     }
 
-    // Verify proxy in debug / non-production mode
-    if (process.env.DEBUG_PROXY === "true" || process.env.NODE_ENV !== "production") {
+    // Verify proxy ONLY in explicit debug mode when a proxy is configured
+    if (proxyConfig?.server && process.env.DEBUG_PROXY === "true") {
       const probe = await verifyProxyConnection(browser, proxyConfig);
       if (probe) {
         console.log(
@@ -1108,7 +1105,13 @@ export async function extractLinkedInSession({
       captchaChecks = 0;
 
       if (checkpoint.isCheckpoint || restoredChallenge?.capturedForm) {
-        if (checkpoint.isCheckpoint && !ensuredMethodOnce && !verificationCode) {
+        if (
+          checkpoint.isCheckpoint &&
+          !ensuredMethodOnce &&
+          !verificationCode &&
+          !checkpoint.hasPinInput &&
+          !(twoFactorMethod === "app" && checkpoint.isAppPush)
+        ) {
           ensuredMethodOnce = true;
           await ensurePreferredTwoFactorMethod(page, twoFactorMethod);
         }
