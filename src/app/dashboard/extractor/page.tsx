@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Upload,
@@ -75,6 +76,7 @@ import { fetchLeadsIfNeeded, fetchOverviewIfNeeded } from "@/store/slices/databa
 
 export default function LeadExtractorPage() {
   const dispatch = useAppDispatch();
+  const router = useRouter();
   const [activeSource, setActiveSource] = useState<string>("LinkedIn Search");
 
   // LinkedIn Search URL Input
@@ -260,6 +262,23 @@ export default function LeadExtractorPage() {
         ]);
         toast.success(`Successfully extracted ${data.leads.length} leads!`);
       } else {
+        if (data.requiresReconnect || data.redirectUrl || data.error?.toLowerCase().includes("reconnect")) {
+          toast.error(
+            data.error || "Your LinkedIn account authorization has expired. Redirecting to reconnect your account...",
+            {
+              action: {
+                label: "Reconnect Now",
+                onClick: () => {
+                  router.push(data.redirectUrl || "/dashboard/accounts?reconnect=true");
+                },
+              },
+            }
+          );
+          setTimeout(() => {
+            router.push(data.redirectUrl || "/dashboard/accounts?reconnect=true");
+          }, 1500);
+          return;
+        }
         toast.error(data.error || "Failed to extract leads from LinkedIn");
       }
     } catch {

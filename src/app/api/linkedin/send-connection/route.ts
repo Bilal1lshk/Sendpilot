@@ -73,8 +73,10 @@ export async function POST(req: Request) {
         {
           success: false,
           error:
-            "Your connected LinkedIn account is missing a valid session cookie. Please reconnect your account.",
+            "Your LinkedIn account authorization is missing or has expired. Please reconnect your account to continue.",
           requiresAccountConnection: true,
+          requiresReconnect: true,
+          redirectUrl: "/dashboard/accounts?reconnect=true",
         },
         { status: 400 }
       );
@@ -89,11 +91,21 @@ export async function POST(req: Request) {
     });
 
     if (!result.success) {
+      const isAuthError =
+        result.requiresReconnect ||
+        result.message.toLowerCase().includes("reconnect") ||
+        result.message.toLowerCase().includes("re-authenticate") ||
+        result.message.toLowerCase().includes("expired") ||
+        result.message.toLowerCase().includes("authorization");
+
       return NextResponse.json(
         {
           success: false,
           error: result.message,
           status: result.status,
+          requiresAccountConnection: isAuthError,
+          requiresReconnect: isAuthError,
+          redirectUrl: isAuthError ? "/dashboard/accounts?reconnect=true" : undefined,
         },
         { status: 422 }
       );
