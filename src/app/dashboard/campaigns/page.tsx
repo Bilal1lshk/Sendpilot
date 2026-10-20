@@ -31,6 +31,7 @@ import {
   X,
   UserPlus,
   ExternalLink,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pageVariants, cardVariants, listItemVariants } from "@/lib/motion";
@@ -414,6 +415,8 @@ export default function CampaignsPage() {
   const [addLeadSearch, setAddLeadSearch] = useState<string>("");
   const [isEnrollingAddLeads, setIsEnrollingAddLeads] = useState<boolean>(false);
   const [isSendingStep, setIsSendingStep] = useState<string | null>(null);
+  const [campaignError, setCampaignError] = useState<string | null>(null);
+  const [leadErrors, setLeadErrors] = useState<Record<string, string>>({});
 
   const filteredAddLeads = useMemo(() => {
     if (!addLeadSearch.trim()) return databaseLeads;
@@ -439,6 +442,21 @@ export default function CampaignsPage() {
       setSelectedWizardLeadIds(databaseLeads.slice(0, 10).map((l) => l.id));
     }
   }, [databaseLeads, selectedWizardLeadIds.length]);
+
+  // Support 1-click transition from Inbound automations page
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("create") === "true") {
+        setActiveTab("wizard");
+        const paramFlowName = params.get("flowName");
+        if (paramFlowName) {
+          setCampaignName(`${paramFlowName} Campaign`);
+          toast.info(`Campaign initialized for "${paramFlowName}"`);
+        }
+      }
+    }
+  }, []);
 
   const handleLaunchCampaign = async (launchNow: boolean) => {
     setIsLaunching(true);
@@ -479,7 +497,6 @@ export default function CampaignsPage() {
             ? `Campaign launched with ${finalLeadIds.length} enrolled leads!`
             : "Campaign saved as Draft!"
         );
-        setDemoCampaignsOverride(null);
         await dispatch(fetchCampaignsIfNeeded({ force: true }));
         await dispatch(fetchLeadsIfNeeded({ force: true }));
         dispatch(fetchOverviewIfNeeded({ force: true }));
@@ -504,13 +521,6 @@ export default function CampaignsPage() {
     const target = campaigns.find((c) => c.id === id);
     if (!target) return;
     const nextStatus = target.status === "Active" ? "Paused" : "Active";
-
-    if (demoCampaignsOverride) {
-      setDemoCampaignsOverride((prev) =>
-        prev ? prev.map((c) => (c.id === id ? { ...c, status: nextStatus } : c)) : null
-      );
-      return;
-    }
 
     dispatch(updateCampaignStatusState({ id, status: nextStatus }));
 
@@ -618,29 +628,79 @@ export default function CampaignsPage() {
   const handleSendQueuedLeadStep = async (leadRow: any) => {
     const enrollmentId = leadRow.enrollmentId;
     setIsSendingStep(enrollmentId);
+    setCampaignError(null);
     try {
       const profileUrl = leadRow.lead?.linkedinUrl;
       const note = leadRow.nextAction?.message || "";
-      let sendSuccess = true;
+      const stepType = leadRow.nextAction?.type || (leadRow.state === "queued" ? "connect" : "message");
 
-      if (profileUrl) {
+      if (!profileUrl || typeof profileUrl !== "string" || !profileUrl.trim()) {
+        const errMsg = `Cannot dispatch to ${leadRow.lead?.name || "prospect"}: Missing or invalid LinkedIn profile URL.`;
+        toast.error(errMsg);
+        setCampaignError(errMsg);
+        setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
+        return;
+      }
+
+      let sendSuccess = false;
+
+      if (stepType === "connect") {
+        // Real LinkedIn connection request with Playwright
         const sendRes = await fetch("/api/linkedin/send-connection", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            profileUrl,
+            profileUrl: profileUrl.trim(),
             note,
-            leadId: leadRow.lead?.id,
+            leadId: leadRow.lead?.id || leadRow.lead?._id,
           }),
         });
-        const sendData = await sendRes.json();
-        if (!sendData.success && sendData.requiresAccountConnection) {
-          toast.error(sendData.error);
-          sendSuccess = false;
+
+        const sendData = await sendRes.json().catch(() => ({}));
+
+        if (!sendRes.ok || !sendData.success) {
+          const errMsg = sendData.error || "Failed to dispatch connection request via Playwright.";
+          toast.error(errMsg);
+          setCampaignError(errMsg);
+          setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
+          return;
         }
+
+        sendSuccess = true;
+      } else {
+        // Direct follow-up message with Playwright
+        const sendRes = await fetch("/api/linkedin/send-message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileUrl: profileUrl.trim(),
+            message: note || "Hey, thanks for connecting!",
+            leadId: leadRow.lead?.id || leadRow.lead?._id,
+            campaignId: selectedCampaignId,
+          }),
+        });
+
+        const sendData = await sendRes.json().catch(() => ({}));
+
+        if (!sendRes.ok || !sendData.success) {
+          const errMsg = sendData.error || "Failed to dispatch follow-up message via Playwright.";
+          toast.error(errMsg);
+          setCampaignError(errMsg);
+          setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
+          return;
+        }
+
+        sendSuccess = true;
       }
 
       if (sendSuccess) {
+        // Clear lead error
+        setLeadErrors((prev) => {
+          const copy = { ...prev };
+          delete copy[enrollmentId];
+          return copy;
+        });
+
         const eventRes = await fetch(`/api/campaigns/${selectedCampaignId}/events`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -651,15 +711,22 @@ export default function CampaignsPage() {
         });
         const eventData = await eventRes.json();
         if (eventData.success) {
-          toast.success(`Sent step to ${leadRow.lead?.name || "lead"}!`);
+          toast.success(
+            `Successfully sent ${stepType === "connect" ? "connection request" : "follow-up message"} to ${
+              leadRow.lead?.name || "prospect"
+            }!`
+          );
           fetchEnrolledLeads(selectedCampaignId);
           fetchCampaignDetail(selectedCampaignId);
         } else {
           toast.error(eventData.error || "Failed to advance sequence step");
         }
       }
-    } catch {
-      toast.error("Network error while dispatching touchpoint");
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Network error while dispatching touchpoint";
+      toast.error(errMsg);
+      setCampaignError(errMsg);
+      setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
     } finally {
       setIsSendingStep(null);
     }
@@ -686,13 +753,7 @@ export default function CampaignsPage() {
 
 
 
-  const handleLoadDemoCampaigns = () => {
-    setDemoCampaignsOverride(SAMPLE_DEMO_CAMPAIGNS);
-    setSelectedCampaignId(SAMPLE_DEMO_CAMPAIGNS[0].id);
-    toast.success("Loaded sample demo campaigns for preview");
-  };
-
-  const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId) || campaigns[0] || SAMPLE_DEMO_CAMPAIGNS[0];
+  const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId) || campaigns[0] || null;
 
   return (
     <motion.div
@@ -778,7 +839,7 @@ export default function CampaignsPage() {
                         <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
                           Launch your first automated sequence with your connected LinkedIn sender account and {availableLeadsCount} saved leads.
                         </p>
-                        <div className="flex items-center justify-center gap-2.5 pt-2 flex-wrap">
+                        <div className="flex items-center justify-center pt-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -788,13 +849,6 @@ export default function CampaignsPage() {
                             className="px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
                           >
                             Create First Campaign
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleLoadDemoCampaigns}
-                            className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-semibold text-xs transition-colors cursor-pointer"
-                          >
-                            Load Demo Campaigns
                           </button>
                         </div>
                       </div>
@@ -875,6 +929,19 @@ export default function CampaignsPage() {
 
       {/* VIEW 2: Campaign Detail with Real Funnel Stats */}
       {activeTab === "detail" && (
+        !selectedCampaign ? (
+          <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-12 text-center space-y-3">
+            <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">No Campaign Selected</h3>
+            <p className="text-xs text-neutral-500">Please choose a campaign from the list or create a new campaign.</p>
+            <button
+              type="button"
+              onClick={() => setActiveTab("list")}
+              className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs transition-colors cursor-pointer"
+            >
+              Back to Campaigns
+            </button>
+          </motion.div>
+        ) : (
         <div className="space-y-6">
           <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-neutral-100 dark:border-neutral-800 gap-3">
@@ -1003,6 +1070,31 @@ export default function CampaignsPage() {
             </div>
           </motion.div>
 
+          {/* Campaign Execution Error Banner */}
+          {campaignError && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-4 rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50/80 dark:bg-red-950/40 flex items-start justify-between gap-3 text-xs text-red-900 dark:text-red-200 shadow-xs"
+            >
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block text-sm">Connection Request / Sequence Error</span>
+                  <p className="mt-0.5 text-neutral-600 dark:text-neutral-300 leading-relaxed">{campaignError}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCampaignError(null)}
+                className="p-1 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer"
+                title="Dismiss error"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          )}
+
           {/* Enrolled Prospects Section */}
           <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-neutral-100 dark:border-neutral-800">
@@ -1112,6 +1204,7 @@ export default function CampaignsPage() {
                       const lead = item.lead || {};
                       const initials = (lead.name || lead.firstName || "L")[0].toUpperCase();
                       const isSending = isSendingStep === item.enrollmentId;
+                      const leadError = leadErrors[item.enrollmentId];
 
                       const stateBadgeClass =
                         item.state === "queued"
@@ -1157,13 +1250,25 @@ export default function CampaignsPage() {
                           </td>
 
                           <td className="py-3.5 px-4">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${stateBadgeClass}`}>
-                              {item.state === "queued" && <Clock className="h-2.5 w-2.5" />}
-                              {item.state === "invited" && <Send className="h-2.5 w-2.5" />}
-                              {item.state === "accepted" && <Check className="h-2.5 w-2.5" />}
-                              {item.state === "replied" && <MessageSquare className="h-2.5 w-2.5" />}
-                              <span className="capitalize">{item.state}</span>
-                            </span>
+                            {leadError ? (
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 border-red-200/60">
+                                  <AlertCircle className="h-2.5 w-2.5 text-red-600 dark:text-red-400" />
+                                  <span>Failed</span>
+                                </span>
+                                <p className="text-[10px] text-red-600 dark:text-red-400 font-medium line-clamp-1 max-w-[140px]" title={leadError}>
+                                  {leadError}
+                                </p>
+                              </div>
+                            ) : (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${stateBadgeClass}`}>
+                                {item.state === "queued" && <Clock className="h-2.5 w-2.5" />}
+                                {item.state === "invited" && <Send className="h-2.5 w-2.5" />}
+                                {item.state === "accepted" && <Check className="h-2.5 w-2.5" />}
+                                {item.state === "replied" && <MessageSquare className="h-2.5 w-2.5" />}
+                                <span className="capitalize">{item.state}</span>
+                              </span>
+                            )}
                           </td>
 
                           <td className="py-3.5 px-4">
@@ -1206,25 +1311,47 @@ export default function CampaignsPage() {
 
                           <td className="py-3.5 px-6 text-right">
                             <div className="inline-flex items-center gap-2 justify-end">
-                              {(item.state === "queued" || (item.state === "accepted" && item.nextAction?.due)) && (
+                              {leadError ? (
                                 <button
                                   type="button"
                                   disabled={isSending}
                                   onClick={() => handleSendQueuedLeadStep(item)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                                  title="Retry dispatching this step"
                                 >
                                   {isSending ? (
                                     <>
                                       <Loader2 className="h-3 w-3 animate-spin" />
-                                      <span>Sending...</span>
+                                      <span>Retrying...</span>
                                     </>
                                   ) : (
                                     <>
-                                      <Send className="h-3 w-3" />
-                                      <span>Send Now</span>
+                                      <RefreshCw className="h-3 w-3" />
+                                      <span>Retry Send</span>
                                     </>
                                   )}
                                 </button>
+                              ) : (
+                                (item.state === "queued" || (item.state === "accepted" && item.nextAction?.due)) && (
+                                  <button
+                                    type="button"
+                                    disabled={isSending}
+                                    onClick={() => handleSendQueuedLeadStep(item)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                                  >
+                                    {isSending ? (
+                                      <>
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        <span>Sending...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Send className="h-3 w-3" />
+                                        <span>Send Now</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )
                               )}
                               <button
                                 type="button"
@@ -1416,6 +1543,7 @@ export default function CampaignsPage() {
             )}
           </AnimatePresence>
         </div>
+        )
       )}
 
       {/* VIEW 3: 3-Step Campaign Creation Wizard */}

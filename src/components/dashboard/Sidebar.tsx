@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   LayoutDashboard,
@@ -44,7 +44,9 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
   const pathname = usePathname();
   const dispatch = useAppDispatch();
   const overviewMetrics = useAppSelector((state) => state.database.overview.metrics);
-  const storeWorkspaceName = useAppSelector((state) => state.database.settings.data?.workspaceName);
+  const storeSettings = useAppSelector((state) => state.database.settings.data);
+  const storeWorkspaceName = storeSettings?.workspaceName;
+  const storeWorkspaces = storeSettings?.workspaces;
 
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window !== "undefined") {
@@ -55,12 +57,17 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [localWorkspaceOverride, setLocalWorkspaceOverride] = useState<string | null>(null);
 
-  const currentWorkspace =
-    localWorkspaceOverride ||
-    storeWorkspaceName ||
-    (typeof window !== "undefined"
-      ? localStorage.getItem("sendpilot_current_workspace") || "SendPilot HQ"
-      : "SendPilot HQ");
+  const currentWorkspace = useMemo(() => {
+    if (localWorkspaceOverride) return localWorkspaceOverride;
+    if (storeWorkspaceName) return storeWorkspaceName;
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("sendpilot_current_workspace");
+      if (saved && saved !== "SendPilot HQ" && saved !== "Personal Workspace") {
+        return saved;
+      }
+    }
+    return storeWorkspaceName || "My Workspace";
+  }, [localWorkspaceOverride, storeWorkspaceName]);
 
   const setCurrentWorkspace = (name: string) => {
     setLocalWorkspaceOverride(name);
@@ -144,10 +151,24 @@ export function Sidebar({ mobileOpen, setMobileOpen, user }: SidebarProps) {
     setMobileOpen(false);
   }, [pathname, setMobileOpen]);
 
-  const workspaces = [
-    { name: "SendPilot HQ", plan: "Active Workspace", leads: `${totalLeads} leads` },
-    { name: "Personal Workspace", plan: "Demo Mode", leads: "0 leads" },
-  ];
+  const workspaces = useMemo(() => {
+    if (storeWorkspaces && storeWorkspaces.length > 0) {
+      return storeWorkspaces.map((ws) => ({
+        id: ws.id,
+        name: ws.name,
+        plan: "Active Workspace",
+        leads: ws.leads || `${totalLeads} leads`,
+      }));
+    }
+    return [
+      {
+        id: "ws-primary",
+        name: currentWorkspace,
+        plan: "Active Workspace",
+        leads: `${totalLeads} leads`,
+      },
+    ];
+  }, [storeWorkspaces, currentWorkspace, totalLeads]);
 
   return (
     <>

@@ -14,6 +14,7 @@ export interface FlowItem {
     delayDays: number;
     template: string;
   }[];
+  config?: Record<string, any>;
   isTemplate: boolean;
   createdAt?: string;
   updatedAt?: string;

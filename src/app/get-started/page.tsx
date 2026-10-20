@@ -80,7 +80,7 @@ export default function GetStartedPage() {
     {
       stepNumber: 3,
       title: "Import Your Leads",
-      description: "From LinkedIn, Sales Nav, or CSV upload. Fast and simple.",
+      description: "From LinkedIn Search or CSV upload. Fast and simple.",
       status: state.step3.status,
       href: "/get-started/leads",
       key: "step3",

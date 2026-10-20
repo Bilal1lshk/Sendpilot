@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Sparkles,
@@ -20,14 +21,130 @@ import {
   ArrowRight,
   ArrowLeft,
   Copy,
-  Save,
   Eye,
   Loader2,
   X,
   FileCheck,
+  Download,
+  ExternalLink,
+  Bot,
 } from "lucide-react";
 import { SequenceStepItem, FlowItem } from "./types";
 import { toast } from "sonner";
+
+export const INBOUND_AUTOMATIONS: FlowItem[] = [
+  {
+    id: "inbound_profile_visit",
+    name: "Profile Visit Follow-up",
+    description: "Queue a soft connection invite within 4 hours when a target persona views your profile.",
+    isTemplate: true,
+    steps: [
+      {
+        type: "connect",
+        delayDays: 0,
+        template:
+          "Hi {{firstName}}, noticed you came across my profile recently. Thought I'd reach out and connect — would love to follow what you're building at {{company}}!",
+      },
+      {
+        type: "wait",
+        delayDays: 2,
+        template: "",
+      },
+      {
+        type: "message",
+        delayDays: 0,
+        template:
+          "Hey {{firstName}}, thanks for connecting! Hope your week is off to a great start. Always keen to exchange notes with other leaders in {{title}} roles.",
+      },
+    ],
+  },
+  {
+    id: "inbound_post_engagement",
+    name: "Post Engagement Auto-Capture",
+    description: "Capture and nurture prospects who liked or commented on your industry thought leadership posts.",
+    isTemplate: true,
+    steps: [
+      {
+        type: "connect",
+        delayDays: 0,
+        template:
+          "Hi {{firstName}}, saw you caught my recent discussion on LinkedIn. Always great connecting with peers following similar industry trends at {{company}}!",
+      },
+      {
+        type: "wait",
+        delayDays: 1,
+        template: "",
+      },
+      {
+        type: "message",
+        delayDays: 0,
+        template:
+          "Hey {{firstName}}, loved the perspectives on that thread. Curious what your team at {{company}} is prioritizing this quarter around this space?",
+      },
+    ],
+  },
+  {
+    id: "inbound_instant_acceptance",
+    name: "Instant Acceptance Welcome",
+    description: "Send a friendly greeting within 30 minutes of a prospect accepting your connection request.",
+    isTemplate: true,
+    steps: [
+      {
+        type: "connect",
+        delayDays: 0,
+        template:
+          "Hi {{firstName}}, would love to connect and keep in touch regarding what you're building at {{company}}.",
+      },
+      {
+        type: "wait",
+        delayDays: 1,
+        template: "",
+      },
+      {
+        type: "message",
+        delayDays: 0,
+        template:
+          "Hi {{firstName}}, great to be connected! Appreciate you accepting. Let me know if I can ever be helpful or introduce you to anyone in my network.",
+      },
+    ],
+  },
+  {
+    id: "inbound_meeting_scheduler",
+    name: "Meeting Scheduler Linker",
+    description: "Detect interest in outbound replies and automatically present your calendar booking link.",
+    isTemplate: true,
+    steps: [
+      {
+        type: "connect",
+        delayDays: 0,
+        template:
+          "Hi {{firstName}}, noticed your work as {{title}} at {{company}}. Would love to share a few quick observations on pipeline acceleration.",
+      },
+      {
+        type: "wait",
+        delayDays: 2,
+        template: "",
+      },
+      {
+        type: "message",
+        delayDays: 0,
+        template:
+          "Hey {{firstName}}, following up quickly. We helped similar teams boost outbound response rates by 3x. Do you have 10 mins this week to compare notes?",
+      },
+      {
+        type: "wait",
+        delayDays: 3,
+        template: "",
+      },
+      {
+        type: "message",
+        delayDays: 0,
+        template:
+          "Hi {{firstName}}, just floating this to the top of your inbox. If convenient, feel free to grab a quick slot directly on my calendar here: https://cal.com/meeting",
+      },
+    ],
+  },
+];
 
 interface Step2SelectFlowProps {
   steps: SequenceStepItem[];
@@ -101,18 +218,12 @@ export function Step2SelectFlow({
   onBack,
   targetAudience,
 }: Step2SelectFlowProps) {
-  const [activeSubTab, setActiveSubTab] = useState<"library" | "editor" | "ai">("library");
+  const [activeSubTab, setActiveSubTab] = useState<"inbound" | "library" | "editor" | "ai">("inbound");
   const [flows, setFlows] = useState<FlowItem[]>([]);
   const [templates, setTemplates] = useState<FlowItem[]>([]);
   const [isLoadingFlows, setIsLoadingFlows] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string>(steps[0]?.id || "step-1");
   const [previewSampleLead, setPreviewSampleLead] = useState(false);
-
-  // Save Flow Modal state
-  const [showSaveFlowModal, setShowSaveFlowModal] = useState(false);
-  const [newFlowName, setNewFlowName] = useState("");
-  const [newFlowDescription, setNewFlowDescription] = useState("");
-  const [isSavingFlow, setIsSavingFlow] = useState(false);
 
   // AI Tone Generator state
   const [selectedTone, setSelectedTone] = useState<string>("friendly");
@@ -234,46 +345,11 @@ export function Step2SelectFlow({
     toast.info("Opened flow in Sequence Editor");
   };
 
-  // Save active sequence as a reusable flow
-  const handleSaveFlowAsReusable = async () => {
-    if (!newFlowName.trim()) {
-      toast.error("Please enter a flow name");
-      return;
-    }
-
-    setIsSavingFlow(true);
-    try {
-      const sanitized = steps.map((s) => ({
-        type: s.type,
-        delayDays: s.delayDays,
-        template: s.template,
-      }));
-
-      const res = await fetch("/api/flows", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newFlowName.trim(),
-          description: newFlowDescription.trim(),
-          steps: sanitized,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.flow) {
-        toast.success(`Saved reusable flow: "${data.flow.name}"!`);
-        setShowSaveFlowModal(false);
-        setNewFlowName("");
-        setNewFlowDescription("");
-        fetchFlowsList();
-        onFlowSelect(data.flow);
-      } else {
-        toast.error(data.error || "Failed to save flow");
-      }
-    } catch {
-      toast.error("Network error while saving flow");
-    } finally {
-      setIsSavingFlow(false);
-    }
+  // Apply an Inbound Automation to the campaign sequence
+  const handleApplyInboundFlow = (item: FlowItem) => {
+    handleSelectFlowFromLibrary(item);
+    setActiveSubTab("editor");
+    toast.success(`Imported "${item.name}" from Inbound Automations!`);
   };
 
   // Apply Tone preset
@@ -400,15 +476,28 @@ export function Step2SelectFlow({
             Step 2 of 3 • Automation Sequence
           </span>
           <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
-            Select or Create Automation Flow
+            Select Automation Flow
           </h2>
           <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-            Current flow: <strong className="text-neutral-800 dark:text-neutral-200">{selectedFlowName || "Custom Flow"}</strong> ({steps.filter((s) => s.type !== "wait").length} message touches)
+            Import an automation from Inbound Automations or select from your flow library. Current: <strong className="text-neutral-800 dark:text-neutral-200">{selectedFlowName || "Custom Flow"}</strong> ({steps.filter((s) => s.type !== "wait").length} message touches)
           </p>
         </div>
 
         {/* Sub-Tab Selector */}
         <div className="inline-flex p-1 rounded-xl bg-neutral-100 dark:bg-neutral-950/80 border border-neutral-200/80 dark:border-neutral-800 text-xs">
+          <button
+            type="button"
+            onClick={() => setActiveSubTab("inbound")}
+            className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeSubTab === "inbound"
+                ? "bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 shadow-xs"
+                : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
+            }`}
+          >
+            <Download className="h-3.5 w-3.5 text-palm-leaf-600" />
+            <span>Inbound Automations</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveSubTab("library")}
@@ -449,6 +538,235 @@ export function Step2SelectFlow({
           </button>
         </div>
       </div>
+
+      {/* SUB-VIEW 0: Inbound Automations Import */}
+      {activeSubTab === "inbound" && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-neutral-200/80 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/40">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                  Import Inbound Automations
+                </span>
+                <span className="text-[10px] bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-full">
+                  Native Inbound Sync
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 max-w-xl">
+                Select an automation below to import its verified multi-touch cadence into this campaign. To configure global trigger settings, visit your Inbound Automations center.
+              </p>
+            </div>
+            <Link
+              href="/dashboard/inbound"
+              target="_blank"
+              className="inline-flex items-center gap-1.5 text-xs text-palm-leaf-700 dark:text-palm-leaf-400 hover:underline font-medium shrink-0"
+            >
+              <span>Manage Inbound Page</span>
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+
+          {/* Custom Saved Automations from Inbound */}
+          {flows.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-900 dark:text-neutral-100 flex items-center gap-1.5">
+                    <Bot className="h-3.5 w-3.5 text-palm-leaf-600" />
+                    <span>Your Custom Inbound & Playwright Automations</span>
+                  </h4>
+                  <span className="text-[10px] bg-palm-leaf-100 text-palm-leaf-900 dark:bg-palm-leaf-950/60 dark:text-palm-leaf-300 font-bold px-2 py-0.5 rounded-full">
+                    {flows.length} available
+                  </span>
+                </div>
+                <Link
+                  href="/dashboard/inbound"
+                  target="_blank"
+                  className="inline-flex items-center gap-1 text-xs text-palm-leaf-700 dark:text-palm-leaf-400 hover:underline"
+                >
+                  <span>+ Create more on Inbound page</span>
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {flows.map((item) => {
+                  const isSelected = selectedFlowName === item.name;
+                  const touches = item.steps.filter((s) => s.type !== "wait").length;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
+                        isSelected
+                          ? "border-palm-leaf-600 bg-palm-leaf-50/30 dark:bg-palm-leaf-950/20 ring-2 ring-palm-leaf-500/20 shadow-xs"
+                          : "border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-300 dark:hover:border-neutral-700"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="text-[10px] font-bold uppercase text-palm-leaf-700 dark:text-palm-leaf-400 tracking-wider flex items-center gap-1">
+                            <Bot className="h-3 w-3" />
+                            <span>Playwright Sequence</span>
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-semibold">
+                            {touches} touches
+                          </span>
+                        </div>
+
+                        <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                          {item.name}
+                        </h3>
+
+                        {item.description && (
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5 leading-relaxed">
+                            {item.description}
+                          </p>
+                        )}
+
+                        {/* Step summary chips */}
+                        <div className="mt-3.5 pt-3 border-t border-neutral-100 dark:border-neutral-800 space-y-1.5">
+                          {item.steps.map((st, i) => (
+                            <div
+                              key={i}
+                              className="flex items-center gap-2 text-[11px] text-neutral-600 dark:text-neutral-400"
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-palm-leaf-500 shrink-0" />
+                              {st.type === "connect" ? (
+                                <span>Step 1: Connection Request Note</span>
+                              ) : st.type === "wait" ? (
+                                <span className="text-neutral-400">
+                                  Wait {st.delayDays} day{st.delayDays > 1 ? "s" : ""}
+                                </span>
+                              ) : (
+                                <span>Follow-up Direct Message</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mt-5 pt-3 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-neutral-400">
+                          {isSelected ? "Currently imported" : "Ready to import"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyInboundFlow(item)}
+                          className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors shadow-2xs ${
+                            isSelected
+                              ? "bg-palm-leaf-600 text-white hover:bg-palm-leaf-700"
+                              : "border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                          }`}
+                        >
+                          {isSelected ? (
+                            <>
+                              <Check className="h-3 w-3 stroke-[3]" />
+                              <span>Active in Campaign</span>
+                            </>
+                          ) : (
+                            <>
+                              <Download className="h-3 w-3" />
+                              <span>Import Sequence</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Platform Inbound Templates */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-900 dark:text-neutral-100">
+              Pre-built Inbound Trigger Automations
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {INBOUND_AUTOMATIONS.map((item) => {
+                const isSelected = selectedFlowName === item.name;
+                const touches = item.steps.filter((s) => s.type !== "wait").length;
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
+                      isSelected
+                        ? "border-palm-leaf-600 bg-palm-leaf-50/30 dark:bg-palm-leaf-950/20 ring-2 ring-palm-leaf-500/20 shadow-xs"
+                        : "border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:border-neutral-300 dark:hover:border-neutral-700"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[10px] font-bold uppercase text-palm-leaf-700 dark:text-palm-leaf-400 tracking-wider">
+                          Inbound Trigger
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-semibold">
+                          {touches} touches
+                        </span>
+                      </div>
+
+                      <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                        {item.name}
+                      </h3>
+
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5 leading-relaxed">
+                        {item.description}
+                      </p>
+
+                      {/* Step summary chips */}
+                      <div className="mt-3.5 pt-3 border-t border-neutral-100 dark:border-neutral-800 space-y-1.5">
+                        {item.steps.map((st, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 text-[11px] text-neutral-600 dark:text-neutral-400"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-palm-leaf-500 shrink-0" />
+                            {st.type === "connect" ? (
+                              <span>Step 1: Connection Request Note</span>
+                            ) : st.type === "wait" ? (
+                              <span className="text-neutral-400">Wait {st.delayDays} day{st.delayDays > 1 ? "s" : ""}</span>
+                            ) : (
+                              <span>Follow-up Direct Message</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-5 pt-3 border-t border-neutral-100 dark:border-neutral-800 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-neutral-400">
+                        {isSelected ? "Currently imported" : "Ready to import"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleApplyInboundFlow(item)}
+                        className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors shadow-2xs ${
+                          isSelected
+                            ? "bg-palm-leaf-600 text-white hover:bg-palm-leaf-700"
+                            : "border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-800 dark:text-neutral-200"
+                        }`}
+                      >
+                        {isSelected ? (
+                          <>
+                            <Check className="h-3 w-3 stroke-[3]" />
+                            <span>Active in Campaign</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-3 w-3" />
+                            <span>Import Sequence</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SUB-VIEW 1: Flow Library (Saved Flows + Built-In Templates) */}
       {activeSubTab === "library" && (
@@ -666,15 +984,21 @@ export function Step2SelectFlow({
 
               <button
                 type="button"
-                onClick={() => {
-                  setNewFlowName(selectedFlowName ? `${selectedFlowName} (Copy)` : "My Custom Flow");
-                  setShowSaveFlowModal(true);
-                }}
+                onClick={() => setActiveSubTab("inbound")}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs"
               >
-                <Save className="h-3 w-3" />
-                <span>Save as Flow</span>
+                <Download className="h-3.5 w-3.5" />
+                <span>Import Inbound Flow</span>
               </button>
+
+              <Link
+                href="/dashboard/inbound"
+                target="_blank"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-medium text-xs transition-colors cursor-pointer"
+              >
+                <span>Inbound Page</span>
+                <ExternalLink className="h-3 w-3" />
+              </Link>
             </div>
           </div>
 
@@ -985,98 +1309,6 @@ export function Step2SelectFlow({
           </div>
         </div>
       )}
-
-      {/* Save Flow Modal */}
-      <AnimatePresence>
-        {showSaveFlowModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowSaveFlowModal(false)}
-              className="fixed inset-0 bg-black/50 backdrop-blur-xs"
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              className="relative w-full max-w-md rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xl overflow-hidden z-10 p-5 space-y-4"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-neutral-100 dark:border-neutral-800">
-                <div className="flex items-center gap-2">
-                  <Save className="h-4 w-4 text-palm-leaf-600" />
-                  <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
-                    Save as Reusable Flow
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowSaveFlowModal(false)}
-                  className="p-1 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-800 dark:text-neutral-200 mb-1">
-                  Flow Name
-                </label>
-                <input
-                  type="text"
-                  value={newFlowName}
-                  onChange={(e) => setNewFlowName(e.target.value)}
-                  placeholder="e.g., Enterprise Series A Outreach Flow"
-                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950 px-3.5 py-2 text-xs focus:outline-none focus:border-palm-leaf-500 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-800 dark:text-neutral-200 mb-1">
-                  Description (optional)
-                </label>
-                <textarea
-                  rows={2}
-                  value={newFlowDescription}
-                  onChange={(e) => setNewFlowDescription(e.target.value)}
-                  placeholder="Brief note about target industry or best practices for this cadence..."
-                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950 p-3 text-xs focus:outline-none focus:border-palm-leaf-500 font-medium"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowSaveFlowModal(false)}
-                  className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 text-xs font-semibold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isSavingFlow || !newFlowName.trim()}
-                  onClick={handleSaveFlowAsReusable}
-                  className="px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white text-xs font-semibold shadow-xs disabled:opacity-50 inline-flex items-center gap-1.5"
-                >
-                  {isSavingFlow ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-3.5 w-3.5" />
-                      <span>Save Flow</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* Navigation Footer */}
       <div className="pt-4 flex items-center justify-between border-t border-neutral-100 dark:border-neutral-800">

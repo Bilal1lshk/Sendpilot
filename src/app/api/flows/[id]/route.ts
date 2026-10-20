@@ -26,6 +26,7 @@ export async function GET(_req: Request, { params }: Ctx) {
         name: flow.name,
         description: flow.description,
         steps: flow.steps,
+        config: (flow as any).config || {},
         isTemplate: flow.isTemplate,
         createdAt: flow.createdAt,
         updatedAt: flow.updatedAt,
@@ -67,6 +68,10 @@ export async function PUT(req: Request, { params }: Ctx) {
       update.steps = steps;
     }
 
+    if (body.config !== undefined && typeof body.config === "object") {
+      update.config = body.config;
+    }
+
     const flow = await AutomationFlow.findOneAndUpdate(
       { _id: id, userId: ctx.userId },
       { $set: update },
@@ -84,6 +89,7 @@ export async function PUT(req: Request, { params }: Ctx) {
         name: flow.name,
         description: flow.description,
         steps: flow.steps,
+        config: (flow as any).config || {},
         updatedAt: flow.updatedAt,
       },
     });

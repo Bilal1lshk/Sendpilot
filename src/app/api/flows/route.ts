@@ -121,6 +121,7 @@ export async function GET() {
       name: f.name,
       description: f.description || "",
       steps: f.steps,
+      config: (f as any).config || {},
       isTemplate: false,
       createdAt: f.createdAt,
       updatedAt: f.updatedAt,
@@ -139,7 +140,7 @@ export async function GET() {
 /**
  * POST /api/flows
  * Creates a new reusable automation flow.
- * Body: { name: string, description?: string, steps: ICampaignStep[] }
+ * Body: { name: string, description?: string, steps: ICampaignStep[], config?: Record<string, any> }
  */
 export async function POST(req: Request) {
   const ctx = await requireUser();
@@ -169,11 +170,14 @@ export async function POST(req: Request) {
       );
     }
 
+    const config = body.config && typeof body.config === "object" ? body.config : {};
+
     const flow = await AutomationFlow.create({
       userId: ctx.userId,
       name,
       description: String(body.description || "").trim(),
       steps,
+      config,
       isTemplate: false,
     });
 
@@ -184,6 +188,7 @@ export async function POST(req: Request) {
         name: flow.name,
         description: flow.description,
         steps: flow.steps,
+        config: flow.config || {},
         isTemplate: false,
         createdAt: flow.createdAt,
         updatedAt: flow.updatedAt,

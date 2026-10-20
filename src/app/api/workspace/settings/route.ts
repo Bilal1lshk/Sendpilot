@@ -51,11 +51,12 @@ async function ensureWorkspace(userId: string, userName?: string): Promise<IWork
 }
 
 async function buildSettingsPayload(workspace: IWorkspace, userId: string) {
-  const [ownerUser, ownerConnections, totalLeads, totalCampaigns] = await Promise.all([
+  const [ownerUser, ownerConnections, totalLeads, totalCampaigns, allUserWorkspaces] = await Promise.all([
     User.findById(userId).lean(),
     LinkedInConnection.find({ userId }).lean(),
     Lead.countDocuments({ userId }),
     Campaign.countDocuments({ userId }),
+    Workspace.find({ userId }).sort({ createdAt: 1 }).lean(),
   ]);
 
   const rawTeammates = Array.isArray(workspace.step2?.data?.invitedTeammates)
@@ -164,6 +165,13 @@ async function buildSettingsPayload(workspace: IWorkspace, userId: string) {
       offer: step1Data.offer || "",
     },
     members: [ownerMember, ...teamMembers],
+    workspaces: (allUserWorkspaces.length > 0 ? allUserWorkspaces : [workspace]).map((ws) => ({
+      id: String(ws._id),
+      name: ws.name || "My Workspace",
+      plan: "Active Workspace",
+      leads: `${Array.isArray(ws.step3?.data?.leads) && ws.step3.data.leads.length > 0 ? ws.step3.data.leads.length : totalLeads} leads`,
+      isCurrent: String(ws._id) === String(workspace._id),
+    })),
     stats: {
       totalLeads,
       totalCampaigns,

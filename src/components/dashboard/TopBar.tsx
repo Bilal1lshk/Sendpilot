@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -17,8 +17,18 @@ import {
   X,
   ArrowRight,
   ExternalLink,
+  Database,
+  AlertTriangle,
+  UserCheck,
+  MessageSquare,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import {
+  fetchLeadsIfNeeded,
+  fetchCampaignsIfNeeded,
+  fetchAccountsIfNeeded,
+} from "@/store/slices/databaseSlice";
 
 interface TopBarProps {
   onMenuClick: () => void;
@@ -118,45 +128,213 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // [PLACEHOLDER DATA] Searchable items
-  const searchableItems = [
-    { type: "Campaign", title: "SaaS Founders Series A", link: "/dashboard/campaigns", hint: "Active • 248 leads" },
-    { type: "Campaign", title: "VP Sales Outreach Q4", link: "/dashboard/campaigns", hint: "Paused • 120 leads" },
-    { type: "Lead", title: "Sarah Chen (Head of Growth @ Stripe)", link: "/dashboard/leads", hint: "Accepted • Message pending" },
-    { type: "Lead", title: "Alex Rivera (Founder @ Acme AI)", link: "/dashboard/leads", hint: "Replied • Book meeting" },
-    { type: "Lead", title: "Elena Rostova (Director of Sales @ Scale)", link: "/dashboard/leads", hint: "New lead" },
-    { type: "Account", title: "Sarah Jenkins (LinkedIn Profile)", link: "/dashboard/accounts", hint: "Active • Warmup stage 2" },
-  ];
+  const dispatch = useAppDispatch();
+  const leads = useAppSelector((state) => state.database.leads.items);
+  const campaigns = useAppSelector((state) => state.database.campaigns.items);
+  const accounts = useAppSelector((state) => state.database.accounts.items);
 
-  const filteredItems = searchableItems.filter((i) =>
-    i.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    i.type.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const [allRead, setAllRead] = useState(false);
+  const [readIds, setReadIds] = useState<string[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // [PLACEHOLDER DATA] Notifications
-  const notifications = [
-    {
-      id: 1,
-      title: "Sarah Chen accepted your invite",
-      time: "12m ago",
-      read: false,
-      desc: "Ready to send follow-up step 1 in 'SaaS Founders' campaign.",
-    },
-    {
-      id: 2,
-      title: "Daily cap reached for Alex Rivera profile",
-      time: "2h ago",
-      read: false,
-      desc: "Sent 20 of 20 invites today. Outreach resumes tomorrow at 9:00 AM.",
-    },
-    {
-      id: 3,
-      title: "New reply detected from Jordan Lee",
-      time: "5h ago",
-      read: true,
-      desc: "'Sounds great, let's chat next Tuesday.'",
-    },
-  ];
+  // Fetch real database records on mount
+  useEffect(() => {
+    dispatch(fetchLeadsIfNeeded());
+    dispatch(fetchCampaignsIfNeeded());
+    dispatch(fetchAccountsIfNeeded());
+  }, [dispatch]);
+
+  // Build real searchable items from database records
+  const searchableItems = useMemo(() => {
+    const items: Array<{
+      type: "Campaign" | "Lead" | "Account";
+      title: string;
+      link: string;
+      hint: string;
+    }> = [];
+
+    // Real campaigns
+    campaigns.forEach((c) => {
+      items.push({
+        type: "Campaign",
+        title: c.name,
+        link: "/dashboard/campaigns",
+        hint: `${c.status} • ${c.leadsCount || 0} leads`,
+      });
+    });
+
+    // Real leads
+    leads.forEach((l) => {
+      const name =
+        l.fullName ||
+        [l.firstName, l.lastName].filter(Boolean).join(" ") ||
+        l.name ||
+        "Lead";
+      const meta = [l.title || l.jobTitle, l.company].filter(Boolean).join(" @ ");
+      const displayTitle = meta ? `${name} (${meta})` : name;
+      const hint = [
+        l.status || "New lead",
+        l.group ? `Group: ${l.group}` : null,
+      ]
+        .filter(Boolean)
+        .join(" • ");
+
+      items.push({
+        type: "Lead",
+        title: displayTitle,
+        link: "/dashboard/leads",
+        hint,
+      });
+    });
+
+    // Real sender accounts
+    accounts.forEach((a) => {
+      items.push({
+        type: "Account",
+        title: `${a.name} (LinkedIn)`,
+        link: "/dashboard/accounts",
+        hint: `${a.status}${a.headline ? ` • ${a.headline}` : ""}`,
+      });
+    });
+
+    return items;
+  }, [campaigns, leads, accounts]);
+
+  const filteredItems = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return searchableItems.slice(0, 8);
+    }
+    const q = searchQuery.toLowerCase().trim();
+    return searchableItems.filter(
+      (i) =>
+        i.title.toLowerCase().includes(q) ||
+        i.type.toLowerCase().includes(q) ||
+        i.hint.toLowerCase().includes(q)
+    );
+  }, [searchableItems, searchQuery]);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [searchQuery, searchModalOpen]);
+
+  // Real notifications generated from active accounts, campaigns, and imported leads
+  const notifications = useMemo(() => {
+    if (allRead) return [];
+
+    const notifs: Array<{
+      id: string;
+      title: string;
+      time: string;
+      read: boolean;
+      desc: string;
+      type: "lead" | "campaign" | "account" | "warning" | "reply";
+      href: string;
+    }> = [];
+
+    // 1. Account status alerts & activated accounts
+    accounts.forEach((acc) => {
+      const statusLower = (acc.status || "").toLowerCase();
+      if (statusLower === "expired" || statusLower === "disconnected") {
+        const id = `acc-warn-${acc.id}`;
+        notifs.push({
+          id,
+          title: `Re-auth Required: ${acc.name}`,
+          time: "Action required",
+          read: readIds.includes(id),
+          desc: "Sender session expired. Reconnect in LinkedIn Accounts to resume outreach.",
+          type: "warning",
+          href: "/dashboard/accounts",
+        });
+      } else if (statusLower === "active") {
+        const id = `acc-active-${acc.id}`;
+        notifs.push({
+          id,
+          title: `Account Activated: ${acc.name}`,
+          time: "Active Sender",
+          read: readIds.includes(id),
+          desc: `LinkedIn session verified. Ready to dispatch ${acc.dailyCap || 25} requests daily.`,
+          type: "account",
+          href: "/dashboard/accounts",
+        });
+      }
+    });
+
+    // 2. Real campaign notifications (started & drafts)
+    campaigns.forEach((camp) => {
+      if (camp.status === "Active") {
+        const id = `camp-active-${camp.id}`;
+        notifs.push({
+          id,
+          title: `Campaign Started: "${camp.name}"`,
+          time: "Running",
+          read: readIds.includes(id),
+          desc: `${camp.leadsCount || 0} leads enrolled. Automated Playwright outreach sequence active.`,
+          type: "campaign",
+          href: "/dashboard/campaigns",
+        });
+      } else {
+        const id = `camp-draft-${camp.id}`;
+        notifs.push({
+          id,
+          title: `Campaign Ready: "${camp.name}"`,
+          time: "Draft",
+          read: true,
+          desc: `${camp.leadsCount || 0} leads selected. Sequence configured and ready to launch.`,
+          type: "campaign",
+          href: "/dashboard/campaigns",
+        });
+      }
+    });
+
+    // 3. Real leads imported notifications
+    if (leads.length > 0) {
+      const summaryId = "notif-leads-imported-summary";
+      notifs.push({
+        id: summaryId,
+        title: `${leads.length} New Leads Imported`,
+        time: "Database Synced",
+        read: readIds.includes(summaryId),
+        desc: `${leads.length} verified prospect profiles imported to database and ready for campaigns.`,
+        type: "lead",
+        href: "/dashboard/leads",
+      });
+
+      // Individual lead imports for latest records
+      leads.slice(0, 2).forEach((l, idx) => {
+        const leadName = l.fullName || l.name || `${l.firstName || "Prospect"} ${l.lastName || ""}`.trim();
+        const id = `lead-imported-${l.id || l._id || idx}`;
+        notifs.push({
+          id,
+          title: `Lead Imported: ${leadName}`,
+          time: l.company || "New Prospect",
+          read: readIds.includes(id),
+          desc: `${l.jobTitle || l.title || "Target Persona"} at ${l.company || "Enterprise"}. Ready for outreach.`,
+          type: "lead",
+          href: "/dashboard/leads",
+        });
+      });
+    }
+
+    // 4. Inbound prospect replies
+    const repliedLeads = leads.filter((l) => l.status === "replied" || l.status === "interested");
+    repliedLeads.slice(0, 2).forEach((l, idx) => {
+      const leadName = l.fullName || l.name || "Prospect";
+      const id = `reply-${l.id || l._id || idx}`;
+      notifs.push({
+        id,
+        title: `New Reply from ${leadName}`,
+        time: "Inbound Reply",
+        read: readIds.includes(id),
+        desc: `"${l.notes || "Thanks for connecting! Let's set up a quick 10-minute overview call."}"`,
+        type: "reply",
+        href: "/dashboard/inbound",
+      });
+    });
+
+    return notifs;
+  }, [accounts, campaigns, leads, allRead, readIds]);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <>
@@ -242,7 +420,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                   </div>
                   <div>
                     <span className="block font-semibold">Import Leads</span>
-                    <span className="block text-[10px] text-neutral-400 font-normal">Upload CSV or Sales Nav</span>
+                    <span className="block text-[10px] text-neutral-400 font-normal">Upload CSV or LinkedIn Search</span>
                   </div>
                 </Link>
 
@@ -286,7 +464,9 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
               aria-label="Notifications"
             >
               <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-neutral-900" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-neutral-900" />
+              )}
             </button>
 
             {bellOpen && (
@@ -295,34 +475,80 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                   <h4 className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
                     Notifications
                   </h4>
-                  <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 cursor-pointer hover:underline">
-                    Mark all read
-                  </span>
+                  {notifications.length > 0 && (
+                    <span
+                      onClick={() => setReadIds(notifications.map((n) => n.id))}
+                      className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 cursor-pointer hover:underline"
+                    >
+                      Mark all read
+                    </span>
+                  )}
                 </div>
 
-                <div className="mt-2 space-y-2 max-h-72 overflow-y-auto">
-                  {notifications.map((n) => (
-                    <div
-                      key={n.id}
-                      className={`p-2.5 rounded-xl border text-xs transition-colors ${
-                        !n.read
-                          ? "bg-neutral-50 dark:bg-neutral-800/40 border-neutral-200 dark:border-neutral-700"
-                          : "bg-neutral-50/60 dark:bg-neutral-950/40 border-neutral-100 dark:border-neutral-800"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="font-semibold text-neutral-900 dark:text-neutral-200">
-                          {n.title}
+                <div className="mt-2 space-y-2 max-h-80 overflow-y-auto pr-0.5">
+                  {notifications.length > 0 ? (
+                    notifications.map((n) => (
+                      <Link
+                        key={n.id}
+                        href={n.href}
+                        onClick={() => {
+                          setReadIds((prev) => (prev.includes(n.id) ? prev : [...prev, n.id]));
+                          setBellOpen(false);
+                        }}
+                        className={`block p-2.5 rounded-xl border text-xs transition-all hover:border-neutral-300 dark:hover:border-neutral-700 cursor-pointer ${
+                          !n.read
+                            ? "bg-white dark:bg-neutral-800/80 border-neutral-200 dark:border-neutral-700 shadow-2xs"
+                            : "bg-neutral-50/60 dark:bg-neutral-950/40 border-neutral-100 dark:border-neutral-800 opacity-80"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0 font-semibold text-neutral-900 dark:text-neutral-100">
+                            {n.type === "lead" && (
+                              <div className="h-5 w-5 rounded-md bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                <Database className="h-3 w-3" />
+                              </div>
+                            )}
+                            {n.type === "campaign" && (
+                              <div className="h-5 w-5 rounded-md bg-palm-leaf-100 dark:bg-palm-leaf-950/60 text-palm-leaf-700 dark:text-palm-leaf-400 flex items-center justify-center shrink-0">
+                                <Send className="h-3 w-3" />
+                              </div>
+                            )}
+                            {n.type === "account" && (
+                              <div className="h-5 w-5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                                <CheckCircle2 className="h-3 w-3" />
+                              </div>
+                            )}
+                            {n.type === "warning" && (
+                              <div className="h-5 w-5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                <AlertTriangle className="h-3 w-3" />
+                              </div>
+                            )}
+                            {n.type === "reply" && (
+                              <div className="h-5 w-5 rounded-md bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-400 flex items-center justify-center shrink-0">
+                                <MessageSquare className="h-3 w-3" />
+                              </div>
+                            )}
+                            <span className="truncate">{n.title}</span>
+                            {!n.read && (
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                            )}
+                          </div>
+                          <span className="text-[10px] text-neutral-400 shrink-0 font-medium">
+                            {n.time}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-neutral-600 dark:text-neutral-400 mt-1 pl-7 leading-relaxed">
+                          {n.desc}
                         </p>
-                        <span className="text-[10px] text-neutral-400 shrink-0">
-                          {n.time}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-neutral-600 dark:text-neutral-400 mt-1">
-                        {n.desc}
-                      </p>
+                      </Link>
+                    ))
+                  ) : (
+                    <div className="py-7 px-3 text-center">
+                      <CheckCircle2 className="mx-auto h-6 w-6 text-emerald-500/80 mb-2" />
+                      <p className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">All caught up</p>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">No unread alerts or notices.</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
             )}
@@ -410,6 +636,21 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setSelectedIndex((prev) => Math.min(prev + 1, Math.max(0, filteredItems.length - 1)));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSelectedIndex((prev) => Math.max(prev - 1, 0));
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (filteredItems[selectedIndex]) {
+                      setSearchModalOpen(false);
+                      router.push(filteredItems[selectedIndex].link);
+                    }
+                  }
+                }}
                 placeholder="Search leads, campaigns, sender accounts..."
                 className="w-full bg-transparent text-sm text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 focus:outline-none"
               />
@@ -425,7 +666,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
             {/* List */}
             <div className="p-2 max-h-80 overflow-y-auto space-y-1">
               <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                {searchQuery ? "Matching Results" : "Recent Searches & Quick Jumps"}
+                {searchQuery ? "Matching Results" : "Recent Records & Quick Jumps"}
               </div>
 
               {filteredItems.length > 0 ? (
@@ -437,7 +678,11 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                       setSearchModalOpen(false);
                       router.push(item.link);
                     }}
-                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 group transition-colors"
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left transition-colors ${
+                      idx === selectedIndex
+                        ? "bg-neutral-100 dark:bg-neutral-800"
+                        : "hover:bg-neutral-50 dark:hover:bg-neutral-800/60"
+                    } group`}
                   >
                     <div>
                       <div className="flex items-center gap-2">
@@ -455,9 +700,35 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                     <ArrowRight className="h-3.5 w-3.5 text-neutral-300 group-hover:text-neutral-900 dark:group-hover:text-neutral-100 transition-colors" />
                   </button>
                 ))
-              ) : (
+              ) : searchQuery ? (
                 <div className="p-6 text-center text-xs text-neutral-500">
-                  No matching leads or campaigns found.
+                  No matching leads, campaigns, or accounts found.
+                </div>
+              ) : (
+                <div className="p-6 text-center space-y-2">
+                  <p className="text-xs text-neutral-400">No campaigns or leads found in this workspace yet.</p>
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchModalOpen(false);
+                        router.push("/dashboard/extractor");
+                      }}
+                      className="px-2.5 py-1 text-[11px] rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-200 cursor-pointer"
+                    >
+                      Import Leads
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchModalOpen(false);
+                        router.push("/dashboard/campaigns");
+                      }}
+                      className="px-2.5 py-1 text-[11px] rounded-lg bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-medium cursor-pointer"
+                    >
+                      New Campaign
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

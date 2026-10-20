@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Copy,
-  Users,
   Search,
   ArrowRight,
   Sparkles,
@@ -509,7 +508,7 @@ export default function LeadExtractorPage() {
       </motion.div>
 
       {/* Source Cards in Clean Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
         {SOURCES.map((source) => {
           const Icon = source.icon;
           const isSelected = activeSource === source.name;
@@ -1346,7 +1345,7 @@ export default function LeadExtractorPage() {
         </motion.div>
       )}
 
-      {/* ==================== Sales Navigator & Other Tabs fallback guide ==================== */}
+      {/* ==================== Post Commenters & Other Tabs fallback guide ==================== */}
       {activeSource !== "LinkedIn Search" && activeSource !== "CSV / Excel Upload" && (
         <motion.div
           initial={{ opacity: 0, y: 6 }}

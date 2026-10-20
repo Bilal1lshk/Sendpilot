@@ -66,7 +66,7 @@ export function OrbitingEcosystemSection() {
             <div title="CSV & Spreadsheet Ingestion" className="p-2 text-emerald-600">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
-            <div title="Sales Navigator Searches" className="p-2 text-neutral-800">
+            <div title="Target Prospect Searches" className="p-2 text-neutral-800">
               <Search className="h-5 w-5" />
             </div>
             <div title="Firmographic Enrichment DB" className="p-2 text-neutral-700">

@@ -40,7 +40,7 @@ const stages: Stage[] = [
     badge: "Smart Sync",
     title: "Multi-Source Lead Ingestion & De-duplication",
     description:
-      "Drop your CSV lists or sync LinkedIn Sales Navigator searches. SendPilot cleans syntax, removes duplicate profiles, and normalizes candidate records in seconds.",
+      "Drop your CSV lists or sync LinkedIn People search results. SendPilot cleans syntax, removes duplicate profiles, and normalizes candidate records in seconds.",
     icon: Filter,
   },
   {

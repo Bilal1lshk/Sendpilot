@@ -47,6 +47,13 @@ export interface WorkspaceSettingsPayload {
   defaultDailyCap?: number;
   timezone?: string;
   workingHours?: string;
+  workspaces?: Array<{
+    id: string;
+    name: string;
+    plan: string;
+    leads: string;
+    isCurrent?: boolean;
+  }>;
   profile?: Partial<{
     fullName: string;
     email: string;

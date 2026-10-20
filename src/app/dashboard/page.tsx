@@ -16,48 +16,17 @@ import {
   Sparkles,
   CheckCircle2,
   Loader2,
+  Plus,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 import { AnimatedCounter } from "@/components/ui/AnimatedCounter";
 import { microcopy } from "@/lib/microcopy";
 import { pageVariants, cardVariants, listItemVariants } from "@/lib/motion";
 
-const SAMPLE_DEMO_TASKS = [
-  {
-    id: "sample_t1",
-    name: "Marcus Vance",
-    title: "VP of Product",
-    company: "Linear Dynamics",
-    photo: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&crop=faces",
-    profileUrl: "https://linkedin.com",
-    message: "Hey Marcus, loved your recent thoughts on developer tooling. Would love to connect and share notes.",
-    done: false,
-  },
-  {
-    id: "sample_t2",
-    name: "Devon Reed",
-    title: "Head of Marketing",
-    company: "Retool Apps",
-    photo: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=faces",
-    profileUrl: "https://linkedin.com",
-    message: "Hi Devon, noticed Retool's new integrations update. We built an AI assistant that plugs right into internal outreach flows—curious if you've explored this?",
-    done: false,
-  },
-  {
-    id: "sample_t3",
-    name: "Sarah Lindqvist",
-    title: "Growth Lead",
-    company: "Nordic SaaS Labs",
-    photo: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=faces",
-    profileUrl: "https://linkedin.com",
-    message: "Hi Sarah, saw your post on lead qualification. We automated profile scoring with zero scraping risk. Happy to send a 2-min demo if useful!",
-    done: false,
-  },
-];
-
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchOverviewIfNeeded,
+  fetchAccountsIfNeeded,
   setOverviewTasks,
   toggleOverviewTaskDone,
 } from "@/store/slices/databaseSlice";
@@ -71,10 +40,12 @@ export default function DashboardOverviewPage() {
   const { metrics, tasks, loading, loaded } = useAppSelector(
     (state) => state.database.overview
   );
+  const accounts = useAppSelector((state) => state.database.accounts.items);
   const isLoading = loading && !loaded;
 
   useEffect(() => {
     dispatch(fetchOverviewIfNeeded());
+    dispatch(fetchAccountsIfNeeded());
   }, [dispatch]);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -92,10 +63,6 @@ export default function DashboardOverviewPage() {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
-  };
-
-  const handleLoadDemoTasks = () => {
-    dispatch(setOverviewTasks(SAMPLE_DEMO_TASKS));
   };
 
   // SVG circular progress calculation
@@ -360,13 +327,6 @@ export default function DashboardOverviewPage() {
                   >
                     Upload CSV Leads
                   </Link>
-                  <button
-                    type="button"
-                    onClick={handleLoadDemoTasks}
-                    className="px-3 py-2 rounded-xl text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200 font-medium text-xs transition-colors cursor-pointer"
-                  >
-                    Preview Sample Tasks
-                  </button>
                 </div>
               </div>
             )}
@@ -638,61 +598,67 @@ export default function DashboardOverviewPage() {
         </div>
 
         <div className="mt-4 space-y-3">
-          {/* Account 1: Active with pulsing dot */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-neutral-200/60 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/40">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center border border-neutral-200 dark:border-neutral-700">
-                <LinkedInIcon className="h-4 w-4 text-[#0a66c2]" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
-                    Alex Rivera
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Active
-                  </span>
+          {accounts.length > 0 ? (
+            accounts.map((acc) => {
+              const isActive = (acc.status || "").toLowerCase() === "active";
+              return (
+                <div
+                  key={acc.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-neutral-200/60 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/40"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center border border-neutral-200 dark:border-neutral-700">
+                      <LinkedInIcon className="h-4 w-4 text-[#0a66c2]" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
+                          {acc.name}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                            isActive
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                              : "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              isActive ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                            }`}
+                          />
+                          {acc.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                        {acc.headline || `${acc.usedToday || 0} of ${acc.dailyCap || 25} requests used today • Warmup Stage ${acc.warmupStage || 1}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-xs sm:text-right">
+                    <span className="text-[10px] text-neutral-400 block uppercase font-medium">Safety</span>
+                    <span className="font-semibold text-palm-leaf-700 dark:text-palm-leaf-400">
+                      {isActive ? "100% healthy" : "Action required"}
+                    </span>
+                  </div>
                 </div>
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                  18 of 25 requests used today • Stage 3
-                </p>
-              </div>
+              );
+            })
+          ) : (
+            <div className="p-6 text-center rounded-xl border border-dashed border-neutral-200 dark:border-neutral-800 space-y-2">
+              <p className="text-xs font-medium text-neutral-400">
+                No LinkedIn sender profiles connected yet.
+              </p>
+              <Link
+                href="/dashboard/accounts"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white text-xs font-semibold shadow-xs"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Connect Sender Account</span>
+              </Link>
             </div>
-
-            <div className="text-xs sm:text-right">
-              <span className="text-[10px] text-neutral-400 block uppercase font-medium">Safety</span>
-              <span className="font-semibold text-palm-leaf-700 dark:text-palm-leaf-400">98% healthy</span>
-            </div>
-          </div>
-
-          {/* Account 2: Active with pulsing dot */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-neutral-200/60 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/40">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center border border-neutral-200 dark:border-neutral-700">
-                <LinkedInIcon className="h-4 w-4 text-[#0a66c2]" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
-                    Elena Rostova
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Active
-                  </span>
-                </div>
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
-                  12 of 15 requests used today • Stage 2
-                </p>
-              </div>
-            </div>
-
-            <div className="text-xs sm:text-right">
-              <span className="text-[10px] text-neutral-400 block uppercase font-medium">Safety</span>
-              <span className="font-semibold text-palm-leaf-700 dark:text-palm-leaf-400">100% healthy</span>
-            </div>
-          </div>
+          )}
         </div>
       </motion.div>
     </motion.div>

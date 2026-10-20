@@ -27,7 +27,7 @@ const productModules = [
   {
     title: "Multi-Source Lead Ingestion",
     tagline: "Sync Any Prospect Source in Seconds",
-    desc: "Import CSV lists, LinkedIn Sales Navigator searches, or direct CRM segments. SendPilot deduplicates contacts, normalizes company names, and validates corporate emails automatically.",
+    desc: "Import CSV lists, LinkedIn searches, or direct CRM segments. SendPilot deduplicates contacts, normalizes company names, and validates corporate emails automatically.",
     metrics: ["1-Click CSV Upload", "Auto De-duplication", "Email Syntax Hygiene"],
   },
   {
@@ -51,7 +51,7 @@ const productModules = [
 ];
 
 const integrations = [
-  { name: "LinkedIn & Sales Navigator", category: "Outreach & Ingestion", status: "Native 2-Way Sync" },
+  { name: "LinkedIn People Search", category: "Outreach & Ingestion", status: "Native 2-Way Sync" },
   { name: "HubSpot CRM", category: "Pipeline Sync", status: "Bi-directional" },
   { name: "Salesforce", category: "Enterprise CRM", status: "Bi-directional" },
   { name: "CSV / XLSX Importer", category: "Data Ingestion", status: "Instant Drag & Drop" },

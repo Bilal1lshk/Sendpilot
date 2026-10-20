@@ -6,6 +6,7 @@ export interface IAutomationFlow extends Document {
   name: string;
   description: string;
   steps: ICampaignStep[];
+  config?: Record<string, any>;
   isTemplate: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -26,6 +27,7 @@ const AutomationFlowSchema = new Schema<IAutomationFlow>(
     name: { type: String, required: true, trim: true },
     description: { type: String, default: "" },
     steps: { type: [StepSchema], default: [] },
+    config: { type: Schema.Types.Mixed, default: {} },
     isTemplate: { type: Boolean, default: false },
   },
   { timestamps: true }
