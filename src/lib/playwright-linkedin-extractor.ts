@@ -1,5 +1,9 @@
 import type { Browser } from "playwright-core";
 import { launchBrowser, safeCloseBrowser } from "@/lib/browser-launcher";
+import {
+  setupLinkedInContext,
+  warmupLinkedInSession,
+} from "@/lib/playwright-linkedin-session";
 
 export interface PlaywrightExtractedLead {
   id: string;
@@ -123,47 +127,24 @@ export async function extractSearchLeadsWithPlaywright({
       locale: "en-US",
     });
 
-    // Inject li_at and JSESSIONID cookies for .linkedin.com
-    const cookiesToInject = [
-      {
-        name: "li_at",
-        value: cleanLiAt,
-        domain: ".linkedin.com",
-        path: "/",
-        httpOnly: true,
-        secure: true,
-        sameSite: "None" as const,
-      },
-      ...(cleanJSessionRaw
-        ? [
-            {
-              name: "JSESSIONID",
-              value: `"${cleanJSessionRaw}"`,
-              domain: ".linkedin.com",
-              path: "/",
-              httpOnly: false,
-              secure: true,
-              sameSite: "None" as const,
-            },
-          ]
-        : []),
-    ];
-
-    await context.addCookies(cookiesToInject);
-
-    // If JSESSIONID is provided, also include csrf-token header on Voyager requests
-    if (cleanJSessionRaw) {
-      await context.setExtraHTTPHeaders({
-        "csrf-token": cleanJSessionRaw,
-      });
-    }
-
     const page = await context.newPage();
 
-    // Hide webdriver flag
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    // Setup resilient LinkedIn cookies & stealth headers
+    await setupLinkedInContext(context, page, {
+      liAt: cleanLiAt,
+      jsessionId: jSessionId,
     });
+
+    // Warm up session on feed first to avoid ERR_TOO_MANY_REDIRECTS
+    const warmup = await warmupLinkedInSession(page, 20000);
+    if (!warmup.ok) {
+      return {
+        leads: [],
+        authwallDetected: true,
+        error: warmup.error || "LinkedIn session authentication failed. Please reconnect your account.",
+        pagesScraped: 0,
+      };
+    }
 
     // Intercept Voyager JSON responses in the background to capture structured results too
     page.on("response", async (response) => {
@@ -247,10 +228,24 @@ export async function extractSearchLeadsWithPlaywright({
         targetUrl.searchParams.set("page", String(currentPage));
       }
 
-      await page.goto(targetUrl.toString(), {
-        waitUntil: "domcontentloaded",
-        timeout: 30000,
-      });
+      try {
+        await page.goto(targetUrl.toString(), {
+          waitUntil: "domcontentloaded",
+          timeout: 30000,
+        });
+      } catch (navErr: unknown) {
+        const navMsg = navErr instanceof Error ? navErr.message : String(navErr);
+        if (navMsg.includes("ERR_TOO_MANY_REDIRECTS")) {
+          return {
+            leads: Array.from(collectedByUrl.values()),
+            authwallDetected: true,
+            error:
+              "LinkedIn session cookie expired or flagged (ERR_TOO_MANY_REDIRECTS). Please re-authenticate your LinkedIn account.",
+            pagesScraped,
+          };
+        }
+        throw navErr;
+      }
 
       const currentUrl = page.url();
       if (
