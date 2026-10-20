@@ -32,6 +32,8 @@ import {
   UserPlus,
   ExternalLink,
   AlertCircle,
+  Activity,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pageVariants, cardVariants, listItemVariants } from "@/lib/motion";
@@ -329,6 +331,8 @@ export interface CampaignDetail {
   dailyCap: number;
   sentToday: number;
   remainingToday: number;
+  failedCount?: number;
+  steps?: { type: string; delayDays: number; template: string }[];
   funnel: { stage: string; count: number }[];
 }
 
@@ -417,6 +421,9 @@ export default function CampaignsPage() {
   const [isSendingStep, setIsSendingStep] = useState<string | null>(null);
   const [campaignError, setCampaignError] = useState<string | null>(null);
   const [leadErrors, setLeadErrors] = useState<Record<string, string>>({});
+  const [detailSubTab, setDetailSubTab] = useState<"prospects" | "monitor">("prospects");
+  const [monitoringLead, setMonitoringLead] = useState<any | null>(null);
+  const [isRetryingAll, setIsRetryingAll] = useState<boolean>(false);
 
   const filteredAddLeads = useMemo(() => {
     if (!addLeadSearch.trim()) return databaseLeads;
@@ -434,8 +441,26 @@ export default function CampaignsPage() {
 
   const filteredEnrolledLeads = useMemo(() => {
     if (enrolledFilterTab === "all") return enrolledLeads;
+    if (enrolledFilterTab === "failed") {
+      return enrolledLeads.filter((item) => item.state === "failed" || !!leadErrors[item.enrollmentId]);
+    }
     return enrolledLeads.filter((item) => item.state === enrolledFilterTab);
-  }, [enrolledLeads, enrolledFilterTab]);
+  }, [enrolledLeads, enrolledFilterTab, leadErrors]);
+
+  const failedLeads = useMemo(() => {
+    return enrolledLeads.filter((item) => item.state === "failed" || !!leadErrors[item.enrollmentId]);
+  }, [enrolledLeads, leadErrors]);
+
+  const selectedCampaignSteps = useMemo(() => {
+    if (campaignDetail?.steps && campaignDetail.steps.length > 0) {
+      return campaignDetail.steps;
+    }
+    return [
+      { type: "connect", delayDays: 0, template: "Hi {{firstName}}, would love to connect and follow along!" },
+      { type: "wait", delayDays: 2, template: "" },
+      { type: "message", delayDays: 0, template: "Thanks for connecting, {{firstName}}!" },
+    ];
+  }, [campaignDetail?.steps]);
 
   useEffect(() => {
     if (databaseLeads.length > 0 && selectedWizardLeadIds.length === 0) {
@@ -554,12 +579,14 @@ export default function CampaignsPage() {
     }
   };
 
-  const fetchCampaignDetail = async (id: string) => {
+  const fetchCampaignDetail = async (id: string, force = false) => {
     fetchEnrolledLeads(id);
-    const cached = detailsById[id];
-    if (cached) {
-      setCampaignDetail(cached);
-      return;
+    if (!force) {
+      const cached = detailsById[id];
+      if (cached) {
+        setCampaignDetail(cached);
+        return;
+      }
     }
     setIsLoadingDetail(true);
     setCampaignDetail(null);
@@ -574,6 +601,8 @@ export default function CampaignsPage() {
           dailyCap: data.campaign.dailyCap ?? 20,
           sentToday: data.sentToday ?? 0,
           remainingToday: data.remainingToday ?? 0,
+          failedCount: data.failedCount ?? 0,
+          steps: data.campaign.steps || [],
           funnel: data.funnel || [],
         };
         setCampaignDetail(detail);
@@ -629,6 +658,28 @@ export default function CampaignsPage() {
     const enrollmentId = leadRow.enrollmentId;
     setIsSendingStep(enrollmentId);
     setCampaignError(null);
+
+    const recordFailure = async (errMsg: string) => {
+      toast.error(errMsg);
+      setCampaignError(errMsg);
+      setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
+      try {
+        await fetch(`/api/campaigns/${selectedCampaignId}/events`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "failed",
+            enrollmentIds: [enrollmentId],
+            note: errMsg,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to record failure event:", err);
+      }
+      fetchEnrolledLeads(selectedCampaignId);
+      fetchCampaignDetail(selectedCampaignId, true);
+    };
+
     try {
       const profileUrl = leadRow.lead?.linkedinUrl;
       const note = leadRow.nextAction?.message || "";
@@ -636,9 +687,7 @@ export default function CampaignsPage() {
 
       if (!profileUrl || typeof profileUrl !== "string" || !profileUrl.trim()) {
         const errMsg = `Cannot dispatch to ${leadRow.lead?.name || "prospect"}: Missing or invalid LinkedIn profile URL.`;
-        toast.error(errMsg);
-        setCampaignError(errMsg);
-        setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
+        await recordFailure(errMsg);
         return;
       }
 
@@ -660,9 +709,7 @@ export default function CampaignsPage() {
 
         if (!sendRes.ok || !sendData.success) {
           const errMsg = sendData.error || "Failed to dispatch connection request via Playwright.";
-          toast.error(errMsg);
-          setCampaignError(errMsg);
-          setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
+          await recordFailure(errMsg);
           return;
         }
 
@@ -684,9 +731,7 @@ export default function CampaignsPage() {
 
         if (!sendRes.ok || !sendData.success) {
           const errMsg = sendData.error || "Failed to dispatch follow-up message via Playwright.";
-          toast.error(errMsg);
-          setCampaignError(errMsg);
-          setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
+          await recordFailure(errMsg);
           return;
         }
 
@@ -717,19 +762,34 @@ export default function CampaignsPage() {
             }!`
           );
           fetchEnrolledLeads(selectedCampaignId);
-          fetchCampaignDetail(selectedCampaignId);
+          fetchCampaignDetail(selectedCampaignId, true);
         } else {
           toast.error(eventData.error || "Failed to advance sequence step");
         }
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : "Network error while dispatching touchpoint";
-      toast.error(errMsg);
-      setCampaignError(errMsg);
-      setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
+      await recordFailure(errMsg);
     } finally {
       setIsSendingStep(null);
     }
+  };
+
+  const handleRetryAllFailed = async () => {
+    if (failedLeads.length === 0) return;
+    setIsRetryingAll(true);
+    let successCount = 0;
+    let failCount = 0;
+    for (const lead of failedLeads) {
+      try {
+        await handleSendQueuedLeadStep(lead);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    setIsRetryingAll(false);
+    toast.info(`Retry batch completed: ${successCount} processed.`);
   };
 
   const handleRemoveEnrolledLead = async (enrollmentId: string) => {
@@ -1054,18 +1114,31 @@ export default function CampaignsPage() {
             </div>
 
             {/* Quick stats from the list */}
-            <div className="mt-6 grid grid-cols-3 gap-3 pt-4 border-t border-neutral-100 dark:border-neutral-800">
-              <div className="text-center">
-                <p className="text-[10px] text-neutral-500">Leads</p>
+            <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-neutral-100 dark:border-neutral-800">
+              <div className="text-center p-2 rounded-xl bg-neutral-50/60 dark:bg-neutral-800/40">
+                <p className="text-[10px] text-neutral-500">Leads Enrolled</p>
                 <p className="text-sm font-bold text-neutral-900 dark:text-neutral-100">{selectedCampaign.sentCount}/{selectedCampaign.leadsCount}</p>
               </div>
-              <div className="text-center">
-                <p className="text-[10px] text-neutral-500">Accept rate</p>
+              <div className="text-center p-2 rounded-xl bg-neutral-50/60 dark:bg-neutral-800/40">
+                <p className="text-[10px] text-neutral-500">Accept Rate</p>
                 <p className="text-sm font-bold text-palm-leaf-700 dark:text-palm-leaf-400">{selectedCampaign.acceptRate}%</p>
               </div>
-              <div className="text-center">
-                <p className="text-[10px] text-neutral-500">Reply rate</p>
+              <div className="text-center p-2 rounded-xl bg-neutral-50/60 dark:bg-neutral-800/40">
+                <p className="text-[10px] text-neutral-500">Reply Rate</p>
                 <p className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{selectedCampaign.replyRate}%</p>
+              </div>
+              <div className={`text-center p-2 rounded-xl transition-colors ${
+                failedLeads.length > 0
+                  ? "bg-red-50 dark:bg-red-950/40 border border-red-200/60 dark:border-red-900/40 text-red-700 dark:text-red-300"
+                  : "bg-neutral-50/60 dark:bg-neutral-800/40 text-neutral-800 dark:text-neutral-200"
+              }`}>
+                <p className="text-[10px] text-neutral-500 flex items-center justify-center gap-1">
+                  <span>Step Failures</span>
+                  {failedLeads.length > 0 && <AlertCircle className="h-2.5 w-2.5 text-red-600 inline" />}
+                </p>
+                <p className={`text-sm font-bold ${failedLeads.length > 0 ? "text-red-600 dark:text-red-400" : ""}`}>
+                  {failedLeads.length}
+                </p>
               </div>
             </div>
           </motion.div>
@@ -1097,43 +1170,91 @@ export default function CampaignsPage() {
 
           {/* Enrolled Prospects Section */}
           <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs">
+            {/* View Sub-Tabs: Prospects vs Step Execution Monitor */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-neutral-100 dark:border-neutral-800">
-              <div>
-                <h3 className="text-base font-bold text-neutral-900 dark:text-neutral-100">
-                  Enrolled Prospects ({enrolledLeads.length})
-                </h3>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                  Prospects actively advancing through this campaign sequence.
-                </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDetailSubTab("prospects")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    detailSubTab === "prospects"
+                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
+                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
+                  }`}
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  <span>Enrolled Prospects ({enrolledLeads.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetailSubTab("monitor")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    detailSubTab === "monitor"
+                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
+                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
+                  }`}
+                >
+                  <Activity className="h-3.5 w-3.5" />
+                  <span>Step Execution Monitor</span>
+                  {failedLeads.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white animate-pulse">
+                      {failedLeads.length} failed
+                    </span>
+                  )}
+                </button>
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
-                {/* Filter pills */}
-                <div className="inline-flex p-1 rounded-xl bg-neutral-100 dark:bg-neutral-950/80 border border-neutral-200/80 dark:border-neutral-800 text-xs">
-                  {["all", "queued", "invited", "accepted", "replied"].map((tab) => (
-                    <button
-                      key={tab}
-                      type="button"
-                      onClick={() => setEnrolledFilterTab(tab)}
-                      className={`px-2.5 py-1 rounded-lg font-medium capitalize transition-all ${
-                        enrolledFilterTab === tab
-                          ? "bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 shadow-xs"
-                          : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
-                </div>
+                {detailSubTab === "prospects" && (
+                  <div className="inline-flex p-1 rounded-xl bg-neutral-100 dark:bg-neutral-950/80 border border-neutral-200/80 dark:border-neutral-800 text-xs">
+                    {["all", "queued", "invited", "accepted", "replied", "failed"].map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setEnrolledFilterTab(tab)}
+                        className={`px-2.5 py-1 rounded-lg font-medium capitalize transition-all cursor-pointer ${
+                          enrolledFilterTab === tab
+                            ? "bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 shadow-xs"
+                            : tab === "failed" && failedLeads.length > 0
+                            ? "text-red-600 dark:text-red-400 font-bold"
+                            : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
+                        }`}
+                      >
+                        {tab === "failed" && failedLeads.length > 0 ? `failed (${failedLeads.length})` : tab}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {detailSubTab === "monitor" && failedLeads.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={isRetryingAll}
+                    onClick={handleRetryAllFailed}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    {isRetryingAll ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Retrying all failed...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        <span>Retry All Failed ({failedLeads.length})</span>
+                      </>
+                    )}
+                  </button>
+                )}
 
                 <button
                   type="button"
                   onClick={() => {
                     fetchEnrolledLeads(selectedCampaign.id);
-                    fetchCampaignDetail(selectedCampaign.id);
+                    fetchCampaignDetail(selectedCampaign.id, true);
                   }}
                   className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-400 transition-colors cursor-pointer"
-                  title="Refresh prospects list"
+                  title="Refresh prospects & execution states"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isLoadingEnrolledLeads ? "animate-spin text-palm-leaf-600" : ""}`} />
                 </button>
@@ -1153,8 +1274,179 @@ export default function CampaignsPage() {
               </div>
             </div>
 
-            {/* Prospects Table / Empty state */}
-            {isLoadingEnrolledLeads ? (
+            {detailSubTab === "monitor" ? (
+              <div className="space-y-6 pt-2">
+                {/* 4 Health & Execution KPIs */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30">
+                    <span className="text-[10px] text-neutral-400 uppercase font-semibold">Sequence Depth</span>
+                    <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100 mt-1">
+                      {selectedCampaignSteps.length} Steps
+                    </p>
+                    <p className="text-[10px] text-neutral-500 mt-0.5">Automated outreach steps</p>
+                  </div>
+                  <div className="p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30">
+                    <span className="text-[10px] text-neutral-400 uppercase font-semibold">Active Prospects</span>
+                    <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100 mt-1">
+                      {enrolledLeads.length} Leads
+                    </p>
+                    <p className="text-[10px] text-neutral-500 mt-0.5">Total enrolled in sequence</p>
+                  </div>
+                  <div className="p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30">
+                    <span className="text-[10px] text-neutral-400 uppercase font-semibold">Touches Sent Today</span>
+                    <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100 mt-1">
+                      {campaignDetail?.sentToday ?? selectedCampaign.sentCount}
+                    </p>
+                    <p className="text-[10px] text-neutral-500 mt-0.5">{campaignDetail?.remainingToday ?? 0} cap remaining</p>
+                  </div>
+                  <div className={`p-4 rounded-xl border transition-colors ${
+                    failedLeads.length > 0
+                      ? "border-red-200 dark:border-red-900/60 bg-red-50/40 dark:bg-red-950/20 text-red-700 dark:text-red-300"
+                      : "border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30 text-neutral-900 dark:text-neutral-100"
+                  }`}>
+                    <span className="text-[10px] uppercase font-semibold text-neutral-400">Step Failures</span>
+                    <p className={`text-lg font-bold mt-1 ${failedLeads.length > 0 ? "text-red-600 dark:text-red-400 flex items-center gap-1.5" : ""}`}>
+                      {failedLeads.length > 0 && <AlertCircle className="h-4 w-4 text-red-600 animate-bounce" />}
+                      {failedLeads.length} Failed
+                    </p>
+                    <p className="text-[10px] text-neutral-500 mt-0.5">
+                      {failedLeads.length > 0 ? "Action required to retry" : "All steps executing cleanly"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Active Failure Audit Section */}
+                {failedLeads.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 text-red-600" />
+                          <span>Real Step Failures & Diagnostic Errors ({failedLeads.length})</span>
+                        </h4>
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          These prospects encountered issues while executing a touchpoint. Review the error and retry.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isRetryingAll}
+                        onClick={handleRetryAllFailed}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        {isRetryingAll ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Retrying...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            <span>Retry All ({failedLeads.length})</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto border border-red-100 dark:border-red-950 rounded-2xl bg-white dark:bg-neutral-900">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-neutral-100 dark:border-neutral-800 text-neutral-400 font-medium bg-red-50/30 dark:bg-red-950/20">
+                            <th className="py-3 px-4">Prospect</th>
+                            <th className="py-3 px-4">Failed Step</th>
+                            <th className="py-3 px-4">Real Playwright / LinkedIn Error</th>
+                            <th className="py-3 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
+                          {failedLeads.map((item) => {
+                            const lead = item.lead || {};
+                            const errNote = item.lastError || leadErrors[item.enrollmentId] || "Step execution failed via Playwright.";
+                            const isSending = isSendingStep === item.enrollmentId;
+
+                            return (
+                              <tr key={item.enrollmentId} className="hover:bg-red-50/20 dark:hover:bg-red-950/10 transition-colors">
+                                <td className="py-3 px-4">
+                                  <div className="font-semibold text-neutral-900 dark:text-neutral-100">
+                                    {lead.name || `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Prospect"}
+                                  </div>
+                                  <div className="flex items-center gap-1 text-[11px] text-neutral-400">
+                                    <span>{[lead.title, lead.company].filter(Boolean).join(" • ")}</span>
+                                    {lead.linkedinUrl && (
+                                      <a
+                                        href={lead.linkedinUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-palm-leaf-600 hover:underline"
+                                      >
+                                        <ExternalLink className="h-2.5 w-2.5 inline ml-0.5" />
+                                      </a>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-900/60">
+                                    Step {(item.failedStep?.stepIndex ?? item.currentStep) + 1}: {item.failedStep?.type || "Connect"}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 max-w-md">
+                                  <p className="text-[11px] text-red-600 dark:text-red-400 font-mono bg-red-50/60 dark:bg-red-950/30 p-1.5 rounded-lg border border-red-200/50 break-words">
+                                    {errNote}
+                                  </p>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="inline-flex items-center gap-2 justify-end">
+                                    <button
+                                      type="button"
+                                      disabled={isSending}
+                                      onClick={() => handleSendQueuedLeadStep(item)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                                    >
+                                      {isSending ? (
+                                        <>
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                          <span>Retrying...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <RefreshCw className="h-3 w-3" />
+                                          <span>Retry</span>
+                                        </>
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMonitoringLead(item)}
+                                      className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                                      title="View execution audit"
+                                    >
+                                      <Activity className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-12 text-center rounded-2xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-900/40">
+                    <div className="h-12 w-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center mb-3">
+                      <CheckCircle2 className="h-6 w-6" />
+                    </div>
+                    <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                      All Sequence Steps Operational
+                    </h4>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 max-w-sm mx-auto">
+                      0 step failures detected. All connection requests and scheduled follow-ups are advancing smoothly through your configured sequence.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : isLoadingEnrolledLeads ? (
               <div className="py-12 text-center text-xs text-neutral-400 flex items-center justify-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-palm-leaf-600" />
                 <span>Loading enrolled prospects...</span>
@@ -1278,7 +1570,17 @@ export default function CampaignsPage() {
                           </td>
 
                           <td className="py-3.5 px-4 max-w-xs">
-                            {item.nextAction ? (
+                            {(item.state === "failed" || leadError) ? (
+                              <div className="space-y-0.5">
+                                <span className="text-red-600 dark:text-red-400 font-bold flex items-center gap-1 text-[11px]">
+                                  <AlertCircle className="h-3 w-3 shrink-0" />
+                                  Step {(item.failedStep?.stepIndex ?? item.currentStep) + 1} ({item.failedStep?.type || "Connect"}) Failed
+                                </span>
+                                <p className="text-[11px] text-red-500/90 truncate italic" title={item.lastError || leadError}>
+                                  {item.lastError || leadError || "Connection request failed via Playwright"}
+                                </p>
+                              </div>
+                            ) : item.nextAction ? (
                               <div className="space-y-0.5">
                                 <div className="flex items-center gap-1.5 text-[11px]">
                                   {item.nextAction.waitingForAcceptance ? (
@@ -1311,7 +1613,7 @@ export default function CampaignsPage() {
 
                           <td className="py-3.5 px-6 text-right">
                             <div className="inline-flex items-center gap-2 justify-end">
-                              {leadError ? (
+                              {(item.state === "failed" || leadError) ? (
                                 <button
                                   type="button"
                                   disabled={isSending}
@@ -1355,6 +1657,14 @@ export default function CampaignsPage() {
                               )}
                               <button
                                 type="button"
+                                onClick={() => setMonitoringLead(item)}
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-palm-leaf-600 hover:bg-palm-leaf-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                                title="Monitor sequence steps & real error audit log"
+                              >
+                                <Activity className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => handleRemoveEnrolledLead(item.enrollmentId)}
                                 className="p-1.5 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
                                 title="Remove from sequence"
@@ -1371,6 +1681,201 @@ export default function CampaignsPage() {
               </div>
             )}
           </motion.div>
+
+          {/* Step Execution Monitor Modal */}
+          {monitoringLead && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                {/* Modal Header */}
+                <div className="p-5 border-b border-neutral-100 dark:border-neutral-800 flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-palm-leaf-100 dark:bg-palm-leaf-950 text-palm-leaf-700 dark:text-palm-leaf-300 font-bold text-sm flex items-center justify-center shrink-0">
+                      {(monitoringLead.lead?.name || monitoringLead.lead?.firstName || "L")[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-neutral-900 dark:text-neutral-100">
+                          {monitoringLead.lead?.name || `${monitoringLead.lead?.firstName || ""} ${monitoringLead.lead?.lastName || ""}`.trim() || "Prospect Step Monitor"}
+                        </h3>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${
+                          monitoringLead.state === "failed"
+                            ? "bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 border-red-200/60"
+                            : monitoringLead.state === "invited"
+                            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60"
+                            : monitoringLead.state === "accepted"
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60"
+                            : "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200/60"
+                        }`}>
+                          {monitoringLead.state}
+                        </span>
+                      </div>
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        {[monitoringLead.lead?.title || monitoringLead.lead?.jobTitle, monitoringLead.lead?.company].filter(Boolean).join(" • ")}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMonitoringLead(null)}
+                    className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Modal Content - Scrollable */}
+                <div className="p-5 overflow-y-auto space-y-6 text-xs">
+                  {/* Failure alert banner if in failed state */}
+                  {(monitoringLead.state === "failed" || monitoringLead.lastError) && (
+                    <div className="p-3.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/80 dark:bg-red-950/40 text-red-900 dark:text-red-200 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold flex items-center gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
+                          Step {(monitoringLead.failedStep?.stepIndex ?? monitoringLead.currentStep) + 1} Execution Failure
+                        </span>
+                        <button
+                          type="button"
+                          disabled={isSendingStep === monitoringLead.enrollmentId}
+                          onClick={async () => {
+                            await handleSendQueuedLeadStep(monitoringLead);
+                            setMonitoringLead(null);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold text-[11px] shadow-xs cursor-pointer transition-colors"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          <span>Retry Step Now</span>
+                        </button>
+                      </div>
+                      <p className="text-neutral-700 dark:text-neutral-300 font-mono text-[11px] bg-white/60 dark:bg-black/40 p-2 rounded-lg border border-red-200/40 break-words">
+                        {monitoringLead.lastError || monitoringLead.failedStep?.error || "Error executing touchpoint via Playwright"}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Step-by-Step Sequence Progress */}
+                  <div>
+                    <h4 className="font-bold text-neutral-900 dark:text-neutral-100 uppercase tracking-wider text-[11px] mb-3 flex items-center gap-1.5">
+                      <SlidersHorizontal className="h-3.5 w-3.5 text-palm-leaf-600" />
+                      <span>Campaign Sequence Breakdown ({selectedCampaignSteps.length} Steps)</span>
+                    </h4>
+                    <div className="space-y-2.5">
+                      {selectedCampaignSteps.map((step, idx) => {
+                        const isPast = idx < monitoringLead.currentStep;
+                        const isCurrent = idx === monitoringLead.currentStep;
+                        const isStepFailed = isCurrent && (monitoringLead.state === "failed" || !!monitoringLead.lastError);
+                        const isCompleted = isPast || (isCurrent && ["invited", "accepted", "replied"].includes(monitoringLead.state) && step.type === "connect");
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-3 rounded-xl border transition-all ${
+                              isStepFailed
+                                ? "border-red-300 dark:border-red-900/80 bg-red-50/40 dark:bg-red-950/20"
+                                : isCompleted
+                                ? "border-emerald-200/80 dark:border-emerald-900/40 bg-emerald-50/30 dark:bg-emerald-950/20"
+                                : isCurrent
+                                ? "border-blue-200/80 dark:border-blue-900/40 bg-blue-50/30 dark:bg-blue-950/20"
+                                : "border-neutral-200/70 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-800/20"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-neutral-900 dark:text-neutral-100">
+                                  Step {idx + 1}: {step.type === "connect" ? "Connection Request" : step.type === "wait" ? `Wait ${step.delayDays} Days` : "Follow-up Message"}
+                                </span>
+                                <span className="text-[10px] text-neutral-400 font-mono">
+                                  {step.type}
+                                </span>
+                              </div>
+
+                              {isStepFailed ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/50 px-2 py-0.5 rounded-full">
+                                  <AlertCircle className="h-3 w-3" />
+                                  Execution Failed
+                                </span>
+                              ) : isCompleted ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full">
+                                  <Check className="h-3 w-3" />
+                                  Completed
+                                </span>
+                              ) : isCurrent ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">
+                                  <Clock className="h-3 w-3" />
+                                  In Progress
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-neutral-400 font-medium">Pending</span>
+                              )}
+                            </div>
+
+                            {step.template && (
+                              <p className="text-[11px] text-neutral-600 dark:text-neutral-300 bg-white/70 dark:bg-neutral-900/70 p-2 rounded-lg border border-neutral-100 dark:border-neutral-800 italic">
+                                &quot;{step.template}&quot;
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Real Event Audit Trail */}
+                  <div>
+                    <h4 className="font-bold text-neutral-900 dark:text-neutral-100 uppercase tracking-wider text-[11px] mb-3 flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-palm-leaf-600" />
+                      <span>Execution Audit Trail ({monitoringLead.history?.length || 0} events)</span>
+                    </h4>
+                    <div className="space-y-2 border-l-2 border-neutral-200 dark:border-neutral-800 pl-3 ml-1.5">
+                      {(!monitoringLead.history || monitoringLead.history.length === 0) ? (
+                        <p className="text-neutral-400 italic">No events recorded yet.</p>
+                      ) : (
+                        monitoringLead.history.map((ev: any, i: number) => {
+                          const isFail = ev.event === "failed";
+                          const isSent = ev.event === "step_sent";
+                          return (
+                            <div key={i} className="relative group">
+                              <div className={`absolute -left-[19px] top-1 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-neutral-900 ${
+                                isFail ? "bg-red-500" : isSent ? "bg-emerald-500" : "bg-neutral-400"
+                              }`} />
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className={`font-semibold capitalize text-xs ${
+                                  isFail ? "text-red-600 dark:text-red-400 font-bold" : "text-neutral-800 dark:text-neutral-200"
+                                }`}>
+                                  {ev.event.replace(/_/g, " ")} {ev.stepIndex !== undefined ? `(Step ${ev.stepIndex + 1})` : ""}
+                                </span>
+                                <span className="text-[10px] text-neutral-400 font-mono">
+                                  {new Date(ev.at).toLocaleString()}
+                                </span>
+                              </div>
+                              {ev.note && (
+                                <p className={`text-[11px] mt-0.5 ${isFail ? "text-red-600 dark:text-red-400 font-medium" : "text-neutral-500 dark:text-neutral-400"}`}>
+                                  {ev.note}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-4 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 flex items-center justify-between">
+                  <span className="text-[11px] text-neutral-400">
+                    Enrollment ID: <code className="font-mono text-[10px]">{monitoringLead.enrollmentId}</code>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setMonitoringLead(null)}
+                    className="px-3.5 py-1.5 rounded-xl bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-medium text-xs transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Add Leads Modal */}
           <AnimatePresence>

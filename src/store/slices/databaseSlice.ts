@@ -115,6 +115,8 @@ export interface CampaignDetailPayload {
   dailyCap: number;
   sentToday: number;
   remainingToday: number;
+  failedCount?: number;
+  steps?: { type: string; delayDays: number; template: string }[];
   funnel: { stage: string; count: number }[];
 }
 

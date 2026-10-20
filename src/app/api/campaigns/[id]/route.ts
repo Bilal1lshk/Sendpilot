@@ -55,7 +55,9 @@ export async function GET(_req: Request, { params }: Ctx) {
         { stage: "Accepted", count: s.reachedAccepted },
         { stage: "Replied", count: s.reachedReplied },
         { stage: "Meeting", count: s.reachedMeeting },
+        ...(s.failed > 0 ? [{ stage: "Failed", count: s.failed }] : []),
       ],
+      failedCount: s.failed,
       sentToday,
       remainingToday: Math.max(0, campaign.dailyCap - sentToday),
     });

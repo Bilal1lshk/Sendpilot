@@ -91,13 +91,14 @@ export async function POST(req: Request, { params }: Ctx) {
       switch (event) {
         case "sent": {
           const step = steps[e.currentStep];
-          const sendable = step && step.type !== "wait" && (e.state === "queued" || e.state === "accepted");
+          const sendable = step && step.type !== "wait" && (e.state === "queued" || e.state === "accepted" || e.state === "failed");
           if (!sendable) {
             ignored++;
             continue;
           }
-          if (step.type === "connect" && e.state === "queued") e.state = "invited";
-          if (step.type === "message" && e.state === "queued") e.state = "accepted";
+          if (step.type === "connect" && (e.state === "queued" || e.state === "failed")) e.state = "invited";
+          if (step.type === "message" && (e.state === "queued" || e.state === "failed")) e.state = "accepted";
+          e.lastError = undefined;
           e.history.push({ event: "step_sent", at: now, stepIndex: e.currentStep, note });
           const next = nextActionable(steps, e.currentStep + 1, now);
           e.currentStep = next.currentStep;
@@ -112,20 +113,28 @@ export async function POST(req: Request, { params }: Ctx) {
             continue;
           }
           e.state = event;
+          e.lastError = undefined;
           e.history.push({ event, at: now, note });
           if (event !== "accepted") e.nextActionAt = undefined; // a reply stops the automated sequence
           break;
         }
-        case "failed":
-        case "skipped": {
-          e.state = event;
+        case "failed": {
+          e.state = "failed";
           e.nextActionAt = undefined;
-          e.history.push({ event, at: now, note });
+          e.lastError = note || "Failed to execute step";
+          e.history.push({ event: "failed", at: now, stepIndex: e.currentStep, note, error: note });
+          break;
+        }
+        case "skipped": {
+          e.state = "skipped";
+          e.nextActionAt = undefined;
+          e.history.push({ event: "skipped", at: now, stepIndex: e.currentStep, note });
           break;
         }
         case "reset": {
           const first = nextActionable(steps, 0, now);
           e.state = "queued";
+          e.lastError = undefined;
           e.currentStep = first.currentStep;
           e.nextActionAt = first.nextActionAt;
           e.history.push({ event: "reset", at: now, note });
