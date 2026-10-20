@@ -32,6 +32,7 @@ export interface PlaywrightExtractOptions {
 export interface PlaywrightExtractResult {
   leads: PlaywrightExtractedLead[];
   authwallDetected: boolean;
+  requiresReconnect?: boolean;
   error?: string;
   pagesScraped: number;
 }
@@ -109,7 +110,8 @@ export async function extractSearchLeadsWithPlaywright({
     return {
       leads: [],
       authwallDetected: true,
-      error: "Missing LinkedIn li_at session cookie.",
+      requiresReconnect: true,
+      error: "Your LinkedIn account is not connected. Please connect your LinkedIn account to continue.",
       pagesScraped: 0,
     };
   }
@@ -141,7 +143,8 @@ export async function extractSearchLeadsWithPlaywright({
       return {
         leads: [],
         authwallDetected: true,
-        error: warmup.error || "LinkedIn session authentication failed. Please reconnect your account.",
+        requiresReconnect: true,
+        error: warmup.error || "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
         pagesScraped: 0,
       };
     }
@@ -238,12 +241,19 @@ export async function extractSearchLeadsWithPlaywright({
         });
       } catch (navErr: unknown) {
         const navMsg = navErr instanceof Error ? navErr.message : String(navErr);
-        if (navMsg.includes("ERR_TOO_MANY_REDIRECTS")) {
+        if (
+          navMsg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
+          navMsg.includes("ERR_TOO_MANY_REDIRECTS") ||
+          navMsg.includes("999") ||
+          navMsg.includes("403") ||
+          navMsg.includes("429")
+        ) {
           return {
             leads: Array.from(collectedByUrl.values()),
             authwallDetected: true,
+            requiresReconnect: true,
             error:
-              "LinkedIn session cookie expired or flagged (ERR_TOO_MANY_REDIRECTS). Please re-authenticate your LinkedIn account.",
+              "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
             pagesScraped,
           };
         }
@@ -259,8 +269,9 @@ export async function extractSearchLeadsWithPlaywright({
         return {
           leads: Array.from(collectedByUrl.values()),
           authwallDetected: true,
+          requiresReconnect: true,
           error:
-            "LinkedIn redirected to login/authwall. Your li_at cookie or JSESSIONID may be expired.",
+            "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
           pagesScraped,
         };
       }
@@ -433,12 +444,23 @@ export async function extractSearchLeadsWithPlaywright({
     };
   } catch (err: unknown) {
     const rawMsg = err instanceof Error ? err.message : "Playwright extraction failed";
-    const msg = rawMsg.includes("ERR_TOO_MANY_REDIRECTS")
-      ? "LinkedIn session cookie (li_at) is invalid or expired (caused an infinite redirect loop). Please re-authenticate your LinkedIn account."
+    const isAuthErr =
+      rawMsg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
+      rawMsg.includes("ERR_TOO_MANY_REDIRECTS") ||
+      rawMsg.includes("999") ||
+      rawMsg.includes("403") ||
+      rawMsg.includes("429") ||
+      rawMsg.includes("login") ||
+      rawMsg.includes("authwall") ||
+      rawMsg.includes("checkpoint");
+
+    const msg = isAuthErr
+      ? "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue."
       : rawMsg;
     return {
       leads: Array.from(collectedByUrl.values()).slice(0, maxLeads),
       authwallDetected: true,
+      requiresReconnect: isAuthErr,
       error: msg,
       pagesScraped,
     };

@@ -20,6 +20,7 @@ export interface SendMessageResult {
   status: "sent" | "not_connected" | "inmail_only" | "failed";
   message: string;
   recipientName?: string;
+  requiresReconnect?: boolean;
   error?: string;
 }
 
@@ -41,7 +42,8 @@ export async function sendLinkedInMessageWithPlaywright({
     return {
       success: false,
       status: "failed",
-      message: "Missing or invalid LinkedIn li_at session cookie. Please reconnect your LinkedIn account.",
+      requiresReconnect: true,
+      message: "Your LinkedIn account is not connected. Please connect your LinkedIn account to continue.",
     };
   }
 
@@ -82,7 +84,8 @@ export async function sendLinkedInMessageWithPlaywright({
       return {
         success: false,
         status: "failed",
-        message: warmup.error || "LinkedIn session authentication failed. Please reconnect your account.",
+        requiresReconnect: true,
+        message: warmup.error || "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
       };
     }
 
@@ -94,13 +97,20 @@ export async function sendLinkedInMessageWithPlaywright({
       });
     } catch (navErr: unknown) {
       const navMsg = navErr instanceof Error ? navErr.message : String(navErr);
-      if (navMsg.includes("ERR_TOO_MANY_REDIRECTS")) {
+      if (
+        navMsg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
+        navMsg.includes("ERR_TOO_MANY_REDIRECTS") ||
+        navMsg.includes("999") ||
+        navMsg.includes("403") ||
+        navMsg.includes("429")
+      ) {
         await safeCloseBrowser(browser);
         return {
           success: false,
           status: "failed",
+          requiresReconnect: true,
           message:
-            "LinkedIn session cookie expired or flagged (ERR_TOO_MANY_REDIRECTS). Please re-authenticate your LinkedIn account.",
+            "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
         };
       }
       throw navErr;
@@ -117,8 +127,9 @@ export async function sendLinkedInMessageWithPlaywright({
       return {
         success: false,
         status: "failed",
+        requiresReconnect: true,
         message:
-          "LinkedIn redirected to login. Your session cookie may be expired. Please re-authenticate your LinkedIn account.",
+          "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
       };
     }
 
@@ -238,12 +249,21 @@ export async function sendLinkedInMessageWithPlaywright({
   } catch (err: unknown) {
     await safeCloseBrowser(browser);
     const errMsg = err instanceof Error ? err.message : String(err);
-    if (errMsg.includes("ERR_TOO_MANY_REDIRECTS")) {
+    if (
+      errMsg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
+      errMsg.includes("ERR_TOO_MANY_REDIRECTS") ||
+      errMsg.includes("999") ||
+      errMsg.includes("403") ||
+      errMsg.includes("429") ||
+      errMsg.includes("login") ||
+      errMsg.includes("authwall")
+    ) {
       return {
         success: false,
         status: "failed",
+        requiresReconnect: true,
         message:
-          "LinkedIn session cookie expired or flagged (ERR_TOO_MANY_REDIRECTS). Please re-authenticate your LinkedIn account.",
+          "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
         error: errMsg,
       };
     }

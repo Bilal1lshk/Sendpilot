@@ -78,18 +78,21 @@ export function SendConnectionModal({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data.success) {
-        if (data.requiresAccountConnection) {
+        if (data.requiresAccountConnection || data.requiresReconnect || data.error?.toLowerCase().includes("reconnect")) {
           toast.error(
-            "Please connect your LinkedIn account first from Accounts or Settings.",
+            data.error || "Your LinkedIn account authorization has expired. Please reconnect your account to continue.",
             {
               action: {
-                label: "Connect",
+                label: "Reconnect Now",
                 onClick: () => {
-                  window.location.href = "/dashboard/accounts";
+                  window.location.href = data.redirectUrl || "/dashboard/accounts?reconnect=true";
                 },
               },
             }
           );
+          setTimeout(() => {
+            window.location.href = data.redirectUrl || "/dashboard/accounts?reconnect=true";
+          }, 1500);
         } else {
           toast.error(data.error || "Failed to send connection request.");
         }

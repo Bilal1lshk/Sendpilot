@@ -405,7 +405,9 @@ export async function POST(req: Request) {
         return NextResponse.json(
           {
             success: false,
-            error: "Please enter your LinkedIn li_at cookie to run Playwright session extraction.",
+            requiresReconnect: true,
+            redirectUrl: "/dashboard/accounts?reconnect=true",
+            error: "Your LinkedIn account is not connected. Please connect your LinkedIn account to continue.",
           },
           { status: 400 }
         );
@@ -426,14 +428,27 @@ export async function POST(req: Request) {
           engineUsed: "playwright",
         };
       } else if (mode === "playwright") {
-        const errorMsg = pwResult.error?.includes("ERR_TOO_MANY_REDIRECTS")
-          ? "LinkedIn session cookie (li_at) is invalid or expired (caused an infinite redirect loop). Please re-authenticate your LinkedIn account."
-          : pwResult.error || "Playwright could not find profile cards on that Search URL. Verify your li_at cookie and search URL.";
+        const isAuthError =
+          pwResult.requiresReconnect ||
+          pwResult.authwallDetected ||
+          pwResult.error?.toLowerCase().includes("reconnect") ||
+          pwResult.error?.toLowerCase().includes("re-authenticate") ||
+          pwResult.error?.toLowerCase().includes("expired") ||
+          pwResult.error?.toLowerCase().includes("authorization") ||
+          pwResult.error?.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
+          pwResult.error?.includes("ERR_TOO_MANY_REDIRECTS") ||
+          pwResult.error?.includes("999");
+
+        const errorMsg = isAuthError
+          ? "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue."
+          : pwResult.error || "Playwright could not find profile cards on that Search URL. Verify your search URL.";
 
         return NextResponse.json(
           {
             success: false,
             authwallDetected: pwResult.authwallDetected,
+            requiresReconnect: isAuthError,
+            redirectUrl: isAuthError ? "/dashboard/accounts?reconnect=true" : undefined,
             error: errorMsg,
           },
           { status: 422 }

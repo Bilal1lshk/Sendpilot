@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Send,
@@ -347,6 +348,7 @@ import {
 
 export default function CampaignsPage() {
   const dispatch = useAppDispatch();
+  const router = useRouter();
   const {
     items: storeCampaigns,
     availableLeadsCount,
@@ -708,7 +710,22 @@ export default function CampaignsPage() {
         const sendData = await sendRes.json().catch(() => ({}));
 
         if (!sendRes.ok || !sendData.success) {
-          const errMsg = sendData.error || "Failed to dispatch connection request via Playwright.";
+          const errMsg = sendData.error || "Failed to dispatch connection request.";
+          if (sendData.requiresReconnect || sendData.redirectUrl || errMsg.toLowerCase().includes("reconnect")) {
+            await recordFailure("LinkedIn account authorization expired. Reconnect required.");
+            toast.error("Your LinkedIn account authorization has expired. Redirecting to reconnect your account...", {
+              action: {
+                label: "Reconnect Now",
+                onClick: () => {
+                  router.push(sendData.redirectUrl || "/dashboard/accounts?reconnect=true");
+                },
+              },
+            });
+            setTimeout(() => {
+              router.push(sendData.redirectUrl || "/dashboard/accounts?reconnect=true");
+            }, 1800);
+            return;
+          }
           await recordFailure(errMsg);
           return;
         }
@@ -730,7 +747,22 @@ export default function CampaignsPage() {
         const sendData = await sendRes.json().catch(() => ({}));
 
         if (!sendRes.ok || !sendData.success) {
-          const errMsg = sendData.error || "Failed to dispatch follow-up message via Playwright.";
+          const errMsg = sendData.error || "Failed to dispatch follow-up message.";
+          if (sendData.requiresReconnect || sendData.redirectUrl || errMsg.toLowerCase().includes("reconnect")) {
+            await recordFailure("LinkedIn account authorization expired. Reconnect required.");
+            toast.error("Your LinkedIn account authorization has expired. Redirecting to reconnect your account...", {
+              action: {
+                label: "Reconnect Now",
+                onClick: () => {
+                  router.push(sendData.redirectUrl || "/dashboard/accounts?reconnect=true");
+                },
+              },
+            });
+            setTimeout(() => {
+              router.push(sendData.redirectUrl || "/dashboard/accounts?reconnect=true");
+            }, 1800);
+            return;
+          }
           await recordFailure(errMsg);
           return;
         }

@@ -68,6 +68,13 @@ export default function LinkedInAccountsPage() {
 
   useEffect(() => {
     fetchAccounts();
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("reconnect") === "true" || params.get("connect") === "true") {
+        setConnectModalOpen(true);
+        toast.info("Please reconnect your LinkedIn account to resume your campaigns and automation.");
+      }
+    }
   }, []);
 
   // ── Account actions ─────────────────────────────────────────────

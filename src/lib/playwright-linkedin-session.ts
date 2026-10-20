@@ -26,7 +26,7 @@ export function normalizeLinkedInProfileUrl(profileUrl: string): string {
       targetUrl = `https://${targetUrl}`;
     } else {
       const slug = targetUrl.replace(/^\/+|\/+$/g, "").replace(/\s+/g, "-");
-      targetUrl = `https://www.linkedin.com/in/${slug}/`;
+      targetUrl = `https://www.linkedin.com/in/${slug}`;
     }
   }
 
@@ -35,10 +35,11 @@ export function normalizeLinkedInProfileUrl(profileUrl: string): string {
     if (parsed.hostname === "linkedin.com") {
       parsed.hostname = "www.linkedin.com";
     }
+    // Profile canonical URLs on LinkedIn do not have a trailing slash
     const cleanPath = parsed.pathname.replace(/\/+$/, "");
-    return `${parsed.protocol}//${parsed.hostname}${cleanPath}/`;
+    return `${parsed.protocol}//${parsed.hostname}${cleanPath}`;
   } catch {
-    return targetUrl;
+    return targetUrl.replace(/\/+$/, "");
   }
 }
 
@@ -172,14 +173,16 @@ export async function setupLinkedInContext(
 export async function warmupLinkedInSession(
   page: Page,
   timeoutMs = 25000
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; requiresReconnect?: boolean }> {
   let cookieRevoked = false;
 
   const onResponse = (response: any) => {
     try {
       const headers = response.headers();
+      const status = response.status();
       const setCookie = headers["set-cookie"] || "";
       if (
+        status === 999 ||
         setCookie.includes("li_at=delete me") ||
         setCookie.includes("li_at=delete%20me") ||
         setCookie.includes('li_at=""')
@@ -192,18 +195,20 @@ export async function warmupLinkedInSession(
   page.on("response", onResponse);
 
   try {
-    await page.goto("https://www.linkedin.com/feed/", {
+    const res = await page.goto("https://www.linkedin.com/feed/", {
       waitUntil: "domcontentloaded",
       timeout: timeoutMs,
     });
 
     page.off("response", onResponse);
 
-    if (cookieRevoked) {
+    const status = res?.status() || 200;
+    if (status === 999 || status === 403 || status === 429 || cookieRevoked) {
       return {
         ok: false,
+        requiresReconnect: true,
         error:
-          "Your LinkedIn session cookie (li_at) has expired or was revoked by LinkedIn (server sent 'delete me'). Please reconnect your LinkedIn account with a fresh cookie.",
+          "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
       };
     }
 
@@ -217,8 +222,9 @@ export async function warmupLinkedInSession(
     ) {
       return {
         ok: false,
+        requiresReconnect: true,
         error:
-          "LinkedIn session cookie (li_at) is invalid, expired, or blocked by LinkedIn checkpoint. Please reconnect your LinkedIn account with a fresh session.",
+          "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
       };
     }
 
@@ -226,11 +232,17 @@ export async function warmupLinkedInSession(
   } catch (err: unknown) {
     page.off("response", onResponse);
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("ERR_TOO_MANY_REDIRECTS") || cookieRevoked) {
+    if (
+      msg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
+      msg.includes("ERR_TOO_MANY_REDIRECTS") ||
+      msg.includes("status 999") ||
+      cookieRevoked
+    ) {
       return {
         ok: false,
+        requiresReconnect: true,
         error:
-          "LinkedIn session cookie (li_at) is expired or invalid (infinite redirect loop). Please re-authenticate your LinkedIn account with a fresh cookie.",
+          "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
       };
     }
 
@@ -242,11 +254,18 @@ export async function warmupLinkedInSession(
     ) {
       return {
         ok: false,
+        requiresReconnect: true,
         error:
-          "LinkedIn redirected to login. Your session cookie is expired. Please re-authenticate your LinkedIn account.",
+          "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
       };
     }
 
-    return { ok: true };
+    // Fail early on any other network/HTTP failure rather than allowing target to fail with raw Playwright error
+    return {
+      ok: false,
+      requiresReconnect: true,
+      error:
+        "Could not establish a secure authenticated connection to LinkedIn. Please reconnect your LinkedIn account to continue.",
+    };
   }
 }
