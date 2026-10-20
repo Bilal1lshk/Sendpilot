@@ -59,8 +59,6 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
     cleanJSessionRaw ||
     `ajax:${Math.floor(1000000000000000 + Math.random() * 9000000000000000)}`;
 
-  const bcookieVal = `v=2&${Date.now()}`;
-
   const domains = [".linkedin.com", ".www.linkedin.com"];
   const cookies: Array<{
     name: string;
@@ -69,7 +67,6 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
     path: string;
     httpOnly: boolean;
     secure: boolean;
-    sameSite: "Lax";
   }> = [];
 
   for (const domain of domains) {
@@ -81,7 +78,6 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
         path: "/",
         httpOnly: true,
         secure: true,
-        sameSite: "Lax",
       },
       {
         name: "JSESSIONID",
@@ -90,43 +86,6 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
         path: "/",
         httpOnly: false,
         secure: true,
-        sameSite: "Lax",
-      },
-      {
-        name: "lang",
-        value: "v=2&lang=en-us",
-        domain,
-        path: "/",
-        httpOnly: false,
-        secure: true,
-        sameSite: "Lax",
-      },
-      {
-        name: "liap",
-        value: "true",
-        domain,
-        path: "/",
-        httpOnly: false,
-        secure: true,
-        sameSite: "Lax",
-      },
-      {
-        name: "bcookie",
-        value: bcookieVal,
-        domain,
-        path: "/",
-        httpOnly: false,
-        secure: true,
-        sameSite: "Lax",
-      },
-      {
-        name: "bscookie",
-        value: bcookieVal,
-        domain,
-        path: "/",
-        httpOnly: false,
-        secure: true,
-        sameSite: "Lax",
       }
     );
   }
@@ -147,11 +106,12 @@ export async function setupLinkedInContext(
 
   await context.addCookies(cookies);
 
+  // Note: Do NOT set "csrf-token" on top-level document GET navigation,
+  // as LinkedIn's reverse proxy rejects document requests bearing ajax csrf-token headers with HTTP 400.
   await context.setExtraHTTPHeaders({
-    "csrf-token": csrfToken,
     "accept-language": "en-US,en;q=0.9",
     "sec-ch-ua":
-      '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+      '"Chromium";v="133", "Not;A=Brand";v="24", "Google Chrome";v="133"',
     "sec-ch-ua-mobile": "?0",
     "sec-ch-ua-platform": '"Windows"',
   });
@@ -232,26 +192,15 @@ export async function warmupLinkedInSession(
   } catch (err: unknown) {
     page.off("response", onResponse);
     const msg = err instanceof Error ? err.message : String(err);
-    if (
-      msg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
-      msg.includes("ERR_TOO_MANY_REDIRECTS") ||
-      msg.includes("status 999") ||
-      cookieRevoked
-    ) {
-      return {
-        ok: false,
-        requiresReconnect: true,
-        error:
-          "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
-      };
-    }
 
     const currentUrl = page.url().toLowerCase();
-    if (
+    const isLoginPage =
       currentUrl.includes("/login") ||
       currentUrl.includes("/authwall") ||
-      currentUrl.includes("/checkpoint")
-    ) {
+      currentUrl.includes("/checkpoint") ||
+      currentUrl.includes("/uas/login");
+
+    if (cookieRevoked || isLoginPage) {
       return {
         ok: false,
         requiresReconnect: true,
@@ -260,12 +209,16 @@ export async function warmupLinkedInSession(
       };
     }
 
-    // Fail early on any other network/HTTP failure rather than allowing target to fail with raw Playwright error
-    return {
-      ok: false,
-      requiresReconnect: true,
-      error:
-        "Could not establish a secure authenticated connection to LinkedIn. Please reconnect your LinkedIn account to continue.",
-    };
+    if (msg.includes("ERR_TOO_MANY_REDIRECTS") || msg.includes("status 999")) {
+      return {
+        ok: false,
+        requiresReconnect: true,
+        error:
+          "LinkedIn rejected this session or entered a redirect loop. Please reconnect your LinkedIn account to refresh credentials.",
+      };
+    }
+
+    // For transient timeout or network glitches on feed warmup, proceed rather than disconnecting user
+    return { ok: true };
   }
 }

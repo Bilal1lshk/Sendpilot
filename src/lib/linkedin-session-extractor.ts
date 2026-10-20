@@ -1015,7 +1015,22 @@ export async function extractLinkedInSession({
     let captchaChecks = 0;
 
     while (Date.now() - overallStart < maxBudgetMs) {
-      // 1. Check if li_at session cookie has been granted across all LinkedIn domains
+      // 1. Check if the browser has reached an authenticated LinkedIn destination (not a challenge/checkpoint/login URL)
+      const currentUrl = page.url();
+      const isChallengeUrl =
+        currentUrl.includes("/checkpoint/") ||
+        currentUrl.includes("/uas/") ||
+        currentUrl.includes("/challenge/") ||
+        currentUrl.includes("/login");
+
+      const isAuthenticatedUrl =
+        currentUrl.includes("/feed") ||
+        currentUrl.includes("/in/") ||
+        currentUrl.includes("/mynetwork") ||
+        currentUrl.includes("/messaging") ||
+        currentUrl.includes("/notifications") ||
+        (!isChallengeUrl && currentUrl.includes("linkedin.com") && !currentUrl.includes("about:blank"));
+
       const cookies = await context.cookies().catch(() => []);
       const liAtCookie = cookies.find(
         (c) => (c.name.toLowerCase() === "li_at" || c.name === "li_at") && isValidLiAtValue(c.value)
@@ -1024,25 +1039,12 @@ export async function extractLinkedInSession({
         (c) => c.name.toLowerCase() === "jsessionid" || c.name === "JSESSIONID"
       );
 
-      if (liAtCookie && isValidLiAtValue(liAtCookie.value)) {
+      if (isAuthenticatedUrl && liAtCookie && isValidLiAtValue(liAtCookie.value)) {
         foundLiAt = liAtCookie.value.trim().replace(/^["']|["']$/g, "");
         foundJsessionId = (jsessionIdCookie?.value || "").replace(/^"+|"+$/g, "");
-        onProgress?.("LinkedIn session cookie (li_at) captured successfully!");
+        onProgress?.("LinkedIn session cookie (li_at) captured successfully on authenticated destination!");
         break;
       }
-
-      // 1b. Check if the browser has already navigated to an authenticated LinkedIn page
-      const currentUrl = page.url();
-      const isAuthenticatedUrl =
-        currentUrl.includes("/feed") ||
-        currentUrl.includes("/in/") ||
-        currentUrl.includes("/mynetwork") ||
-        currentUrl.includes("/messaging") ||
-        currentUrl.includes("/notifications") ||
-        (!currentUrl.includes("/login") &&
-          !currentUrl.includes("/uas/") &&
-          !currentUrl.includes("/checkpoint/") &&
-          currentUrl.includes("linkedin.com"));
 
       if (isAuthenticatedUrl && !foundLiAt) {
         onProgress?.("Authenticated destination reached, extracting session cookies...");

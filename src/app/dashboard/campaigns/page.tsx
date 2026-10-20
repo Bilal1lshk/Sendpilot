@@ -711,9 +711,10 @@ export default function CampaignsPage() {
 
         if (!sendRes.ok || !sendData.success) {
           const errMsg = sendData.error || "Failed to dispatch connection request.";
-          if (sendData.requiresReconnect || sendData.redirectUrl || errMsg.toLowerCase().includes("reconnect")) {
+          if (sendData.requiresReconnect || sendData.redirectUrl) {
             await recordFailure("LinkedIn account authorization expired. Reconnect required.");
-            toast.error("Your LinkedIn account authorization has expired. Redirecting to reconnect your account...", {
+            toast.error("Your LinkedIn account authorization has expired. Please reconnect your account to resume sending.", {
+              duration: 8000,
               action: {
                 label: "Reconnect Now",
                 onClick: () => {
@@ -721,9 +722,6 @@ export default function CampaignsPage() {
                 },
               },
             });
-            setTimeout(() => {
-              router.push(sendData.redirectUrl || "/dashboard/accounts?reconnect=true");
-            }, 1800);
             return;
           }
           await recordFailure(errMsg);
@@ -748,9 +746,10 @@ export default function CampaignsPage() {
 
         if (!sendRes.ok || !sendData.success) {
           const errMsg = sendData.error || "Failed to dispatch follow-up message.";
-          if (sendData.requiresReconnect || sendData.redirectUrl || errMsg.toLowerCase().includes("reconnect")) {
+          if (sendData.requiresReconnect || sendData.redirectUrl) {
             await recordFailure("LinkedIn account authorization expired. Reconnect required.");
-            toast.error("Your LinkedIn account authorization has expired. Redirecting to reconnect your account...", {
+            toast.error("Your LinkedIn account authorization has expired. Please reconnect your account to resume sending.", {
+              duration: 8000,
               action: {
                 label: "Reconnect Now",
                 onClick: () => {
@@ -758,9 +757,6 @@ export default function CampaignsPage() {
                 },
               },
             });
-            setTimeout(() => {
-              router.push(sendData.redirectUrl || "/dashboard/accounts?reconnect=true");
-            }, 1800);
             return;
           }
           await recordFailure(errMsg);
