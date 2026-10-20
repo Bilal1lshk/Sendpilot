@@ -426,13 +426,15 @@ export async function POST(req: Request) {
           engineUsed: "playwright",
         };
       } else if (mode === "playwright") {
+        const errorMsg = pwResult.error?.includes("ERR_TOO_MANY_REDIRECTS")
+          ? "LinkedIn session cookie (li_at) is invalid or expired (caused an infinite redirect loop). Please re-authenticate your LinkedIn account."
+          : pwResult.error || "Playwright could not find profile cards on that Search URL. Verify your li_at cookie and search URL.";
+
         return NextResponse.json(
           {
             success: false,
             authwallDetected: pwResult.authwallDetected,
-            error:
-              pwResult.error ||
-              "Playwright could not find profile cards on that Search URL. Verify your li_at cookie and search URL.",
+            error: errorMsg,
           },
           { status: 422 }
         );

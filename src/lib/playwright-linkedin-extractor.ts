@@ -224,6 +224,9 @@ export async function extractSearchLeadsWithPlaywright({
       const targetUrl = new URL(
         searchUrl.startsWith("http") ? searchUrl : `https://${searchUrl}`
       );
+      if (targetUrl.hostname === "linkedin.com") {
+        targetUrl.hostname = "www.linkedin.com";
+      }
       if (currentPage > 1) {
         targetUrl.searchParams.set("page", String(currentPage));
       }
@@ -429,7 +432,10 @@ export async function extractSearchLeadsWithPlaywright({
       pagesScraped,
     };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Playwright extraction failed";
+    const rawMsg = err instanceof Error ? err.message : "Playwright extraction failed";
+    const msg = rawMsg.includes("ERR_TOO_MANY_REDIRECTS")
+      ? "LinkedIn session cookie (li_at) is invalid or expired (caused an infinite redirect loop). Please re-authenticate your LinkedIn account."
+      : rawMsg;
     return {
       leads: Array.from(collectedByUrl.values()).slice(0, maxLeads),
       authwallDetected: true,

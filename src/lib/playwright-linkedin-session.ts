@@ -173,11 +173,39 @@ export async function warmupLinkedInSession(
   page: Page,
   timeoutMs = 25000
 ): Promise<{ ok: boolean; error?: string }> {
+  let cookieRevoked = false;
+
+  const onResponse = (response: any) => {
+    try {
+      const headers = response.headers();
+      const setCookie = headers["set-cookie"] || "";
+      if (
+        setCookie.includes("li_at=delete me") ||
+        setCookie.includes("li_at=delete%20me") ||
+        setCookie.includes('li_at=""')
+      ) {
+        cookieRevoked = true;
+      }
+    } catch {}
+  };
+
+  page.on("response", onResponse);
+
   try {
     await page.goto("https://www.linkedin.com/feed/", {
       waitUntil: "domcontentloaded",
       timeout: timeoutMs,
     });
+
+    page.off("response", onResponse);
+
+    if (cookieRevoked) {
+      return {
+        ok: false,
+        error:
+          "Your LinkedIn session cookie (li_at) has expired or was revoked by LinkedIn (server sent 'delete me'). Please reconnect your LinkedIn account with a fresh cookie.",
+      };
+    }
 
     const currentUrl = page.url().toLowerCase();
 
@@ -196,15 +224,29 @@ export async function warmupLinkedInSession(
 
     return { ok: true };
   } catch (err: unknown) {
+    page.off("response", onResponse);
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("ERR_TOO_MANY_REDIRECTS")) {
+    if (msg.includes("ERR_TOO_MANY_REDIRECTS") || cookieRevoked) {
       return {
         ok: false,
         error:
-          "LinkedIn session cookie (li_at) is invalid or expired (caused an infinite redirect loop). Please re-authenticate your LinkedIn account.",
+          "LinkedIn session cookie (li_at) is expired or invalid (infinite redirect loop). Please re-authenticate your LinkedIn account with a fresh cookie.",
       };
     }
-    // If feed warmup experienced a minor DOM timeout, session cookies are still injected; continue to target
+
+    const currentUrl = page.url().toLowerCase();
+    if (
+      currentUrl.includes("/login") ||
+      currentUrl.includes("/authwall") ||
+      currentUrl.includes("/checkpoint")
+    ) {
+      return {
+        ok: false,
+        error:
+          "LinkedIn redirected to login. Your session cookie is expired. Please re-authenticate your LinkedIn account.",
+      };
+    }
+
     return { ok: true };
   }
 }
