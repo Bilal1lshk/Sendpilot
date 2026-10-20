@@ -77,6 +77,7 @@ export async function GET() {
         replyRate,
         dailyCap: Math.max(accounts.length, 1) * 25,
       },
+      workspaceName: workspace?.name || (ctx.userName ? `${ctx.userName}'s Workspace` : "My Workspace"),
       tasks: realTasks,
       accounts,
       recentLeads: leads.slice(0, 5),

@@ -56,14 +56,14 @@ export function ProblemSection() {
             return (
               <div
                 key={prob.title}
-                className="group relative rounded-3xl border border-neutral-200 bg-white p-8 shadow-xs hover:shadow-md transition-all duration-300 hover:border-neutral-300 flex flex-col justify-between"
+                className="group relative rounded-2xl border border-neutral-200 bg-white p-7 shadow-xs hover:border-neutral-300 transition-colors flex flex-col justify-between"
               >
                 <div className="space-y-5">
                   <div className="flex items-center justify-between">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-600 group-hover:scale-105 transition-transform">
-                      <Icon className="h-6 w-6 stroke-[1.8]" />
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-100 text-neutral-800">
+                      <Icon className="h-5 w-5 stroke-[1.8]" />
                     </div>
-                    <span className="text-[11px] font-semibold text-red-600 bg-red-50 px-2.5 py-0.5 rounded-full">
+                    <span className="text-[11px] font-semibold text-neutral-700 bg-neutral-100 border border-neutral-200/60 px-2.5 py-0.5 rounded-full">
                       {prob.tag}
                     </span>
                   </div>

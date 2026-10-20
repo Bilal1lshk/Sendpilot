@@ -47,6 +47,13 @@ export interface WorkspaceSettingsPayload {
   defaultDailyCap?: number;
   timezone?: string;
   workingHours?: string;
+  workspaces?: Array<{
+    id: string;
+    name: string;
+    plan: string;
+    leads: string;
+    isCurrent?: boolean;
+  }>;
   profile?: Partial<{
     fullName: string;
     email: string;
@@ -75,6 +82,10 @@ export interface RawLeadPayload {
   jobTitle?: string;
   title?: string;
   company?: string;
+  location?: string;
+  industry?: string;
+  group?: string;
+  tags?: string[];
   email?: string;
   linkedinUrl?: string;
   icpScore?: number;
@@ -104,6 +115,8 @@ export interface CampaignDetailPayload {
   dailyCap: number;
   sentToday: number;
   remainingToday: number;
+  failedCount?: number;
+  steps?: { type: string; delayDays: number; template: string }[];
   funnel: { stage: string; count: number }[];
 }
 

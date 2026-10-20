@@ -388,11 +388,7 @@ export default function LoginPage() {
       </div>
 
       {/* ── Right Column: Interactive 3D Globe Showcase ─────────────── */}
-      <div className="hidden lg:flex flex-1 h-full relative flex-col justify-between p-8 xl:p-12 overflow-hidden bg-[#070809] select-none">
-        {/* Ambient radial glow background */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] bg-emerald-500/10 rounded-full blur-[130px] pointer-events-none" />
-        <div className="absolute -top-24 -right-24 w-80 h-80 bg-cyan-500/10 rounded-full blur-[110px] pointer-events-none" />
-
+      <div className="hidden lg:flex flex-1 h-full relative flex-col justify-between p-8 xl:p-12 overflow-hidden bg-neutral-950 select-none border-l border-neutral-800">
         {/* Subtle grid pattern overlay */}
         <div
           className="absolute inset-0 opacity-[0.03] pointer-events-none"

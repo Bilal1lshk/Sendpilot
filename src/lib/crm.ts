@@ -67,6 +67,7 @@ export interface RawLeadInput {
   linkedinUrl?: string;
   icpScore?: number | string;
   tags?: string[] | string;
+  group?: string;
   notes?: string;
   isSample?: boolean;
   source?: string;
@@ -122,6 +123,7 @@ export function normalizeLead(raw: RawLeadInput, userId: string, source: LeadSou
     icpScore: Number.isFinite(icp) ? Math.max(0, Math.min(100, Math.round(icp))) : 0,
     source,
     tags: tags.map((t) => t.trim()).filter(Boolean),
+    group: (raw.group || "").trim(),
     notes: (raw.notes || "").trim(),
     isSample:
       Boolean(raw.isSample) ||
@@ -218,6 +220,7 @@ export function serializeLead(l: any) {
     icpScore: l.icpScore ?? 0,
     source: l.source,
     tags: l.tags || [],
+    group: l.group || "",
     status: l.status,
     notes: l.notes || "",
     isSample: Boolean(l.isSample),

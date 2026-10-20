@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { extractLinkedInSession, type ExtractedSessionResult } from "@/lib/linkedin-session-extractor";
+import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
 
 const PORT = parseInt(process.env.WORKER_PORT || process.env.PORT || "4000", 10);
 const HOST = process.env.WORKER_HOST || "0.0.0.0";
@@ -20,8 +21,10 @@ let tunnelProcess: ChildProcess | null = null;
 let isShuttingDown = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 
-// In-memory cache for successfully extracted sessions (5-minute TTL)
+// In-memory cache for successfully extracted sessions (10-minute TTL)
 const sessionCache = new Map<string, { result: ExtractedSessionResult; timestamp: number }>();
+// In-flight extraction promises to deduplicate overlapping requests during tunnel retries
+const inFlightExtractions = new Map<string, Promise<ExtractedSessionResult>>();
 
 function log(level: "INFO" | "WARN" | "ERROR", message: string) {
   const timestamp = new Date().toISOString();
@@ -378,9 +381,25 @@ const server = http.createServer(async (req, res) => {
         const cached = sessionCache.get(normalizedEmail);
         if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000 && !verificationCode) {
           log("INFO", `[${maskedEmail}] Reusing freshly extracted active session from memory cache (instant response)`);
-          res.writeHead(200, { "Content-Type": "application/json" });
+          const statusCode = cached.result.requiresTwoFactor ? 202 : cached.result.success ? 200 : 400;
+          res.writeHead(statusCode, { "Content-Type": "application/json" });
           res.end(JSON.stringify(cached.result));
           return;
+        }
+
+        // If an extraction is already running in the background for this account, join that in-flight promise
+        const inFlight = inFlightExtractions.get(normalizedEmail);
+        if (inFlight && !verificationCode) {
+          log("INFO", `[${maskedEmail}] Joining already in-flight browser session extraction (deduplicated)...`);
+          try {
+            const inFlightResult = await inFlight;
+            const statusCode = inFlightResult.requiresTwoFactor ? 202 : inFlightResult.success ? 200 : 400;
+            res.writeHead(statusCode, { "Content-Type": "application/json" });
+            res.end(JSON.stringify(inFlightResult));
+            return;
+          } catch {
+            // Fall through to fresh launch if in-flight somehow threw
+          }
         }
 
         log(
@@ -391,7 +410,7 @@ const server = http.createServer(async (req, res) => {
         );
 
         // Run the Playwright session extraction using local residential browser
-        const result: ExtractedSessionResult = await extractLinkedInSession({
+        const extractionPromise = extractLinkedInSession({
           email: email.trim(),
           password,
           twoFactorMethod: twoFactorMethod === "app" ? "app" : "otp",
@@ -411,11 +430,22 @@ const server = http.createServer(async (req, res) => {
           },
         });
 
-        if (result.success && result.li_at) {
+        if (!verificationCode) {
+          inFlightExtractions.set(normalizedEmail, extractionPromise);
+        }
+
+        let result: ExtractedSessionResult;
+        try {
+          result = await extractionPromise;
+        } finally {
+          inFlightExtractions.delete(normalizedEmail);
+        }
+
+        if (result.success || result.requiresTwoFactor) {
           sessionCache.set(normalizedEmail, { result, timestamp: Date.now() });
         }
 
-        const statusCode = result.requiresTwoFactor ? 202 : 200;
+        const statusCode = result.requiresTwoFactor ? 202 : result.success ? 200 : 400;
 
         log(
           "INFO",
@@ -429,6 +459,61 @@ const server = http.createServer(async (req, res) => {
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         log("ERROR", `Unhandled exception during session extraction: ${errMsg}`);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: false, error: errMsg }));
+      }
+    });
+
+    return;
+  }
+
+  // 4. Send Direct Message Endpoint (Automated Follow-ups)
+  if (req.method === "POST" && url.pathname === "/api/send-message") {
+    let bodyText = "";
+    req.on("data", (chunk) => {
+      bodyText += chunk;
+      if (bodyText.length > 512 * 1024) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: false, error: "Payload too large" }));
+        req.destroy();
+      }
+    });
+
+    req.on("end", async () => {
+      try {
+        const body = JSON.parse(bodyText || "{}");
+        const { profileUrl, message, liAtCookie, jSessionId } = body;
+
+        if (!profileUrl || !message || !liAtCookie) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: "Missing required 'profileUrl', 'message', or 'liAtCookie' parameter.",
+            })
+          );
+          return;
+        }
+
+        log("INFO", `[worker] Automated follow-up dispatch to ${profileUrl}`);
+        const result = await sendLinkedInMessageWithPlaywright({
+          profileUrl,
+          message,
+          liAtCookie,
+          jSessionId,
+        });
+
+        const statusCode = result.success ? 200 : 422;
+        log(
+          "INFO",
+          `[worker] Follow-up status: ${result.status} (success: ${result.success}) for ${profileUrl}`
+        );
+
+        res.writeHead(statusCode, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        log("ERROR", `Unhandled exception during send-message: ${errMsg}`);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: false, error: errMsg }));
       }

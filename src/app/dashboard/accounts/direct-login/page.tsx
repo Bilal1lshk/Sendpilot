@@ -175,15 +175,45 @@ export default function DirectLoginCookieExtractorPage() {
         };
       }
 
-      const response = await fetch("/api/linkedin/extract-session", {
+      let currentRes = await fetch("/api/linkedin/extract-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json().catch(() => null);
+      let data = await currentRes.json().catch(() => null);
 
-      if (response.status === 202 || data?.requiresTwoFactor) {
+      // Seamless background polling: if the tunnel or proxy returned pending (e.g. Serveo 5s timeout while Playwright runs)
+      let pollAttempts = 0;
+      const maxPolls = 8; // 8 * 2.5s = ~20 seconds total
+      while (data?.pending && pollAttempts < maxPolls) {
+        pollAttempts++;
+        setProgressStage(
+          data.message ||
+            (pollAttempts > 2 ? "Finalizing LinkedIn connection..." : "Signing in via local runner...")
+        );
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+
+        try {
+          const pollRes = await fetch("/api/linkedin/extract-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...payload, isPoll: true }),
+          });
+          const pollData = await pollRes.json().catch(() => null);
+          if (pollData) {
+            currentRes = pollRes;
+            data = pollData;
+            if (data.requiresTwoFactor || data.success) {
+              break;
+            }
+          }
+        } catch {
+          // Keep polling if an individual poll request experienced network blip
+        }
+      }
+
+      if (data?.requiresTwoFactor) {
         if (data?.twoFactorMethod === "app" || data?.twoFactorMethod === "otp") {
           setTwoFactorMethod(data.twoFactorMethod);
         }
@@ -203,7 +233,7 @@ export default function DirectLoginCookieExtractorPage() {
         return;
       }
 
-      if (!response.ok || !data?.success) {
+      if (!currentRes.ok || !data?.success) {
         if (data?.proxyError || data?.code) {
           const pErr = {
             code: data.code || data.proxyError?.code || "PROXY_ERROR",
@@ -215,7 +245,13 @@ export default function DirectLoginCookieExtractorPage() {
           toast.error(`Proxy Error [${pErr.code}]: ${pErr.hint}`);
           return;
         }
-        throw new Error(data?.error || "Failed to authenticate LinkedIn account.");
+
+        const friendlyError =
+          data?.error ||
+          (data?.pending
+            ? "LinkedIn authentication is taking longer than expected. Please verify your credentials or check your runner terminal."
+            : "Failed to authenticate LinkedIn account.");
+        throw new Error(friendlyError);
       }
 
       setResult({

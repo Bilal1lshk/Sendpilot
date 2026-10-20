@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Menu, X, ArrowRight, LayoutDashboard, Zap } from "lucide-react";
 
 export function Navbar() {
   const { data: session } = useSession();
+  const pathname = usePathname();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -19,11 +21,11 @@ export function Navbar() {
   }, []);
 
   const navLinks = [
-    { label: "Product", href: "#solution" },
-    { label: "Features", href: "#features" },
-    { label: "How It Works", href: "#how-it-works" },
-    { label: "AI Assistant", href: "#ai-assistant" },
-    { label: "Pricing", href: "#pricing" },
+    { label: "Product", href: "/product" },
+    { label: "Features", href: "/features" },
+    { label: "How It Works", href: "/how-it-works" },
+    { label: "AI Assistant", href: "/ai-assistant" },
+    { label: "Pricing", href: "/pricing" },
   ];
 
   return (
@@ -47,15 +49,22 @@ export function Navbar() {
 
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-8">
-          {navLinks.map((link) => (
-            <a
-              key={link.label}
-              href={link.href}
-              className="text-sm font-medium text-neutral-600 hover:text-black transition-colors"
-            >
-              {link.label}
-            </a>
-          ))}
+          {navLinks.map((link) => {
+            const isActive = pathname === link.href;
+            return (
+              <Link
+                key={link.label}
+                href={link.href}
+                className={`text-sm font-medium transition-colors ${
+                  isActive
+                    ? "text-black font-semibold"
+                    : "text-neutral-600 hover:text-black"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* Auth CTA Buttons */}
@@ -108,16 +117,23 @@ export function Navbar() {
       {mobileMenuOpen && (
         <div className="md:hidden border-b border-neutral-200 bg-white px-4 pt-3 pb-6 space-y-4">
           <nav className="flex flex-col gap-3">
-            {navLinks.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-sm font-medium text-neutral-600 hover:text-black transition-colors py-1"
-              >
-                {link.label}
-              </a>
-            ))}
+            {navLinks.map((link) => {
+              const isActive = pathname === link.href;
+              return (
+                <Link
+                  key={link.label}
+                  href={link.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`text-sm font-medium transition-colors py-1 ${
+                    isActive
+                      ? "text-black font-semibold"
+                      : "text-neutral-600 hover:text-black"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
           </nav>
 
           <div className="pt-3 border-t border-neutral-100 flex flex-col gap-2.5">

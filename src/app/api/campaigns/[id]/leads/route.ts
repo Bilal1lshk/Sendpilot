@@ -57,23 +57,36 @@ export async function GET(req: Request, { params }: Ctx) {
       .map((r) => {
         const lead = leadById.get(String(r.leadId))!;
         const step = steps[r.currentStep];
-        const active = ["queued", "invited", "accepted"].includes(r.state) && !!step;
+        const isFailed = r.state === "failed" && !!step;
+        const active = (["queued", "invited", "accepted"].includes(r.state) || isFailed) && !!step;
         const waitingForAcceptance = active && r.state === "invited" && step?.type === "message";
+        const lastError = (r as any).lastError || r.history?.slice().reverse().find((h: any) => h.event === "failed")?.note || null;
+
         return {
           enrollmentId: String(r._id),
           state: r.state,
           currentStep: r.currentStep,
           totalSteps: steps.length,
           nextActionAt: r.nextActionAt,
-          history: r.history,
+          lastError,
+          history: r.history || [],
           lead: serializeLead(lead),
+          failedStep: isFailed
+            ? {
+                stepIndex: r.currentStep,
+                type: step.type,
+                message: renderTemplate(step.template, lead),
+                error: lastError || "Step execution failed",
+              }
+            : null,
           nextAction: active
             ? {
                 stepIndex: r.currentStep,
                 type: step.type,
                 message: renderTemplate(step.template, lead),
-                due: !waitingForAcceptance && !!r.nextActionAt && r.nextActionAt <= now,
+                due: isFailed ? true : (!waitingForAcceptance && !!r.nextActionAt && r.nextActionAt <= now),
                 waitingForAcceptance,
+                isFailed,
               }
             : null,
         };

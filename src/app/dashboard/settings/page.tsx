@@ -514,7 +514,7 @@ export default function WorkspaceSettingsPage() {
                   type="text"
                   value={workspaceName}
                   onChange={(e) => setWorkspaceName(e.target.value)}
-                  placeholder="e.g. SendPilot HQ"
+                  placeholder="e.g. Outbound Growth Workspace"
                   className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950 px-3 py-2 text-xs focus:outline-none focus:border-palm-leaf-500"
                 />
               </div>

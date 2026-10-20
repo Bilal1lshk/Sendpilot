@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import Lead, { LEAD_STATUSES, LEAD_SOURCES } from "@/models/Lead";
+import LeadGroup from "@/models/LeadGroup";
 import CampaignLead from "@/models/CampaignLead";
 import { requireUser, importLeads, serializeLead, toLeadSource, apiError, isValidObjectId } from "@/lib/crm";
 import { getDbCache, setDbCache, invalidateDbCache } from "@/lib/db-cache";
@@ -27,6 +28,7 @@ export async function GET(req: Request) {
     const status = searchParams.get("status");
     const source = searchParams.get("source");
     const tag = searchParams.get("tag");
+    const group = (searchParams.get("group") || "").trim();
     const sample = searchParams.get("sample") || "include";
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit")) || 25));
@@ -35,6 +37,7 @@ export async function GET(req: Request) {
     if (status && (LEAD_STATUSES as readonly string[]).includes(status)) filter.status = status;
     if (source && (LEAD_SOURCES as readonly string[]).includes(source)) filter.source = source;
     if (tag) filter.tags = tag;
+    if (group) filter.group = group === "none" ? { $in: ["", null] } : group;
     if (sample === "exclude") filter.isSample = { $ne: true };
     if (sample === "only") filter.isSample = true;
     if (q) {
@@ -42,11 +45,12 @@ export async function GET(req: Request) {
       filter.$or = [{ firstName: rx }, { lastName: rx }, { company: rx }, { title: rx }, { email: rx }, { location: rx }];
     }
 
-    const [items, total, statusCounts, tags] = await Promise.all([
+    const [items, total, statusCounts, tags, groups] = await Promise.all([
       Lead.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
       Lead.countDocuments(filter),
       Lead.aggregate([{ $match: { userId: ctx.userId } }, { $group: { _id: "$status", n: { $sum: 1 } } }]),
       Lead.distinct("tags", { userId: ctx.userId }),
+      Lead.distinct("group", { userId: ctx.userId }),
     ]);
 
     // Which campaigns each lead on this page is enrolled in
@@ -76,6 +80,7 @@ export async function GET(req: Request) {
       totalPages: Math.max(1, Math.ceil(total / limit)),
       counts,
       tags: (tags as string[]).sort(),
+      groups: (groups as string[]).filter(Boolean).sort(),
     };
 
     setDbCache(ctx.userId, "leads", payload, cacheSubKey);
@@ -100,7 +105,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Max 5000 leads per import" }, { status: 400 });
     }
 
-    const result = await importLeads(ctx.userId, leads, toLeadSource(body.importType || body.source));
+    const group = String(body.group || "").trim();
+    const leadsWithGroup = group
+      ? leads.map((l: any) => ({ ...l, group: l.group || group }))
+      : leads;
+
+    const result = await importLeads(ctx.userId, leadsWithGroup, toLeadSource(body.importType || body.source));
+
+    if (group && result.imported > 0) {
+      await LeadGroup.findOneAndUpdate(
+        { userId: ctx.userId, name: group },
+        { $setOnInsert: { description: "Created via lead import", color: "#16a34a" } },
+        { upsert: true }
+      );
+    }
+
     const totalCount = await Lead.countDocuments({ userId: ctx.userId });
     invalidateDbCache(ctx.userId, ["leads", "overview", "settings", "campaigns"]);
 

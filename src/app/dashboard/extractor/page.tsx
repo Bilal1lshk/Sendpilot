@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Copy,
-  Users,
   Search,
   ArrowRight,
   Sparkles,
@@ -129,22 +128,35 @@ export default function LeadExtractorPage() {
   const [csvSavedSuccess, setCsvSavedSuccess] = useState(false);
   const [showCsvSaveDecisionModal, setShowCsvSaveDecisionModal] = useState(false);
 
+  // Named Lead Group state
+  const [targetGroupName, setTargetGroupName] = useState<string>("");
+  const [availableGroups, setAvailableGroups] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/leads/groups")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.groups)) {
+          setAvailableGroups(data.groups.map((g: any) => g.name));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // History list state
   const [importHistory, setImportHistory] = useState<
     Array<{ file: string; date: string; count: number; status: string }>
   >([]);
 
-  // Sources Cards (single unified LinkedIn Search URL extractor)
+  // Supported lead extractor sources
   const SOURCES = [
     {
       name: "LinkedIn Search",
       desc: "Paste any LinkedIn people search URL to extract leads via Playwright",
       icon: LinkedInIcon,
     },
-    { name: "Sales Navigator", desc: "Sync saved lead lists and account searches", icon: Search },
     { name: "CSV / Excel Upload", desc: "Import spreadsheets with names, emails, and titles", icon: FileSpreadsheet },
     { name: "Post Commenters", desc: "Pull leads who liked or commented on any post", icon: Sparkles },
-    { name: "Event Attendees", desc: "Extract attendees from LinkedIn audio/live events", icon: Users },
   ];
 
   const SEARCH_URL_PRESETS = [
@@ -302,6 +314,7 @@ export default function LeadExtractorPage() {
         body: JSON.stringify({
           leads: extractedLeads,
           importType: "linkedin_search",
+          group: targetGroupName.trim() || undefined,
         }),
       });
 
@@ -423,6 +436,7 @@ export default function LeadExtractorPage() {
         body: JSON.stringify({
           leads: parsedCsvResult.leads,
           importType: "csv_upload",
+          group: targetGroupName.trim() || undefined,
         }),
       });
 
@@ -494,7 +508,7 @@ export default function LeadExtractorPage() {
       </motion.div>
 
       {/* Source Cards in Clean Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
         {SOURCES.map((source) => {
           const Icon = source.icon;
           const isSelected = activeSource === source.name;
@@ -682,7 +696,23 @@ export default function LeadExtractorPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-neutral-500 font-medium">Group:</span>
+                    <input
+                      type="text"
+                      list="extractor-groups"
+                      value={targetGroupName}
+                      onChange={(e) => setTargetGroupName(e.target.value)}
+                      placeholder="e.g. CEOs, Founders"
+                      className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-2.5 py-1.5 text-xs font-medium w-36 focus:outline-none focus:border-palm-leaf-500"
+                    />
+                    <datalist id="extractor-groups">
+                      {availableGroups.map((g) => (
+                        <option key={g} value={g} />
+                      ))}
+                    </datalist>
+                  </div>
                   <button
                     type="button"
                     onClick={handleExportCsv}
@@ -1263,7 +1293,23 @@ export default function LeadExtractorPage() {
                   <span className="text-xs text-neutral-500">
                     {parsedCsvResult.readyCount} leads ready. Choose whether to store them in your CRM or discard.
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-neutral-500 font-medium">Group:</span>
+                      <input
+                        type="text"
+                        list="csv-groups"
+                        value={targetGroupName}
+                        onChange={(e) => setTargetGroupName(e.target.value)}
+                        placeholder="e.g. CEOs, Founders"
+                        className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2.5 py-1 text-xs font-medium w-36 focus:outline-none focus:border-palm-leaf-500"
+                      />
+                      <datalist id="csv-groups">
+                        {availableGroups.map((g) => (
+                          <option key={g} value={g} />
+                        ))}
+                      </datalist>
+                    </div>
                     <button
                       type="button"
                       onClick={handleDiscardCsv}
@@ -1299,7 +1345,7 @@ export default function LeadExtractorPage() {
         </motion.div>
       )}
 
-      {/* ==================== Sales Navigator & Other Tabs fallback guide ==================== */}
+      {/* ==================== Post Commenters & Other Tabs fallback guide ==================== */}
       {activeSource !== "LinkedIn Search" && activeSource !== "CSV / Excel Upload" && (
         <motion.div
           initial={{ opacity: 0, y: 6 }}

@@ -52,7 +52,7 @@ export function StepCard({
           <div
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-semibold transition-all ${
               isCompleted
-                ? "bg-palm-leaf-100 text-palm-leaf-800 dark:bg-palm-leaf-950 dark:text-palm-leaf-300"
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
                 : isCurrent
                 ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-2xs"
                 : "bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400"
@@ -68,7 +68,7 @@ export function StepCard({
               </h3>
 
               {isCompleted && (
-                <span className="text-[10px] font-medium text-palm-leaf-700 dark:text-palm-leaf-400">
+                <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
                   Completed
                 </span>
               )}
@@ -100,7 +100,7 @@ export function StepCard({
                 <button
                   type="button"
                   onClick={onResume}
-                  className="inline-flex items-center gap-1 text-xs text-palm-leaf-700 dark:text-palm-leaf-400 hover:underline cursor-pointer font-medium"
+                  className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer font-medium"
                 >
                   <RotateCcw className="h-3 w-3" />
                   <span>Resume</span>
@@ -108,7 +108,7 @@ export function StepCard({
               ) : (
                 <Link
                   href={actionHref}
-                  className="inline-flex items-center gap-1 text-xs text-palm-leaf-700 dark:text-palm-leaf-400 hover:underline font-medium"
+                  className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400 hover:underline font-medium"
                 >
                   <RotateCcw className="h-3 w-3" />
                   <span>Resume</span>
@@ -128,7 +128,7 @@ export function StepCard({
               )}
               <Link
                 href={actionHref}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 active:scale-[0.99] text-white px-3.5 py-2 text-xs font-semibold shadow-xs transition-all"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 dark:text-neutral-900 active:scale-[0.99] text-white px-3.5 py-2 text-xs font-semibold shadow-xs transition-colors"
               >
                 <span>{actionLabel}</span>
                 <ArrowRight className="h-3 w-3" />

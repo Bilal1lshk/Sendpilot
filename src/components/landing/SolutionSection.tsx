@@ -80,8 +80,8 @@ export function SolutionSection() {
         </div>
 
         {/* Workflow Breadcrumb / Timeline Bar */}
-        <div className="rounded-3xl border border-neutral-200 bg-neutral-50/60 p-4 sm:p-6 shadow-xs">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+        <div className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-3 sm:p-4 shadow-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             {workflowSteps.map((step, idx) => {
               const Icon = step.icon;
               const isSelected = activeStep === step.id;
@@ -91,17 +91,17 @@ export function SolutionSection() {
                   key={step.title}
                   type="button"
                   onClick={() => setActiveStep(step.id)}
-                  className={`p-3.5 rounded-2xl text-left transition-all duration-200 cursor-pointer ${
+                  className={`p-3.5 rounded-xl text-left transition-all duration-150 cursor-pointer ${
                     isSelected
-                      ? "bg-white shadow-md border border-palm-leaf-300 scale-102 ring-2 ring-palm-leaf-500/20"
-                      : "hover:bg-white/60 border border-transparent"
+                      ? "bg-white shadow-xs border border-neutral-300 ring-1 ring-neutral-900/5"
+                      : "hover:bg-white/80 border border-transparent text-neutral-600"
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span
                       className={`text-[10px] font-bold uppercase tracking-wider ${
                         isSelected
-                          ? "text-palm-leaf-700"
+                          ? "text-emerald-700"
                           : "text-neutral-400"
                       }`}
                     >
@@ -110,7 +110,7 @@ export function SolutionSection() {
                     <Icon
                       className={`h-4 w-4 ${
                         isSelected
-                          ? "text-palm-leaf-600"
+                          ? "text-emerald-600"
                           : "text-neutral-400"
                       }`}
                     />
@@ -127,12 +127,12 @@ export function SolutionSection() {
           </div>
         </div>
 
-        {/* Large Product Showcase Showcase Canvas */}
-        <div className="rounded-3xl border border-neutral-200 bg-gradient-to-b from-neutral-50 to-white p-6 sm:p-10 shadow-xl space-y-8">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-200 pb-6">
+        {/* Large Product Showcase Canvas */}
+        <div className="rounded-2xl border border-neutral-200 bg-white p-6 sm:p-8 shadow-sm space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-100 pb-5">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-palm-leaf-700 uppercase tracking-wider">
+                <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
                   Active Stage
                 </span>
                 <span className="text-neutral-300">•</span>
@@ -145,25 +145,25 @@ export function SolutionSection() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3 shrink-0">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-palm-leaf-50 border border-palm-leaf-200 text-palm-leaf-800 text-xs font-semibold">
-                <Bot className="h-4 w-4 text-palm-leaf-600" />
+            <div className="flex items-center gap-2.5 shrink-0">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-100 border border-neutral-200 text-neutral-800 text-xs font-medium">
+                <Bot className="h-3.5 w-3.5 text-neutral-600" />
                 AI Autopilot
               </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-palm-leaf-100/60 border border-palm-leaf-200 text-palm-leaf-900 text-xs font-semibold">
-                <UserCheck className="h-4 w-4 text-palm-leaf-700" />
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-medium">
+                <UserCheck className="h-3.5 w-3.5 text-emerald-600" />
                 Human Approved
               </span>
             </div>
           </div>
 
           {/* Interactive Screen Preview */}
-          <div className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50/50 p-5 space-y-5">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               {/* Left Column: Prospect Card */}
-              <div className="rounded-xl border border-neutral-200 p-4 space-y-4 bg-neutral-50/50">
+              <div className="rounded-xl border border-neutral-200 p-4 space-y-4 bg-white shadow-xs">
                 <div className="flex items-center gap-3">
-                  <div className="h-11 w-11 rounded-xl bg-gradient-to-tr from-palm-leaf-600 to-palm-leaf-500 text-white font-bold text-sm flex items-center justify-center">
+                  <div className="h-10 w-10 rounded-lg bg-neutral-900 text-white font-bold text-sm flex items-center justify-center shrink-0">
                     AR
                   </div>
                   <div>
@@ -177,25 +177,25 @@ export function SolutionSection() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="p-2 rounded-lg bg-white border border-neutral-100">
+                  <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-100">
                     <span className="text-[10px] text-neutral-400 block">Company Size</span>
                     <span className="font-semibold text-neutral-800">
                       120–250 Empl.
                     </span>
                   </div>
-                  <div className="p-2 rounded-lg bg-white border border-neutral-100">
+                  <div className="p-2.5 rounded-lg bg-neutral-50 border border-neutral-100">
                     <span className="text-[10px] text-neutral-400 block">Funding</span>
-                    <span className="font-semibold text-palm-leaf-700">
+                    <span className="font-semibold text-neutral-900">
                       Series B ($28M)
                     </span>
                   </div>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-palm-leaf-50 border border-palm-leaf-200/60 text-xs flex items-center justify-between">
-                  <span className="font-semibold text-palm-leaf-800">
+                <div className="p-2.5 rounded-lg bg-emerald-50/80 border border-emerald-200/80 text-xs flex items-center justify-between">
+                  <span className="font-semibold text-emerald-900">
                     ICP Compatibility
                   </span>
-                  <span className="font-bold text-palm-leaf-700">
+                  <span className="font-bold text-emerald-700">
                     95 / 100
                   </span>
                 </div>
@@ -203,31 +203,31 @@ export function SolutionSection() {
 
               {/* Middle & Right: AI Context Generation & Sequence */}
               <div className="lg:col-span-2 space-y-4">
-                <div className="p-4 rounded-xl border border-palm-leaf-200/80 bg-palm-leaf-50/40 space-y-2">
+                <div className="p-4 rounded-xl border border-neutral-200 bg-white space-y-2 shadow-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-palm-leaf-800 flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5 text-palm-leaf-600" />
+                    <span className="text-xs font-bold text-neutral-900 flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
                       Synthesized AI Context
                     </span>
-                    <span className="text-[11px] font-mono text-palm-leaf-700">
+                    <span className="text-[11px] font-mono text-neutral-500">
                       Source: TechCrunch &amp; LinkedIn Post
                     </span>
                   </div>
-                  <p className="text-xs text-neutral-700 leading-relaxed">
+                  <p className="text-xs text-neutral-600 leading-relaxed">
                     ApexScale just announced an enterprise data migration initiative. Alexander posted about bottlenecks scaling outbound workflows across EU teams.
                   </p>
                 </div>
 
-                <div className="p-4 rounded-xl border border-neutral-200 bg-white space-y-2">
+                <div className="p-4 rounded-xl border border-neutral-200 bg-white space-y-2 shadow-xs">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-neutral-900">
                       Generated Personalized Opener
                     </span>
-                    <span className="text-[11px] text-palm-leaf-800 font-semibold bg-palm-leaf-100 px-2.5 py-0.5 rounded-full">
+                    <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 border border-emerald-200/60 px-2.5 py-0.5 rounded-full">
                       Ready for 1-Click Approval
                     </span>
                   </div>
-                  <p className="text-xs font-mono text-neutral-700 p-3 rounded-lg bg-neutral-50 border border-neutral-100">
+                  <p className="text-xs font-mono text-neutral-700 p-3 rounded-lg bg-neutral-50 border border-neutral-100 leading-relaxed">
                     &quot;Hi Alexander, saw ApexScale&apos;s recent Series B expansion. Scaling outbound across distributed EU teams often creates data silos — we helped FinFlow automate prospect research so reps focus 100% on qualified chats. Open to a 10-min look?&quot;
                   </p>
                 </div>

@@ -110,7 +110,7 @@ export default function LeadsStepPage() {
                 Import Your Leads
               </h1>
               <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                From LinkedIn, Sales Nav, or CSV upload. Fast and simple.
+                From LinkedIn search or CSV upload. Fast and simple.
               </p>
             </div>
 
@@ -127,7 +127,7 @@ export default function LeadsStepPage() {
             <EmptyState
               icon={<Users className="h-6 w-6 text-emerald-600" />}
               title="No leads yet"
-              description="Upload your prospective customers via CSV, Sales Navigator list export, or by pasting LinkedIn profile links directly."
+              description="Upload your prospective customers via CSV or by pasting LinkedIn profile links directly."
               primaryAction={{
                 label: "Add Leads",
                 onClick: () => setShowWizard(true),

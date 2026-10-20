@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Send,
@@ -16,10 +16,300 @@ import {
   TrendingUp,
   Loader2,
   Users,
+  Edit3,
+  Trash2,
+  Clock,
+  MessageSquare,
+  UserCheck,
+  RefreshCw,
+  Eye,
+  CheckCircle2,
+  PenLine,
+  SlidersHorizontal,
+  Rocket,
+  Search,
+  X,
+  UserPlus,
+  ExternalLink,
+  AlertCircle,
+  Activity,
+  ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { pageVariants, cardVariants, listItemVariants } from "@/lib/motion";
 import { microcopy } from "@/lib/microcopy";
+import { Step1SelectLeads } from "@/components/campaigns/Step1SelectLeads";
+import { Step2SelectFlow } from "@/components/campaigns/Step2SelectFlow";
+import { Step3ReviewLaunch } from "@/components/campaigns/Step3ReviewLaunch";
+import { SequenceStepItem, FlowItem, EnrollmentMode } from "@/components/campaigns/types";
+
+export interface SequenceDraft {
+  id: string;
+  title: string;
+  tag: string;
+  preview: string;
+  step1: string;
+  step2Wait: number;
+  step2Message: string;
+  step3Wait: number;
+  step3Message: string;
+}
+
+export interface CustomStepItem {
+  id: string;
+  type: "connect" | "wait" | "message";
+  delayDays: number;
+  template: string;
+}
+
+const TONE_PRESETS = [
+  {
+    id: "friendly",
+    label: "Friendly Observation",
+    icon: "🤝",
+    subtitle: "Warm, natural networking & shared curiosity",
+  },
+  {
+    id: "direct",
+    label: "Direct Tooling Pitch",
+    icon: "⚡",
+    subtitle: "Clear problem-solution with zero fluff",
+  },
+  {
+    id: "consultative",
+    label: "Consultative / Peer",
+    icon: "💡",
+    subtitle: "Advisory angle asking about team bottlenecks",
+  },
+  {
+    id: "challenger",
+    label: "Challenger / Value-First",
+    icon: "🎯",
+    subtitle: "Bold benchmark insights & counter-intuitive data",
+  },
+  {
+    id: "custom",
+    label: "Custom Tone...",
+    icon: "✍️",
+    subtitle: "Define your own brand voice, vibe & angle",
+  },
+];
+
+const VARIABLE_CHIPS = [
+  { label: "First Name", tag: "{{firstName}}" },
+  { label: "Last Name", tag: "{{lastName}}" },
+  { label: "Company", tag: "{{company}}" },
+  { label: "Job Title", tag: "{{title}}" },
+  { label: "Location", tag: "{{location}}" },
+];
+
+function getAiDraftsForTone(
+  toneId: string,
+  customPrompt: string,
+  audience: string
+): SequenceDraft[] {
+  const cleanAudience = audience.trim() || "B2B SaaS Leaders";
+
+  if (toneId === "custom" && customPrompt.trim()) {
+    const promptShort = customPrompt.trim();
+    return [
+      {
+        id: "custom-opt-1",
+        title: "Option 1 (Custom Tone Observation)",
+        tag: `Custom: "${promptShort.slice(0, 20)}..."`,
+        preview: `Hey {{firstName}}, noticed {{company}} navigating ${cleanAudience}. Reaching out with a ${promptShort.toLowerCase()} angle...`,
+        step1: `Hey {{firstName}}, noticed {{company}} navigating ${cleanAudience}. Reaching out with a ${promptShort.toLowerCase()} angle — really love what you're building and would be great to connect!`,
+        step2Wait: 2,
+        step2Message: `Thanks for connecting, {{firstName}}! As a fellow leader in ${cleanAudience}, curious how {{company}} is tackling outbound pipelines right now?`,
+        step3Wait: 3,
+        step3Message: `Quick bump {{firstName}} — would you be open to a 10-minute chat later this week to compare playbooks? No pressure at all!`,
+      },
+      {
+        id: "custom-opt-2",
+        title: "Option 2 (Custom Value Pitch)",
+        tag: `Custom: "${promptShort.slice(0, 20)}..."`,
+        preview: `Hi {{firstName}}, we tailored our pipeline assistant for ${cleanAudience} with a ${promptShort.toLowerCase()} approach...`,
+        step1: `Hi {{firstName}}, we tailored our pipeline assistant for ${cleanAudience} teams like {{company}}. Focusing on high-intent outbound without manual grind. Open to connecting?`,
+        step2Wait: 2,
+        step2Message: `Hey {{firstName}}, would adding 15+ qualified meetings every month move the needle for {{company}}'s outbound team?`,
+        step3Wait: 3,
+        step3Message: `{{firstName}}, happy to send a 2-min video walkthrough of how similar ${cleanAudience} teams run this if you're curious!`,
+      },
+      {
+        id: "custom-opt-3",
+        title: "Option 3 (Custom Peer Exchange)",
+        tag: `Custom: "${promptShort.slice(0, 20)}..."`,
+        preview: `{{firstName}}, curious how your outbound team in ${cleanAudience} is handling response qualification...`,
+        step1: `{{firstName}}, came across your profile while researching forward-thinking teams in ${cleanAudience}. Would love to connect and follow {{company}}'s updates!`,
+        step2Wait: 2,
+        step2Message: `Appreciate the connection, {{firstName}}. What's been the biggest hurdle for {{company}} in outbound recently — deliverability or reply rates?`,
+        step3Wait: 3,
+        step3Message: `No worries if your schedule is packed, {{firstName}}. Just thought it'd make for a great peer discussion. Wishing you a great rest of the week!`,
+      },
+    ];
+  }
+
+  if (toneId === "direct") {
+    return [
+      {
+        id: "direct-opt-1",
+        title: "Option 1 (Direct Tooling Pitch)",
+        tag: "Direct • Problem-Solution",
+        preview: `Hi {{firstName}}, we built a lightweight pipeline assistant for ${cleanAudience} to automate outbound without spam...`,
+        step1: `Hi {{firstName}}, we built a lightweight pipeline assistant for ${cleanAudience} teams like {{company}} to scale qualified meetings with zero spam. Open to connecting?`,
+        step2Wait: 2,
+        step2Message: `Hey {{firstName}}, appreciate the connection! Would 10-15 additional qualified meetings this month make a noticeable impact for {{company}}?`,
+        step3Wait: 3,
+        step3Message: `Quick follow-up {{firstName}} — if you have 5 mins later this week, I'd love to share the exact 3-step playbook other ${cleanAudience} teams are using.`,
+      },
+      {
+        id: "direct-opt-2",
+        title: "Option 2 (High-Converting Sequences)",
+        tag: "Direct • Metric-Driven",
+        preview: `{{firstName}}, noticed your leadership role at {{company}}. We help ${cleanAudience} companies boost outbound acceptance rates above 40%...`,
+        step1: `{{firstName}}, noticed your leadership role at {{company}}. We help ${cleanAudience} companies boost outbound acceptance rates above 40%. Would love to connect!`,
+        step2Wait: 2,
+        step2Message: `Thanks for connecting, {{firstName}}. Are you currently testing AI-assisted sequence optimization at {{company}}?`,
+        step3Wait: 3,
+        step3Message: `Hey {{firstName}}, happy to drop a quick 2-minute summary of how we helped peers in ${cleanAudience} double response rates if you're interested.`,
+      },
+      {
+        id: "direct-opt-3",
+        title: "Option 3 (Admin Elimination)",
+        tag: "Direct • Time-Saver",
+        preview: `Hi {{firstName}}, quick intro — we help outbound leaders in ${cleanAudience} eliminate 4+ hours of manual prospecting tasks each week...`,
+        step1: `Hi {{firstName}}, quick intro — we help outbound leaders in ${cleanAudience} eliminate 4+ hours of manual prospecting tasks each week. Thought this might resonate at {{company}}!`,
+        step2Wait: 2,
+        step2Message: `{{firstName}}, would you be open to a 5-minute look at how similar teams cut out manual LinkedIn tasks entirely?`,
+        step3Wait: 3,
+        step3Message: `If timing isn't right right now {{firstName}}, absolutely no worries. Glad to be connected here either way!`,
+      },
+    ];
+  }
+
+  if (toneId === "consultative") {
+    return [
+      {
+        id: "consult-opt-1",
+        title: "Option 1 (Market Shift Diagnostic)",
+        tag: "Consultative • Benchmark",
+        preview: `Hi {{firstName}}, tracking outbound conversion shifts across ${cleanAudience}. Noticed your work at {{company}}...`,
+        step1: `Hi {{firstName}}, we've been tracking outbound conversion shifts across ${cleanAudience}. Noticed your work at {{company}} and would love to exchange perspectives!`,
+        step2Wait: 2,
+        step2Message: `Thanks for connecting, {{firstName}}. We're seeing reply rates drop on generic outreach in ${cleanAudience} — curious if {{company}} has noticed a similar trend?`,
+        step3Wait: 3,
+        step3Message: `Hey {{firstName}}, happy to share our latest conversion benchmarks across ${cleanAudience} if it helps your team's quarterly planning.`,
+      },
+      {
+        id: "consult-opt-2",
+        title: "Option 2 (Strategy Alignment)",
+        tag: "Consultative • Strategy",
+        preview: `{{firstName}}, came across your profile while researching leaders in ${cleanAudience}...`,
+        step1: `{{firstName}}, came across your profile while researching forward-thinking leaders in ${cleanAudience}. Really impressive background with {{company}}!`,
+        step2Wait: 2,
+        step2Message: `Appreciate the connect, {{firstName}}. What's the bigger priority for {{company}} right now: increasing lead volume or improving meeting show-up rates?`,
+        step3Wait: 3,
+        step3Message: `Hey {{firstName}}, if you have 10 minutes next week, I'd love to share what similar ${cleanAudience} teams are testing right now.`,
+      },
+      {
+        id: "consult-opt-3",
+        title: "Option 3 (Peer Discussion)",
+        tag: "Consultative • Peer Exchange",
+        preview: `{{firstName}}, curious how your outbound team is handling reply qualification across ${cleanAudience}...`,
+        step1: `{{firstName}}, curious how your outbound team is handling reply qualification across ${cleanAudience} right now? Thought I'd connect!`,
+        step2Wait: 2,
+        step2Message: `Thanks for the connection {{firstName}}! When {{company}} reaches out to prospects, what's been your highest-converting channel so far?`,
+        step3Wait: 3,
+        step3Message: `No rush at all {{firstName}} — just thought it would make for an interesting peer discussion. Wishing you a great week!`,
+      },
+    ];
+  }
+
+  if (toneId === "challenger") {
+    return [
+      {
+        id: "chal-opt-1",
+        title: "Option 1 (The Generic Outreach Problem)",
+        tag: "Challenger • Insight-Led",
+        preview: `Most outreach in ${cleanAudience} gets ignored instantly. We helped teams at {{company}}'s stage 3x reply rates...`,
+        step1: `Most outreach in ${cleanAudience} gets ignored instantly. We helped teams at {{company}}'s stage 3x reply rates with AI personalization. Would love to connect!`,
+        step2Wait: 2,
+        step2Message: `{{firstName}}, are you confident {{company}}'s outbound messaging is standing out against the dozens of messages your prospects receive daily?`,
+        step3Wait: 3,
+        step3Message: `Hey {{firstName}}, if you have 5 mins, I'd love to share 3 simple tweaks that doubled meeting conversion for another ${cleanAudience} team.`,
+      },
+      {
+        id: "chal-opt-2",
+        title: "Option 2 (Multi-Touch Warming)",
+        tag: "Challenger • Playbook",
+        preview: `Hi {{firstName}}, noticed {{company}} scaling in ${cleanAudience}. If you're relying purely on email, you're missing 60% of buyers...`,
+        step1: `Hi {{firstName}}, noticed {{company}} scaling in ${cleanAudience}. If you're relying purely on cold email, you might be missing 60% of buyers. Let's connect!`,
+        step2Wait: 2,
+        step2Message: `Thanks for connecting, {{firstName}}. Have you tested automated LinkedIn profile warming before pitching your ICP at {{company}}?`,
+        step3Wait: 3,
+        step3Message: `Hey {{firstName}}, happy to send over our multi-touch cadence breakdown if you want to see how top ${cleanAudience} teams structure it.`,
+      },
+      {
+        id: "chal-opt-3",
+        title: "Option 3 (Cadence Diagnostic)",
+        tag: "Challenger • Bold CTA",
+        preview: `{{firstName}}, 8 out of 10 ${cleanAudience} outreach campaigns fail due to poor follow-up timing...`,
+        step1: `{{firstName}}, 8 out of 10 ${cleanAudience} outreach campaigns fail due to poor follow-up timing. We fixed this for teams like {{company}} — happy to connect!`,
+        step2Wait: 2,
+        step2Message: `{{firstName}}, how many touchpoints does your team currently average before a prospect responds?`,
+        step3Wait: 3,
+        step3Message: `Hey {{firstName}}, let me know if you'd like a copy of our high-converting ${cleanAudience} sequence audit. Have a great week!`,
+      },
+    ];
+  }
+
+  // Default: friendly
+  return [
+    {
+      id: "friendly-opt-1",
+      title: "Option 1 (Friendly Observation)",
+      tag: "Friendly • Expansion",
+      preview: `Hey {{firstName}}, noticed your team expanding into EMEA...`,
+      step1: `Hey {{firstName}}, noticed your team at {{company}} expanding into EMEA and scaling across ${cleanAudience}. Really impressed by the momentum — would love to connect and follow along!`,
+      step2Wait: 2,
+      step2Message: `Thanks for connecting, {{firstName}}! Curious how your team is thinking about outbound pipeline this quarter as you continue scaling?`,
+      step3Wait: 3,
+      step3Message: `Hey {{firstName}}, just floating this back up. If you're open to sharing notes on ${cleanAudience} outreach best practices, let me know!`,
+    },
+    {
+      id: "friendly-opt-2",
+      title: "Option 2 (Direct Tooling Pitch)",
+      tag: "Friendly • Lightweight Pitch",
+      preview: `Hi {{firstName}}, we built a lightweight pipeline assistant...`,
+      step1: `Hi {{firstName}}, we built a lightweight pipeline assistant for teams like {{company}} to scale qualified outbound conversations without spam. Open to connecting?`,
+      step2Wait: 2,
+      step2Message: `Hey {{firstName}}, thanks for connecting! We recently helped similar teams in ${cleanAudience} book 2x more meetings. Curious if outbound is a priority currently?`,
+      step3Wait: 3,
+      step3Message: `Quick follow-up {{firstName}} — would you be open to a 10-min chat later this week? If not, no worries at all!`,
+    },
+    {
+      id: "friendly-opt-3",
+      title: "Option 3 (Peer Discussion)",
+      tag: "Friendly • Peer Discussion",
+      preview: `{{firstName}}, curious how your outbound team is handling reply qualification...`,
+      step1: `{{firstName}}, curious how your outbound team is handling reply qualification across ${cleanAudience}? Love what you're building at {{company}} — thought I'd connect!`,
+      step2Wait: 2,
+      step2Message: `Thanks for connecting {{firstName}}! Always great to connect with peers in ${cleanAudience}. How's the quarter shaping up for {{company}}?`,
+      step3Wait: 3,
+      step3Message: `No pressure at all {{firstName}}, just curious if this is top of mind right now. Have a productive rest of the week!`,
+    },
+  ];
+}
+
+function renderLeadPreview(text: string): string {
+  return text
+    .replace(/\{\{\s*firstName\s*\}\}/g, "Sarah")
+    .replace(/\{\{\s*lastName\s*\}\}/g, "Jenkins")
+    .replace(/\{\{\s*company\s*\}\}/g, "Stripe")
+    .replace(/\{\{\s*title\s*\}\}/g, "VP of Engineering")
+    .replace(/\{\{\s*location\s*\}\}/g, "San Francisco, CA")
+    .replace(/\[Name\]/g, "Sarah");
+}
 
 export interface CampaignItem {
   id: string;
@@ -41,40 +331,16 @@ export interface CampaignDetail {
   dailyCap: number;
   sentToday: number;
   remainingToday: number;
+  failedCount?: number;
+  steps?: { type: string; delayDays: number; template: string }[];
   funnel: { stage: string; count: number }[];
 }
-
-const SAMPLE_DEMO_CAMPAIGNS: CampaignItem[] = [
-  {
-    id: "sample_c1",
-    name: "SaaS Founders Seed & Series A",
-    status: "Active",
-    sender: "Connected Account",
-    leadsCount: 248,
-    sentCount: 180,
-    acceptRate: 48,
-    replyRate: 34,
-    variantA: 44,
-    variantB: 52,
-  },
-  {
-    id: "sample_c2",
-    name: "VP Sales & RevOps Outreach",
-    status: "Active",
-    sender: "Connected Account",
-    leadsCount: 120,
-    sentCount: 95,
-    acceptRate: 42,
-    replyRate: 28,
-    variantA: 42,
-    variantB: 41,
-  },
-];
 
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchCampaignsIfNeeded,
   fetchOverviewIfNeeded,
+  fetchLeadsIfNeeded,
   updateCampaignStatusState,
   setCampaignDetailState,
 } from "@/store/slices/databaseSlice";
@@ -89,39 +355,197 @@ export default function CampaignsPage() {
     loading: storeLoading,
     loaded: storeLoaded,
   } = useAppSelector((state) => state.database.campaigns);
+  const { items: databaseLeads } = useAppSelector((state) => state.database.leads);
 
   const [activeTab, setActiveTab] = useState<"list" | "wizard" | "detail">("list");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
   const [isLaunching, setIsLaunching] = useState(false);
-  const [demoCampaignsOverride, setDemoCampaignsOverride] = useState<CampaignItem[] | null>(null);
   const [campaignDetail, setCampaignDetail] = useState<CampaignDetail | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
 
   const isLoading = storeLoading && !storeLoaded;
-  const campaigns = demoCampaignsOverride ?? storeCampaigns;
+  const campaigns = storeCampaigns;
 
-  // Wizard state
-  const [wizardStep, setWizardStep] = useState(1);
-  const [campaignName, setCampaignName] = useState("Targeted Industry Sequence #1");
+  // 3-Step Campaign Creation Wizard state
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [campaignName, setCampaignName] = useState("Targeted Outreach Sequence #1");
   const [targetAudience, setTargetAudience] = useState("B2B SaaS Decision Makers");
-  const [creditsRequired, setCreditsRequired] = useState(120);
-  const creditsRemaining = 300;
+  const [dailyCap, setDailyCap] = useState(20);
+  const [enrollmentMode, setEnrollmentMode] = useState<EnrollmentMode>("specific");
+  const [selectedWizardLeadIds, setSelectedWizardLeadIds] = useState<string[]>([]);
+  const [selectedFlow, setSelectedFlow] = useState<FlowItem | null>(null);
+  const [wizardSteps, setWizardSteps] = useState<SequenceStepItem[]>([
+    {
+      id: "step-1",
+      type: "connect",
+      delayDays: 0,
+      template:
+        "Hey {{firstName}}, noticed your team expanding into EMEA and scaling across B2B SaaS. Really impressed by the momentum — would love to connect and follow along!",
+    },
+    {
+      id: "step-2",
+      type: "wait",
+      delayDays: 2,
+      template: "",
+    },
+    {
+      id: "step-3",
+      type: "message",
+      delayDays: 0,
+      template:
+        "Thanks for connecting, {{firstName}}! Curious how your team is thinking about outbound pipeline this quarter as you continue scaling?",
+    },
+    {
+      id: "step-4",
+      type: "wait",
+      delayDays: 3,
+      template: "",
+    },
+    {
+      id: "step-5",
+      type: "message",
+      delayDays: 0,
+      template:
+        "Hey {{firstName}}, just floating this back up. If you're open to sharing notes on outbound best practices, let me know!",
+    },
+  ]);
+
+  // Campaign Detail Enrolled Leads state
+  const [enrolledLeads, setEnrolledLeads] = useState<any[]>([]);
+  const [isLoadingEnrolledLeads, setIsLoadingEnrolledLeads] = useState<boolean>(false);
+  const [enrolledFilterTab, setEnrolledFilterTab] = useState<string>("all");
+  const [showAddLeadsModal, setShowAddLeadsModal] = useState<boolean>(false);
+  const [selectedAddLeadIds, setSelectedAddLeadIds] = useState<string[]>([]);
+  const [addLeadSearch, setAddLeadSearch] = useState<string>("");
+  const [isEnrollingAddLeads, setIsEnrollingAddLeads] = useState<boolean>(false);
+  const [isSendingStep, setIsSendingStep] = useState<string | null>(null);
+  const [campaignError, setCampaignError] = useState<string | null>(null);
+  const [leadErrors, setLeadErrors] = useState<Record<string, string>>({});
+  const [detailSubTab, setDetailSubTab] = useState<"prospects" | "monitor">("prospects");
+  const [monitoringLead, setMonitoringLead] = useState<any | null>(null);
+  const [isRetryingAll, setIsRetryingAll] = useState<boolean>(false);
+
+  const filteredAddLeads = useMemo(() => {
+    if (!addLeadSearch.trim()) return databaseLeads;
+    const q = addLeadSearch.toLowerCase();
+    return databaseLeads.filter(
+      (l) =>
+        (l.name && l.name.toLowerCase().includes(q)) ||
+        (l.firstName && l.firstName.toLowerCase().includes(q)) ||
+        (l.lastName && l.lastName.toLowerCase().includes(q)) ||
+        (l.company && l.company.toLowerCase().includes(q)) ||
+        (l.title && l.title.toLowerCase().includes(q)) ||
+        (l.jobTitle && l.jobTitle.toLowerCase().includes(q))
+    );
+  }, [databaseLeads, addLeadSearch]);
+
+  const filteredEnrolledLeads = useMemo(() => {
+    if (enrolledFilterTab === "all") return enrolledLeads;
+    if (enrolledFilterTab === "failed") {
+      return enrolledLeads.filter((item) => item.state === "failed" || !!leadErrors[item.enrollmentId]);
+    }
+    return enrolledLeads.filter((item) => item.state === enrolledFilterTab);
+  }, [enrolledLeads, enrolledFilterTab, leadErrors]);
+
+  const failedLeads = useMemo(() => {
+    return enrolledLeads.filter((item) => item.state === "failed" || !!leadErrors[item.enrollmentId]);
+  }, [enrolledLeads, leadErrors]);
+
+  const selectedCampaignSteps = useMemo(() => {
+    if (campaignDetail?.steps && campaignDetail.steps.length > 0) {
+      return campaignDetail.steps;
+    }
+    return [
+      { type: "connect", delayDays: 0, template: "Hi {{firstName}}, would love to connect and follow along!" },
+      { type: "wait", delayDays: 2, template: "" },
+      { type: "message", delayDays: 0, template: "Thanks for connecting, {{firstName}}!" },
+    ];
+  }, [campaignDetail?.steps]);
+
+  useEffect(() => {
+    if (databaseLeads.length > 0 && selectedWizardLeadIds.length === 0) {
+      setSelectedWizardLeadIds(databaseLeads.slice(0, 10).map((l) => l.id));
+    }
+  }, [databaseLeads, selectedWizardLeadIds.length]);
+
+  // Support 1-click transition from Inbound automations page
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("create") === "true") {
+        setActiveTab("wizard");
+        const paramFlowName = params.get("flowName");
+        if (paramFlowName) {
+          setCampaignName(`${paramFlowName} Campaign`);
+          toast.info(`Campaign initialized for "${paramFlowName}"`);
+        }
+      }
+    }
+  }, []);
+
+  const handleLaunchCampaign = async (launchNow: boolean) => {
+    setIsLaunching(true);
+    const stepsPayload = wizardSteps.map((s) => ({
+      type: s.type,
+      delayDays: s.delayDays,
+      template: s.template,
+    }));
+
+    const finalLeadIds =
+      enrollmentMode === "later"
+        ? []
+        : enrollmentMode === "all"
+        ? databaseLeads.map((l) => l.id)
+        : selectedWizardLeadIds;
+
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: campaignName.trim(),
+          description: targetAudience.trim()
+            ? `Target: ${targetAudience.trim()} • Flow: ${selectedFlow?.name || "Custom"}`
+            : `Flow: ${selectedFlow?.name || "Custom"}`,
+          steps: stepsPayload,
+          dailyCap,
+          leadIds: finalLeadIds,
+          flowId: selectedFlow?.id,
+          flowName: selectedFlow?.name,
+          launch: launchNow,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(
+          launchNow
+            ? `Campaign launched with ${finalLeadIds.length} enrolled leads!`
+            : "Campaign saved as Draft!"
+        );
+        await dispatch(fetchCampaignsIfNeeded({ force: true }));
+        await dispatch(fetchLeadsIfNeeded({ force: true }));
+        dispatch(fetchOverviewIfNeeded({ force: true }));
+        setActiveTab("list");
+        setWizardStep(1);
+      } else {
+        toast.error(data.error || "Failed to create campaign");
+      }
+    } catch {
+      toast.error("Network error while creating campaign");
+    } finally {
+      setIsLaunching(false);
+    }
+  };
 
   useEffect(() => {
     dispatch(fetchCampaignsIfNeeded());
+    dispatch(fetchLeadsIfNeeded());
   }, [dispatch]);
 
   const toggleStatus = async (id: string) => {
     const target = campaigns.find((c) => c.id === id);
     if (!target) return;
     const nextStatus = target.status === "Active" ? "Paused" : "Active";
-
-    if (demoCampaignsOverride) {
-      setDemoCampaignsOverride((prev) =>
-        prev ? prev.map((c) => (c.id === id ? { ...c, status: nextStatus } : c)) : null
-      );
-      return;
-    }
 
     dispatch(updateCampaignStatusState({ id, status: nextStatus }));
 
@@ -138,11 +562,31 @@ export default function CampaignsPage() {
     }
   };
 
-  const fetchCampaignDetail = async (id: string) => {
-    const cached = detailsById[id];
-    if (cached) {
-      setCampaignDetail(cached);
-      return;
+  const fetchEnrolledLeads = async (campaignId: string) => {
+    setIsLoadingEnrolledLeads(true);
+    try {
+      const res = await fetch(`/api/campaigns/${campaignId}/leads?limit=100`);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.items)) {
+        setEnrolledLeads(data.items);
+      } else {
+        setEnrolledLeads([]);
+      }
+    } catch {
+      setEnrolledLeads([]);
+    } finally {
+      setIsLoadingEnrolledLeads(false);
+    }
+  };
+
+  const fetchCampaignDetail = async (id: string, force = false) => {
+    fetchEnrolledLeads(id);
+    if (!force) {
+      const cached = detailsById[id];
+      if (cached) {
+        setCampaignDetail(cached);
+        return;
+      }
     }
     setIsLoadingDetail(true);
     setCampaignDetail(null);
@@ -157,6 +601,8 @@ export default function CampaignsPage() {
           dailyCap: data.campaign.dailyCap ?? 20,
           sentToday: data.sentToday ?? 0,
           remainingToday: data.remainingToday ?? 0,
+          failedCount: data.failedCount ?? 0,
+          steps: data.campaign.steps || [],
           funnel: data.funnel || [],
         };
         setCampaignDetail(detail);
@@ -171,43 +617,203 @@ export default function CampaignsPage() {
     }
   };
 
-  const handleLaunchCampaign = async () => {
-    setIsLaunching(true);
+  const handleEnrollAddLeads = async () => {
+    if (!selectedCampaignId) return;
+    if (selectedAddLeadIds.length === 0) {
+      toast.error("Please select at least one lead to enroll");
+      return;
+    }
+
+    setIsEnrollingAddLeads(true);
     try {
-      const res = await fetch("/api/campaigns", {
+      const res = await fetch(`/api/campaigns/${selectedCampaignId}/leads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: campaignName,
-          targetLeadsCount: availableLeadsCount || 50,
-          niche: targetAudience,
-          status: "Active",
-        }),
+        body: JSON.stringify({ leadIds: selectedAddLeadIds }),
       });
       const data = await res.json();
       if (data.success) {
-        toast.success("Campaign launched successfully!");
-        setDemoCampaignsOverride(null);
+        toast.success(
+          `Enrolled ${data.enrolled} leads!${
+            data.alreadyEnrolled ? ` (${data.alreadyEnrolled} already enrolled)` : ""
+          }`
+        );
+        setShowAddLeadsModal(false);
+        setSelectedAddLeadIds([]);
+        fetchEnrolledLeads(selectedCampaignId);
+        fetchCampaignDetail(selectedCampaignId);
         await dispatch(fetchCampaignsIfNeeded({ force: true }));
         dispatch(fetchOverviewIfNeeded({ force: true }));
-        setActiveTab("list");
       } else {
-        toast.error(data.error || "Failed to launch campaign");
+        toast.error(data.error || "Failed to enroll leads");
       }
     } catch {
-      toast.error("Network error while launching campaign");
+      toast.error("Network error while enrolling leads");
     } finally {
-      setIsLaunching(false);
+      setIsEnrollingAddLeads(false);
     }
   };
 
-  const handleLoadDemoCampaigns = () => {
-    setDemoCampaignsOverride(SAMPLE_DEMO_CAMPAIGNS);
-    setSelectedCampaignId(SAMPLE_DEMO_CAMPAIGNS[0].id);
-    toast.success("Loaded sample demo campaigns for preview");
+  const handleSendQueuedLeadStep = async (leadRow: any) => {
+    const enrollmentId = leadRow.enrollmentId;
+    setIsSendingStep(enrollmentId);
+    setCampaignError(null);
+
+    const recordFailure = async (errMsg: string) => {
+      toast.error(errMsg);
+      setCampaignError(errMsg);
+      setLeadErrors((prev) => ({ ...prev, [enrollmentId]: errMsg }));
+      try {
+        await fetch(`/api/campaigns/${selectedCampaignId}/events`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "failed",
+            enrollmentIds: [enrollmentId],
+            note: errMsg,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to record failure event:", err);
+      }
+      fetchEnrolledLeads(selectedCampaignId);
+      fetchCampaignDetail(selectedCampaignId, true);
+    };
+
+    try {
+      const profileUrl = leadRow.lead?.linkedinUrl;
+      const note = leadRow.nextAction?.message || "";
+      const stepType = leadRow.nextAction?.type || (leadRow.state === "queued" ? "connect" : "message");
+
+      if (!profileUrl || typeof profileUrl !== "string" || !profileUrl.trim()) {
+        const errMsg = `Cannot dispatch to ${leadRow.lead?.name || "prospect"}: Missing or invalid LinkedIn profile URL.`;
+        await recordFailure(errMsg);
+        return;
+      }
+
+      let sendSuccess = false;
+
+      if (stepType === "connect") {
+        // Real LinkedIn connection request with Playwright
+        const sendRes = await fetch("/api/linkedin/send-connection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileUrl: profileUrl.trim(),
+            note,
+            leadId: leadRow.lead?.id || leadRow.lead?._id,
+          }),
+        });
+
+        const sendData = await sendRes.json().catch(() => ({}));
+
+        if (!sendRes.ok || !sendData.success) {
+          const errMsg = sendData.error || "Failed to dispatch connection request via Playwright.";
+          await recordFailure(errMsg);
+          return;
+        }
+
+        sendSuccess = true;
+      } else {
+        // Direct follow-up message with Playwright
+        const sendRes = await fetch("/api/linkedin/send-message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileUrl: profileUrl.trim(),
+            message: note || "Hey, thanks for connecting!",
+            leadId: leadRow.lead?.id || leadRow.lead?._id,
+            campaignId: selectedCampaignId,
+          }),
+        });
+
+        const sendData = await sendRes.json().catch(() => ({}));
+
+        if (!sendRes.ok || !sendData.success) {
+          const errMsg = sendData.error || "Failed to dispatch follow-up message via Playwright.";
+          await recordFailure(errMsg);
+          return;
+        }
+
+        sendSuccess = true;
+      }
+
+      if (sendSuccess) {
+        // Clear lead error
+        setLeadErrors((prev) => {
+          const copy = { ...prev };
+          delete copy[enrollmentId];
+          return copy;
+        });
+
+        const eventRes = await fetch(`/api/campaigns/${selectedCampaignId}/events`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: "sent",
+            enrollmentIds: [enrollmentId],
+          }),
+        });
+        const eventData = await eventRes.json();
+        if (eventData.success) {
+          toast.success(
+            `Successfully sent ${stepType === "connect" ? "connection request" : "follow-up message"} to ${
+              leadRow.lead?.name || "prospect"
+            }!`
+          );
+          fetchEnrolledLeads(selectedCampaignId);
+          fetchCampaignDetail(selectedCampaignId, true);
+        } else {
+          toast.error(eventData.error || "Failed to advance sequence step");
+        }
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Network error while dispatching touchpoint";
+      await recordFailure(errMsg);
+    } finally {
+      setIsSendingStep(null);
+    }
   };
 
-  const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId) || campaigns[0] || SAMPLE_DEMO_CAMPAIGNS[0];
+  const handleRetryAllFailed = async () => {
+    if (failedLeads.length === 0) return;
+    setIsRetryingAll(true);
+    let successCount = 0;
+    let failCount = 0;
+    for (const lead of failedLeads) {
+      try {
+        await handleSendQueuedLeadStep(lead);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    setIsRetryingAll(false);
+    toast.info(`Retry batch completed: ${successCount} processed.`);
+  };
+
+  const handleRemoveEnrolledLead = async (enrollmentId: string) => {
+    if (!confirm("Remove this prospect from the campaign sequence?")) return;
+    try {
+      const res = await fetch(`/api/campaigns/${selectedCampaignId}/leads`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enrollmentIds: [enrollmentId] }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Prospect removed from sequence");
+        fetchEnrolledLeads(selectedCampaignId);
+        fetchCampaignDetail(selectedCampaignId);
+      }
+    } catch {
+      toast.error("Failed to remove lead");
+    }
+  };
+
+
+
+  const selectedCampaign = campaigns.find((c) => c.id === selectedCampaignId) || campaigns[0] || null;
 
   return (
     <motion.div
@@ -293,7 +899,7 @@ export default function CampaignsPage() {
                         <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
                           Launch your first automated sequence with your connected LinkedIn sender account and {availableLeadsCount} saved leads.
                         </p>
-                        <div className="flex items-center justify-center gap-2.5 pt-2 flex-wrap">
+                        <div className="flex items-center justify-center pt-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -303,13 +909,6 @@ export default function CampaignsPage() {
                             className="px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
                           >
                             Create First Campaign
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleLoadDemoCampaigns}
-                            className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-200 font-semibold text-xs transition-colors cursor-pointer"
-                          >
-                            Load Demo Campaigns
                           </button>
                         </div>
                       </div>
@@ -390,6 +989,19 @@ export default function CampaignsPage() {
 
       {/* VIEW 2: Campaign Detail with Real Funnel Stats */}
       {activeTab === "detail" && (
+        !selectedCampaign ? (
+          <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-12 text-center space-y-3">
+            <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">No Campaign Selected</h3>
+            <p className="text-xs text-neutral-500">Please choose a campaign from the list or create a new campaign.</p>
+            <button
+              type="button"
+              onClick={() => setActiveTab("list")}
+              className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs transition-colors cursor-pointer"
+            >
+              Back to Campaigns
+            </button>
+          </motion.div>
+        ) : (
         <div className="space-y-6">
           <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-neutral-100 dark:border-neutral-800 gap-3">
@@ -402,12 +1014,41 @@ export default function CampaignsPage() {
                 </h3>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedAddLeadIds([]);
+                    setAddLeadSearch("");
+                    setShowAddLeadsModal(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  <span>Add Leads to Campaign</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleStatus(selectedCampaign.id)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-semibold text-xs transition-colors cursor-pointer"
+                >
+                  {selectedCampaign.status === "Active" ? (
+                    <>
+                      <Pause className="h-3.5 w-3.5 text-neutral-500" />
+                      <span>Pause</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-3.5 w-3.5 text-palm-leaf-600" />
+                      <span>Resume</span>
+                    </>
+                  )}
+                </button>
                 <span
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
                     selectedCampaign.status === "Active"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-neutral-100 text-neutral-600"
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                      : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
                   }`}
                 >
                   {selectedCampaign.status === "Active" && (
@@ -473,40 +1114,1013 @@ export default function CampaignsPage() {
             </div>
 
             {/* Quick stats from the list */}
-            <div className="mt-6 grid grid-cols-3 gap-3 pt-4 border-t border-neutral-100 dark:border-neutral-800">
-              <div className="text-center">
-                <p className="text-[10px] text-neutral-500">Leads</p>
+            <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t border-neutral-100 dark:border-neutral-800">
+              <div className="text-center p-2 rounded-xl bg-neutral-50/60 dark:bg-neutral-800/40">
+                <p className="text-[10px] text-neutral-500">Leads Enrolled</p>
                 <p className="text-sm font-bold text-neutral-900 dark:text-neutral-100">{selectedCampaign.sentCount}/{selectedCampaign.leadsCount}</p>
               </div>
-              <div className="text-center">
-                <p className="text-[10px] text-neutral-500">Accept rate</p>
+              <div className="text-center p-2 rounded-xl bg-neutral-50/60 dark:bg-neutral-800/40">
+                <p className="text-[10px] text-neutral-500">Accept Rate</p>
                 <p className="text-sm font-bold text-palm-leaf-700 dark:text-palm-leaf-400">{selectedCampaign.acceptRate}%</p>
               </div>
-              <div className="text-center">
-                <p className="text-[10px] text-neutral-500">Reply rate</p>
+              <div className="text-center p-2 rounded-xl bg-neutral-50/60 dark:bg-neutral-800/40">
+                <p className="text-[10px] text-neutral-500">Reply Rate</p>
                 <p className="text-sm font-bold text-neutral-800 dark:text-neutral-200">{selectedCampaign.replyRate}%</p>
+              </div>
+              <div className={`text-center p-2 rounded-xl transition-colors ${
+                failedLeads.length > 0
+                  ? "bg-red-50 dark:bg-red-950/40 border border-red-200/60 dark:border-red-900/40 text-red-700 dark:text-red-300"
+                  : "bg-neutral-50/60 dark:bg-neutral-800/40 text-neutral-800 dark:text-neutral-200"
+              }`}>
+                <p className="text-[10px] text-neutral-500 flex items-center justify-center gap-1">
+                  <span>Step Failures</span>
+                  {failedLeads.length > 0 && <AlertCircle className="h-2.5 w-2.5 text-red-600 inline" />}
+                </p>
+                <p className={`text-sm font-bold ${failedLeads.length > 0 ? "text-red-600 dark:text-red-400" : ""}`}>
+                  {failedLeads.length}
+                </p>
               </div>
             </div>
           </motion.div>
+
+          {/* Campaign Execution Error Banner */}
+          {campaignError && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-4 rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50/80 dark:bg-red-950/40 flex items-start justify-between gap-3 text-xs text-red-900 dark:text-red-200 shadow-xs"
+            >
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block text-sm">Connection Request / Sequence Error</span>
+                  <p className="mt-0.5 text-neutral-600 dark:text-neutral-300 leading-relaxed">{campaignError}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCampaignError(null)}
+                className="p-1 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer"
+                title="Dismiss error"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          )}
+
+          {/* Enrolled Prospects Section */}
+          <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs">
+            {/* View Sub-Tabs: Prospects vs Step Execution Monitor */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDetailSubTab("prospects")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    detailSubTab === "prospects"
+                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
+                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
+                  }`}
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  <span>Enrolled Prospects ({enrolledLeads.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetailSubTab("monitor")}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    detailSubTab === "monitor"
+                      ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 shadow-xs"
+                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
+                  }`}
+                >
+                  <Activity className="h-3.5 w-3.5" />
+                  <span>Step Execution Monitor</span>
+                  {failedLeads.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white animate-pulse">
+                      {failedLeads.length} failed
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {detailSubTab === "prospects" && (
+                  <div className="inline-flex p-1 rounded-xl bg-neutral-100 dark:bg-neutral-950/80 border border-neutral-200/80 dark:border-neutral-800 text-xs">
+                    {["all", "queued", "invited", "accepted", "replied", "failed"].map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setEnrolledFilterTab(tab)}
+                        className={`px-2.5 py-1 rounded-lg font-medium capitalize transition-all cursor-pointer ${
+                          enrolledFilterTab === tab
+                            ? "bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 shadow-xs"
+                            : tab === "failed" && failedLeads.length > 0
+                            ? "text-red-600 dark:text-red-400 font-bold"
+                            : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-200"
+                        }`}
+                      >
+                        {tab === "failed" && failedLeads.length > 0 ? `failed (${failedLeads.length})` : tab}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {detailSubTab === "monitor" && failedLeads.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={isRetryingAll}
+                    onClick={handleRetryAllFailed}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    {isRetryingAll ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Retrying all failed...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        <span>Retry All Failed ({failedLeads.length})</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchEnrolledLeads(selectedCampaign.id);
+                    fetchCampaignDetail(selectedCampaign.id, true);
+                  }}
+                  className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-400 transition-colors cursor-pointer"
+                  title="Refresh prospects & execution states"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isLoadingEnrolledLeads ? "animate-spin text-palm-leaf-600" : ""}`} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedAddLeadIds([]);
+                    setAddLeadSearch("");
+                    setShowAddLeadsModal(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add Leads</span>
+                </button>
+              </div>
+            </div>
+
+            {detailSubTab === "monitor" ? (
+              <div className="space-y-6 pt-2">
+                {/* 4 Health & Execution KPIs */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30">
+                    <span className="text-[10px] text-neutral-400 uppercase font-semibold">Sequence Depth</span>
+                    <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100 mt-1">
+                      {selectedCampaignSteps.length} Steps
+                    </p>
+                    <p className="text-[10px] text-neutral-500 mt-0.5">Automated outreach steps</p>
+                  </div>
+                  <div className="p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30">
+                    <span className="text-[10px] text-neutral-400 uppercase font-semibold">Active Prospects</span>
+                    <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100 mt-1">
+                      {enrolledLeads.length} Leads
+                    </p>
+                    <p className="text-[10px] text-neutral-500 mt-0.5">Total enrolled in sequence</p>
+                  </div>
+                  <div className="p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30">
+                    <span className="text-[10px] text-neutral-400 uppercase font-semibold">Touches Sent Today</span>
+                    <p className="text-lg font-bold text-neutral-900 dark:text-neutral-100 mt-1">
+                      {campaignDetail?.sentToday ?? selectedCampaign.sentCount}
+                    </p>
+                    <p className="text-[10px] text-neutral-500 mt-0.5">{campaignDetail?.remainingToday ?? 0} cap remaining</p>
+                  </div>
+                  <div className={`p-4 rounded-xl border transition-colors ${
+                    failedLeads.length > 0
+                      ? "border-red-200 dark:border-red-900/60 bg-red-50/40 dark:bg-red-950/20 text-red-700 dark:text-red-300"
+                      : "border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/30 text-neutral-900 dark:text-neutral-100"
+                  }`}>
+                    <span className="text-[10px] uppercase font-semibold text-neutral-400">Step Failures</span>
+                    <p className={`text-lg font-bold mt-1 ${failedLeads.length > 0 ? "text-red-600 dark:text-red-400 flex items-center gap-1.5" : ""}`}>
+                      {failedLeads.length > 0 && <AlertCircle className="h-4 w-4 text-red-600 animate-bounce" />}
+                      {failedLeads.length} Failed
+                    </p>
+                    <p className="text-[10px] text-neutral-500 mt-0.5">
+                      {failedLeads.length > 0 ? "Action required to retry" : "All steps executing cleanly"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Active Failure Audit Section */}
+                {failedLeads.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 text-red-600" />
+                          <span>Real Step Failures & Diagnostic Errors ({failedLeads.length})</span>
+                        </h4>
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          These prospects encountered issues while executing a touchpoint. Review the error and retry.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isRetryingAll}
+                        onClick={handleRetryAllFailed}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        {isRetryingAll ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Retrying...</span>
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            <span>Retry All ({failedLeads.length})</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto border border-red-100 dark:border-red-950 rounded-2xl bg-white dark:bg-neutral-900">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-neutral-100 dark:border-neutral-800 text-neutral-400 font-medium bg-red-50/30 dark:bg-red-950/20">
+                            <th className="py-3 px-4">Prospect</th>
+                            <th className="py-3 px-4">Failed Step</th>
+                            <th className="py-3 px-4">Real Playwright / LinkedIn Error</th>
+                            <th className="py-3 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
+                          {failedLeads.map((item) => {
+                            const lead = item.lead || {};
+                            const errNote = item.lastError || leadErrors[item.enrollmentId] || "Step execution failed via Playwright.";
+                            const isSending = isSendingStep === item.enrollmentId;
+
+                            return (
+                              <tr key={item.enrollmentId} className="hover:bg-red-50/20 dark:hover:bg-red-950/10 transition-colors">
+                                <td className="py-3 px-4">
+                                  <div className="font-semibold text-neutral-900 dark:text-neutral-100">
+                                    {lead.name || `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Prospect"}
+                                  </div>
+                                  <div className="flex items-center gap-1 text-[11px] text-neutral-400">
+                                    <span>{[lead.title, lead.company].filter(Boolean).join(" • ")}</span>
+                                    {lead.linkedinUrl && (
+                                      <a
+                                        href={lead.linkedinUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-palm-leaf-600 hover:underline"
+                                      >
+                                        <ExternalLink className="h-2.5 w-2.5 inline ml-0.5" />
+                                      </a>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-900/60">
+                                    Step {(item.failedStep?.stepIndex ?? item.currentStep) + 1}: {item.failedStep?.type || "Connect"}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 max-w-md">
+                                  <p className="text-[11px] text-red-600 dark:text-red-400 font-mono bg-red-50/60 dark:bg-red-950/30 p-1.5 rounded-lg border border-red-200/50 break-words">
+                                    {errNote}
+                                  </p>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="inline-flex items-center gap-2 justify-end">
+                                    <button
+                                      type="button"
+                                      disabled={isSending}
+                                      onClick={() => handleSendQueuedLeadStep(item)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                                    >
+                                      {isSending ? (
+                                        <>
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                          <span>Retrying...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <RefreshCw className="h-3 w-3" />
+                                          <span>Retry</span>
+                                        </>
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMonitoringLead(item)}
+                                      className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                                      title="View execution audit"
+                                    >
+                                      <Activity className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-12 text-center rounded-2xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-900/40">
+                    <div className="h-12 w-12 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 mx-auto flex items-center justify-center mb-3">
+                      <CheckCircle2 className="h-6 w-6" />
+                    </div>
+                    <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                      All Sequence Steps Operational
+                    </h4>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 max-w-sm mx-auto">
+                      0 step failures detected. All connection requests and scheduled follow-ups are advancing smoothly through your configured sequence.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : isLoadingEnrolledLeads ? (
+              <div className="py-12 text-center text-xs text-neutral-400 flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-palm-leaf-600" />
+                <span>Loading enrolled prospects...</span>
+              </div>
+            ) : filteredEnrolledLeads.length === 0 ? (
+              <div className="py-12 text-center">
+                <div className="h-12 w-12 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-400 mx-auto flex items-center justify-center mb-3">
+                  <Users className="h-6 w-6" />
+                </div>
+                <h4 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                  {enrolledFilterTab === "all" ? "No Prospects Enrolled Yet" : `No ${enrolledFilterTab} prospects found`}
+                </h4>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 max-w-sm mx-auto">
+                  {enrolledFilterTab === "all"
+                    ? "Add leads from your database to start sending connection requests and follow-ups automatically."
+                    : `No prospects currently in ${enrolledFilterTab} state for this campaign.`}
+                </p>
+                {enrolledFilterTab === "all" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedAddLeadIds([]);
+                      setAddLeadSearch("");
+                      setShowAddLeadsModal(true);
+                    }}
+                    className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    <span>Add Leads from Database</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto -mx-6 mt-2">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-neutral-100 dark:border-neutral-800 text-neutral-400 font-medium">
+                      <th className="py-3 px-6">Prospect</th>
+                      <th className="py-3 px-4">State</th>
+                      <th className="py-3 px-4">Step Progress</th>
+                      <th className="py-3 px-4">Next Action / Cadence</th>
+                      <th className="py-3 px-6 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
+                    {filteredEnrolledLeads.map((item) => {
+                      const lead = item.lead || {};
+                      const initials = (lead.name || lead.firstName || "L")[0].toUpperCase();
+                      const isSending = isSendingStep === item.enrollmentId;
+                      const leadError = leadErrors[item.enrollmentId];
+
+                      const stateBadgeClass =
+                        item.state === "queued"
+                          ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200/60"
+                          : item.state === "invited"
+                          ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60"
+                          : item.state === "accepted"
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60"
+                          : item.state === "replied"
+                          ? "bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200/60"
+                          : "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 border-neutral-200";
+
+                      return (
+                        <tr key={item.enrollmentId} className="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40 transition-colors">
+                          <td className="py-3.5 px-6">
+                            <div className="flex items-center gap-3">
+                              <div className="h-8 w-8 rounded-full bg-palm-leaf-100 dark:bg-palm-leaf-950 text-palm-leaf-700 dark:text-palm-leaf-300 font-bold text-xs flex items-center justify-center shrink-0">
+                                {initials}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                                    {lead.name || `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Prospect"}
+                                  </span>
+                                  {lead.linkedinUrl && (
+                                    <a
+                                      href={lead.linkedinUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="text-neutral-400 hover:text-palm-leaf-600 transition-colors"
+                                      title="Open LinkedIn Profile"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-neutral-500 truncate">
+                                  {[lead.title || lead.jobTitle, lead.company].filter(Boolean).join(" • ")}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            {leadError ? (
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 border-red-200/60">
+                                  <AlertCircle className="h-2.5 w-2.5 text-red-600 dark:text-red-400" />
+                                  <span>Failed</span>
+                                </span>
+                                <p className="text-[10px] text-red-600 dark:text-red-400 font-medium line-clamp-1 max-w-[140px]" title={leadError}>
+                                  {leadError}
+                                </p>
+                              </div>
+                            ) : (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${stateBadgeClass}`}>
+                                {item.state === "queued" && <Clock className="h-2.5 w-2.5" />}
+                                {item.state === "invited" && <Send className="h-2.5 w-2.5" />}
+                                {item.state === "accepted" && <Check className="h-2.5 w-2.5" />}
+                                {item.state === "replied" && <MessageSquare className="h-2.5 w-2.5" />}
+                                <span className="capitalize">{item.state}</span>
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <div className="text-[11px] font-medium text-neutral-700 dark:text-neutral-300">
+                              Step {item.currentStep + 1} of {item.totalSteps || 1}
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4 max-w-xs">
+                            {(item.state === "failed" || leadError) ? (
+                              <div className="space-y-0.5">
+                                <span className="text-red-600 dark:text-red-400 font-bold flex items-center gap-1 text-[11px]">
+                                  <AlertCircle className="h-3 w-3 shrink-0" />
+                                  Step {(item.failedStep?.stepIndex ?? item.currentStep) + 1} ({item.failedStep?.type || "Connect"}) Failed
+                                </span>
+                                <p className="text-[11px] text-red-500/90 truncate italic" title={item.lastError || leadError}>
+                                  {item.lastError || leadError || "Connection request failed via Playwright"}
+                                </p>
+                              </div>
+                            ) : item.nextAction ? (
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-1.5 text-[11px]">
+                                  {item.nextAction.waitingForAcceptance ? (
+                                    <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      Waiting for connect accept
+                                    </span>
+                                  ) : item.nextAction.due ? (
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      Ready to send now
+                                    </span>
+                                  ) : (
+                                    <span className="text-neutral-500 flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      Cadence scheduled
+                                    </span>
+                                  )}
+                                </div>
+                                {item.nextAction.message && (
+                                  <p className="text-[11px] text-neutral-500 truncate italic">
+                                    &quot;{item.nextAction.message}&quot;
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-neutral-400 italic">Cadence completed</span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-6 text-right">
+                            <div className="inline-flex items-center gap-2 justify-end">
+                              {(item.state === "failed" || leadError) ? (
+                                <button
+                                  type="button"
+                                  disabled={isSending}
+                                  onClick={() => handleSendQueuedLeadStep(item)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                                  title="Retry dispatching this step"
+                                >
+                                  {isSending ? (
+                                    <>
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                      <span>Retrying...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="h-3 w-3" />
+                                      <span>Retry Send</span>
+                                    </>
+                                  )}
+                                </button>
+                              ) : (
+                                (item.state === "queued" || (item.state === "accepted" && item.nextAction?.due)) && (
+                                  <button
+                                    type="button"
+                                    disabled={isSending}
+                                    onClick={() => handleSendQueuedLeadStep(item)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                                  >
+                                    {isSending ? (
+                                      <>
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        <span>Sending...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Send className="h-3 w-3" />
+                                        <span>Send Now</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setMonitoringLead(item)}
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-palm-leaf-600 hover:bg-palm-leaf-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                                title="Monitor sequence steps & real error audit log"
+                              >
+                                <Activity className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveEnrolledLead(item.enrollmentId)}
+                                className="p-1.5 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                                title="Remove from sequence"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </motion.div>
+
+          {/* Step Execution Monitor Modal */}
+          {monitoringLead && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                {/* Modal Header */}
+                <div className="p-5 border-b border-neutral-100 dark:border-neutral-800 flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-palm-leaf-100 dark:bg-palm-leaf-950 text-palm-leaf-700 dark:text-palm-leaf-300 font-bold text-sm flex items-center justify-center shrink-0">
+                      {(monitoringLead.lead?.name || monitoringLead.lead?.firstName || "L")[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-neutral-900 dark:text-neutral-100">
+                          {monitoringLead.lead?.name || `${monitoringLead.lead?.firstName || ""} ${monitoringLead.lead?.lastName || ""}`.trim() || "Prospect Step Monitor"}
+                        </h3>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase ${
+                          monitoringLead.state === "failed"
+                            ? "bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 border-red-200/60"
+                            : monitoringLead.state === "invited"
+                            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60"
+                            : monitoringLead.state === "accepted"
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60"
+                            : "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200/60"
+                        }`}>
+                          {monitoringLead.state}
+                        </span>
+                      </div>
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        {[monitoringLead.lead?.title || monitoringLead.lead?.jobTitle, monitoringLead.lead?.company].filter(Boolean).join(" • ")}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMonitoringLead(null)}
+                    className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Modal Content - Scrollable */}
+                <div className="p-5 overflow-y-auto space-y-6 text-xs">
+                  {/* Failure alert banner if in failed state */}
+                  {(monitoringLead.state === "failed" || monitoringLead.lastError) && (
+                    <div className="p-3.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/80 dark:bg-red-950/40 text-red-900 dark:text-red-200 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold flex items-center gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
+                          Step {(monitoringLead.failedStep?.stepIndex ?? monitoringLead.currentStep) + 1} Execution Failure
+                        </span>
+                        <button
+                          type="button"
+                          disabled={isSendingStep === monitoringLead.enrollmentId}
+                          onClick={async () => {
+                            await handleSendQueuedLeadStep(monitoringLead);
+                            setMonitoringLead(null);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold text-[11px] shadow-xs cursor-pointer transition-colors"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          <span>Retry Step Now</span>
+                        </button>
+                      </div>
+                      <p className="text-neutral-700 dark:text-neutral-300 font-mono text-[11px] bg-white/60 dark:bg-black/40 p-2 rounded-lg border border-red-200/40 break-words">
+                        {monitoringLead.lastError || monitoringLead.failedStep?.error || "Error executing touchpoint via Playwright"}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Step-by-Step Sequence Progress */}
+                  <div>
+                    <h4 className="font-bold text-neutral-900 dark:text-neutral-100 uppercase tracking-wider text-[11px] mb-3 flex items-center gap-1.5">
+                      <SlidersHorizontal className="h-3.5 w-3.5 text-palm-leaf-600" />
+                      <span>Campaign Sequence Breakdown ({selectedCampaignSteps.length} Steps)</span>
+                    </h4>
+                    <div className="space-y-2.5">
+                      {selectedCampaignSteps.map((step, idx) => {
+                        const isPast = idx < monitoringLead.currentStep;
+                        const isCurrent = idx === monitoringLead.currentStep;
+                        const isStepFailed = isCurrent && (monitoringLead.state === "failed" || !!monitoringLead.lastError);
+                        const isCompleted = isPast || (isCurrent && ["invited", "accepted", "replied"].includes(monitoringLead.state) && step.type === "connect");
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-3 rounded-xl border transition-all ${
+                              isStepFailed
+                                ? "border-red-300 dark:border-red-900/80 bg-red-50/40 dark:bg-red-950/20"
+                                : isCompleted
+                                ? "border-emerald-200/80 dark:border-emerald-900/40 bg-emerald-50/30 dark:bg-emerald-950/20"
+                                : isCurrent
+                                ? "border-blue-200/80 dark:border-blue-900/40 bg-blue-50/30 dark:bg-blue-950/20"
+                                : "border-neutral-200/70 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-800/20"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-neutral-900 dark:text-neutral-100">
+                                  Step {idx + 1}: {step.type === "connect" ? "Connection Request" : step.type === "wait" ? `Wait ${step.delayDays} Days` : "Follow-up Message"}
+                                </span>
+                                <span className="text-[10px] text-neutral-400 font-mono">
+                                  {step.type}
+                                </span>
+                              </div>
+
+                              {isStepFailed ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/50 px-2 py-0.5 rounded-full">
+                                  <AlertCircle className="h-3 w-3" />
+                                  Execution Failed
+                                </span>
+                              ) : isCompleted ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 px-2 py-0.5 rounded-full">
+                                  <Check className="h-3 w-3" />
+                                  Completed
+                                </span>
+                              ) : isCurrent ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">
+                                  <Clock className="h-3 w-3" />
+                                  In Progress
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-neutral-400 font-medium">Pending</span>
+                              )}
+                            </div>
+
+                            {step.template && (
+                              <p className="text-[11px] text-neutral-600 dark:text-neutral-300 bg-white/70 dark:bg-neutral-900/70 p-2 rounded-lg border border-neutral-100 dark:border-neutral-800 italic">
+                                &quot;{step.template}&quot;
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Real Event Audit Trail */}
+                  <div>
+                    <h4 className="font-bold text-neutral-900 dark:text-neutral-100 uppercase tracking-wider text-[11px] mb-3 flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-palm-leaf-600" />
+                      <span>Execution Audit Trail ({monitoringLead.history?.length || 0} events)</span>
+                    </h4>
+                    <div className="space-y-2 border-l-2 border-neutral-200 dark:border-neutral-800 pl-3 ml-1.5">
+                      {(!monitoringLead.history || monitoringLead.history.length === 0) ? (
+                        <p className="text-neutral-400 italic">No events recorded yet.</p>
+                      ) : (
+                        monitoringLead.history.map((ev: any, i: number) => {
+                          const isFail = ev.event === "failed";
+                          const isSent = ev.event === "step_sent";
+                          return (
+                            <div key={i} className="relative group">
+                              <div className={`absolute -left-[19px] top-1 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-neutral-900 ${
+                                isFail ? "bg-red-500" : isSent ? "bg-emerald-500" : "bg-neutral-400"
+                              }`} />
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className={`font-semibold capitalize text-xs ${
+                                  isFail ? "text-red-600 dark:text-red-400 font-bold" : "text-neutral-800 dark:text-neutral-200"
+                                }`}>
+                                  {ev.event.replace(/_/g, " ")} {ev.stepIndex !== undefined ? `(Step ${ev.stepIndex + 1})` : ""}
+                                </span>
+                                <span className="text-[10px] text-neutral-400 font-mono">
+                                  {new Date(ev.at).toLocaleString()}
+                                </span>
+                              </div>
+                              {ev.note && (
+                                <p className={`text-[11px] mt-0.5 ${isFail ? "text-red-600 dark:text-red-400 font-medium" : "text-neutral-500 dark:text-neutral-400"}`}>
+                                  {ev.note}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-4 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 flex items-center justify-between">
+                  <span className="text-[11px] text-neutral-400">
+                    Enrollment ID: <code className="font-mono text-[10px]">{monitoringLead.enrollmentId}</code>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setMonitoringLead(null)}
+                    className="px-3.5 py-1.5 rounded-xl bg-neutral-200 hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 font-medium text-xs transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Add Leads Modal */}
+          <AnimatePresence>
+            {showAddLeadsModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setShowAddLeadsModal(false)}
+                  className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+                />
+
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  className="relative w-full max-w-xl rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-xl overflow-hidden z-10 flex flex-col max-h-[85vh]"
+                >
+                  {/* Modal Header */}
+                  <div className="p-5 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-neutral-900 dark:text-neutral-100">
+                        Add Leads to Campaign
+                      </h3>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                        Enroll prospects from your leads database into {selectedCampaign.name}.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddLeadsModal(false)}
+                      className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Search and Quick Selection */}
+                  <div className="p-4 bg-neutral-50/50 dark:bg-neutral-950/30 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between gap-3">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-400" />
+                      <input
+                        type="text"
+                        value={addLeadSearch}
+                        onChange={(e) => setAddLeadSearch(e.target.value)}
+                        placeholder="Search leads by name, company, title..."
+                        className="w-full pl-8.5 pr-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs focus:outline-none focus:border-palm-leaf-500"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const enrolledLeadIds = new Set(enrolledLeads.map((e) => e.lead?.id));
+                          const eligible = databaseLeads
+                            .filter((l) => !enrolledLeadIds.has(l.id))
+                            .map((l) => l.id);
+                          setSelectedAddLeadIds(eligible);
+                        }}
+                        className="text-[11px] font-semibold text-palm-leaf-700 dark:text-palm-leaf-400 hover:underline cursor-pointer"
+                      >
+                        Select Eligible
+                      </button>
+                      <span className="text-neutral-300 dark:text-neutral-700">•</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAddLeadIds([])}
+                        className="text-[11px] font-medium text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-300 cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Leads List */}
+                  <div className="flex-1 overflow-y-auto divide-y divide-neutral-100 dark:divide-neutral-800/80 p-2">
+                    {filteredAddLeads.length === 0 ? (
+                      <div className="py-12 text-center text-xs text-neutral-400">
+                        No leads found in database matching your search.
+                      </div>
+                    ) : (
+                      filteredAddLeads.map((lead) => {
+                        const isAlreadyEnrolled = enrolledLeads.some((e) => e.lead?.id === lead.id);
+                        const isChecked = selectedAddLeadIds.includes(lead.id);
+
+                        return (
+                          <label
+                            key={lead.id}
+                            className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${
+                              isAlreadyEnrolled
+                                ? "opacity-60 bg-neutral-50/50 dark:bg-neutral-950/20 cursor-not-allowed"
+                                : "hover:bg-neutral-50 dark:hover:bg-neutral-800/50 cursor-pointer"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              disabled={isAlreadyEnrolled}
+                              checked={isAlreadyEnrolled || isChecked}
+                              onChange={(e) => {
+                                if (isAlreadyEnrolled) return;
+                                if (e.target.checked) {
+                                  setSelectedAddLeadIds((prev) => [...prev, lead.id]);
+                                } else {
+                                  setSelectedAddLeadIds((prev) => prev.filter((id) => id !== lead.id));
+                                }
+                              }}
+                              className="rounded border-neutral-300 text-palm-leaf-600 focus:ring-palm-leaf-500 h-4 w-4"
+                            />
+                            <div className="h-8 w-8 rounded-full bg-palm-leaf-100 dark:bg-palm-leaf-950 text-palm-leaf-700 dark:text-palm-leaf-300 font-bold text-xs flex items-center justify-center shrink-0">
+                              {(lead.name || lead.firstName || "L")[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                                  {lead.name || `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Lead"}
+                                </p>
+                                {isAlreadyEnrolled && (
+                                  <span className="text-[10px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 px-1.5 py-0.5 rounded">
+                                    Already enrolled
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-neutral-500 truncate">
+                                {[lead.title || lead.jobTitle, lead.company, lead.location].filter(Boolean).join(" • ")}
+                              </p>
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-4 border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/40 dark:bg-neutral-950/40 flex items-center justify-between">
+                    <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+                      {selectedAddLeadIds.length} leads selected
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddLeadsModal(false)}
+                        className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300 font-semibold text-xs transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedAddLeadIds.length === 0 || isEnrollingAddLeads}
+                        onClick={handleEnrollAddLeads}
+                        className="px-4 py-2 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                      >
+                        {isEnrollingAddLeads ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Enrolling...</span>
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="h-3.5 w-3.5" />
+                            <span>Enroll {selectedAddLeadIds.length} Leads</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
         </div>
+        )
       )}
 
-      {/* VIEW 3: New Campaign Wizard with Horizontal Sliding Stepper */}
+      {/* VIEW 3: 3-Step Campaign Creation Wizard */}
       {activeTab === "wizard" && (
-        <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-xs max-w-2xl mx-auto">
-          {/* Horizontal Stepper */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between text-xs text-neutral-500 mb-2">
-              <span className={wizardStep === 1 ? "font-bold text-neutral-900 dark:text-neutral-100" : ""}>
-                1. Target Audience
-              </span>
-              <span className={wizardStep === 2 ? "font-bold text-neutral-900 dark:text-neutral-100" : ""}>
-                2. AI Previews
-              </span>
-              <span className={wizardStep === 3 ? "font-bold text-neutral-900 dark:text-neutral-100" : ""}>
-                3. Review & Credits
-              </span>
+        <motion.div variants={cardVariants} className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 sm:p-7 shadow-xs max-w-4xl mx-auto">
+          {/* Stepper Progress Bar */}
+          <div className="mb-6 pb-4 border-b border-neutral-100 dark:border-neutral-800">
+            <div className="flex items-center justify-between text-xs text-neutral-500 mb-2.5">
+              <button
+                type="button"
+                onClick={() => setWizardStep(1)}
+                className={`flex items-center gap-2 cursor-pointer transition-colors ${
+                  wizardStep === 1
+                    ? "font-bold text-neutral-900 dark:text-neutral-100"
+                    : "hover:text-neutral-900 dark:hover:text-neutral-200"
+                }`}
+              >
+                <span
+                  className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                    wizardStep >= 1
+                      ? "bg-palm-leaf-600 text-white"
+                      : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600"
+                  }`}
+                >
+                  1
+                </span>
+                <span>1. Select Leads</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWizardStep(2)}
+                className={`flex items-center gap-2 cursor-pointer transition-colors ${
+                  wizardStep === 2
+                    ? "font-bold text-neutral-900 dark:text-neutral-100"
+                    : "hover:text-neutral-900 dark:hover:text-neutral-200"
+                }`}
+              >
+                <span
+                  className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                    wizardStep >= 2
+                      ? "bg-palm-leaf-600 text-white"
+                      : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600"
+                  }`}
+                >
+                  2
+                </span>
+                <span>2. Automation Flow</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWizardStep(3)}
+                className={`flex items-center gap-2 cursor-pointer transition-colors ${
+                  wizardStep === 3
+                    ? "font-bold text-neutral-900 dark:text-neutral-100"
+                    : "hover:text-neutral-900 dark:hover:text-neutral-200"
+                }`}
+              >
+                <span
+                  className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                    wizardStep >= 3
+                      ? "bg-palm-leaf-600 text-white"
+                      : "bg-neutral-200 dark:bg-neutral-800 text-neutral-600"
+                  }`}
+                >
+                  3
+                </span>
+                <span>3. Review & Launch</span>
+              </button>
             </div>
+
             <div className="h-1.5 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
               <motion.div
                 animate={{ width: `${(wizardStep / 3) * 100}%` }}
@@ -516,131 +2130,53 @@ export default function CampaignsPage() {
             </div>
           </div>
 
-          {/* Step 1 */}
+          {/* Step 1: Select Leads */}
           {wizardStep === 1 && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-800 dark:text-neutral-200 mb-1">
-                  Campaign name
-                </label>
-                <input
-                  type="text"
-                  value={campaignName}
-                  onChange={(e) => setCampaignName(e.target.value)}
-                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950 px-3 py-2 text-xs focus:outline-none focus:border-palm-leaf-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-neutral-800 dark:text-neutral-200 mb-1">
-                  Who are you reaching out to?
-                </label>
-                <textarea
-                  rows={3}
-                  value={targetAudience}
-                  onChange={(e) => setTargetAudience(e.target.value)}
-                  className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950 p-3 text-xs focus:outline-none focus:border-palm-leaf-500"
-                />
-              </div>
-
-              <div className="pt-4 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setWizardStep(2)}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-4 py-2 text-xs font-semibold"
-                >
-                  <span>Generate AI drafts</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
+            <Step1SelectLeads
+              databaseLeads={databaseLeads as any}
+              selectedLeadIds={selectedWizardLeadIds}
+              onSelectionChange={setSelectedWizardLeadIds}
+              enrollmentMode={enrollmentMode}
+              onEnrollmentModeChange={setEnrollmentMode}
+              onProceed={() => setWizardStep(2)}
+            />
           )}
 
-          {/* Step 2: Three AI Previews appearing sequentially */}
+          {/* Step 2: Select or Create Automation Flow */}
           {wizardStep === 2 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-palm-leaf-700 dark:text-palm-leaf-400">
-                <Sparkles className="h-4 w-4" />
-                <span className="text-xs font-semibold">AI Generated Step 1 Sequences</span>
-              </div>
-
-              {[
-                "Option 1 (Friendly Observation): Hey [Name], noticed your team expanding into EMEA...",
-                "Option 2 (Direct Tooling Pitch): Hi [Name], we built a lightweight pipeline assistant...",
-                "Option 3 (Peer Discussion): [Name], curious how your outbound team is handling reply qualification...",
-              ].map((text, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.1, duration: 0.25 }}
-                  className="p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-950/40 text-xs text-neutral-700 dark:text-neutral-300"
-                >
-                  {text}
-                </motion.div>
-              ))}
-
-              <div className="pt-4 flex justify-between">
-                <button
-                  type="button"
-                  onClick={() => setWizardStep(1)}
-                  className="rounded-xl border border-neutral-200 dark:border-neutral-800 px-3 py-1.5 text-xs text-neutral-600"
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWizardStep(3)}
-                  className="rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-4 py-2 text-xs font-semibold"
-                >
-                  Review sequence
-                </button>
-              </div>
-            </div>
+            <Step2SelectFlow
+              steps={wizardSteps}
+              onStepsChange={setWizardSteps}
+              selectedFlowId={selectedFlow?.id || null}
+              selectedFlowName={selectedFlow?.name || ""}
+              onFlowSelect={(flow) => setSelectedFlow(flow)}
+              onProceed={() => setWizardStep(3)}
+              onBack={() => setWizardStep(1)}
+              targetAudience={targetAudience}
+            />
           )}
 
-          {/* Step 3: Credit Estimate and Gentle Amber Limit warning */}
+          {/* Step 3: Review and Launch Campaign */}
           {wizardStep === 3 && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/20 p-4">
-                <div className="flex items-start gap-2.5">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs font-semibold text-neutral-900 dark:text-neutral-100">
-                      Credit Notice
-                    </p>
-                    <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-0.5">
-                      {microcopy.feedback.creditEstimateClose(creditsRequired, creditsRemaining)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 flex justify-between">
-                <button
-                  type="button"
-                  onClick={() => setWizardStep(2)}
-                  className="rounded-xl border border-neutral-200 dark:border-neutral-800 px-3 py-1.5 text-xs text-neutral-600"
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  disabled={isLaunching}
-                  onClick={handleLaunchCampaign}
-                  className="rounded-xl bg-palm-leaf-600 hover:bg-palm-leaf-700 text-white px-4 py-2 text-xs font-semibold cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 transition-colors"
-                >
-                  {isLaunching ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Launching Campaign...</span>
-                    </>
-                  ) : (
-                    <span>Launch campaign</span>
-                  )}
-                </button>
-              </div>
-            </div>
+            <Step3ReviewLaunch
+              campaignName={campaignName}
+              onCampaignNameChange={setCampaignName}
+              targetAudience={targetAudience}
+              onTargetAudienceChange={setTargetAudience}
+              dailyCap={dailyCap}
+              onDailyCapChange={setDailyCap}
+              selectedLeadIds={selectedWizardLeadIds}
+              enrollmentMode={enrollmentMode}
+              totalDatabaseLeads={databaseLeads.length}
+              databaseLeads={databaseLeads as any}
+              steps={wizardSteps}
+              flowName={selectedFlow?.name || "Custom Flow"}
+              availableAccountsCount={availableAccountsCount}
+              isLaunching={isLaunching}
+              onLaunch={handleLaunchCampaign}
+              onBack={() => setWizardStep(2)}
+              onEditStep={(stepNum) => setWizardStep(stepNum)}
+            />
           )}
         </motion.div>
       )}

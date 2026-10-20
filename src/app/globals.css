@@ -3,17 +3,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-palm-leaf-50: #f6faeb;
-  --color-palm-leaf-100: #edf5d6;
-  --color-palm-leaf-200: #daeaae;
-  --color-palm-leaf-300: #c8e085;
-  --color-palm-leaf-400: #b5d55d;
-  --color-palm-leaf-500: #a3cb34;
-  --color-palm-leaf-600: #82a22a;
-  --color-palm-leaf-700: #627a1f;
-  --color-palm-leaf-800: #415115;
-  --color-palm-leaf-900: #21290a;
-  --color-palm-leaf-950: #171c07;
+  --color-palm-leaf-50: #ecfdf5;
+  --color-palm-leaf-100: #d1fae5;
+  --color-palm-leaf-200: #a7f3d0;
+  --color-palm-leaf-300: #6ee7b7;
+  --color-palm-leaf-400: #34d399;
+  --color-palm-leaf-500: #10b981;
+  --color-palm-leaf-600: #059669;
+  --color-palm-leaf-700: #047857;
+  --color-palm-leaf-800: #065f46;
+  --color-palm-leaf-900: #064e3b;
+  --color-palm-leaf-950: #022c22;
 
   --color-primary-50: var(--color-palm-leaf-50);
   --color-primary-100: var(--color-palm-leaf-100);
@@ -45,6 +45,23 @@
   --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-heading: var(--font-manrope), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-geist-mono);
+  --animate-orbit: orbit calc(var(--duration) * 1s) linear infinite;
+}
+
+@keyframes orbit {
+  0% {
+    transform: rotate(calc(var(--angle) * 1deg))
+      translateY(calc(var(--radius) * 1px)) rotate(calc(var(--angle) * -1deg));
+  }
+  100% {
+    transform: rotate(calc(var(--angle) * 1deg + 360deg))
+      translateY(calc(var(--radius) * 1px))
+      rotate(calc((var(--angle) * -1deg) - 360deg));
+  }
+}
+
+.animate-orbit {
+  animation: orbit calc(var(--duration) * 1s) linear infinite;
 }
 
 body {
@@ -53,10 +70,9 @@ body {
   font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Headings use Manrope with regular/medium weight (no bold) */
+/* Headings use Manrope with crisp, natural typography hierarchy */
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-manrope), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-  font-weight: 500 !important;
-  letter-spacing: -0.02em;
+  font-family: var(--font-manrope), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: -0.025em;
 }
 

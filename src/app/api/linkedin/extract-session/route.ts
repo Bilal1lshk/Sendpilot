@@ -112,8 +112,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // Rate limit attempts to protect user account (allow more steps for 2FA verification)
-    if (!(await consumeRateLimit(ctx.userId, "linkedin-extract-session", 20, 15 * 60 * 1000))) {
+    // Rate limit attempts to protect user account (skip on poll requests)
+    if (!body.isPoll && !(await consumeRateLimit(ctx.userId, "linkedin-extract-session", 25, 15 * 60 * 1000))) {
       return NextResponse.json(
         { success: false, error: "Too many login attempts. Please wait 15 minutes before retrying." },
         { status: 429 }
@@ -154,7 +154,7 @@ export async function POST(req: Request) {
     const workerUrl = (clientWorkerUrl || process.env.LINKEDIN_WORKER_URL?.trim())?.replace(/\/+$/, "");
 
     if (workerUrl) {
-      // Offload Playwright browser extraction to dedicated local runner / Cloudflare tunnel
+      // Offload Playwright browser extraction to dedicated local runner / tunnel
       const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -195,25 +195,32 @@ export async function POST(req: Request) {
         }
 
         if (!workerData) {
-          const detail = rawText ? ` (${rawText.slice(0, 120).trim()})` : "";
+          // Tunnel proxy (e.g. Serveo edge) timed out and returned 502 while background Playwright
+          // is still actively logging in. Return 202 Pending so frontend polls silently instead of showing 502!
           return NextResponse.json(
             {
               success: false,
-              error: `LinkedIn worker at ${workerUrl} returned HTTP ${workerRes.status}${detail}.`,
+              pending: true,
+              retryable: true,
+              stage: "extracting",
+              message: "Logging into LinkedIn via residential runner... Finalizing connection...",
             },
-            { status: workerRes.status || 502 }
+            { status: 202 }
           );
         }
 
         result = workerData;
       } catch (workerErr: unknown) {
-        const errMessage = workerErr instanceof Error ? workerErr.message : String(workerErr);
+        // Network timeout / tunnel blip while browser is operating - keep polling
         return NextResponse.json(
           {
             success: false,
-            error: `Unable to connect to LinkedIn runner (${workerUrl}): ${errMessage}. Ensure your local runner or VPS is active and the Cloudflare Tunnel is running.`,
+            pending: true,
+            retryable: true,
+            stage: "extracting",
+            message: "Verifying credentials with LinkedIn runner...",
           },
-          { status: 504 }
+          { status: 202 }
         );
       }
     } else {

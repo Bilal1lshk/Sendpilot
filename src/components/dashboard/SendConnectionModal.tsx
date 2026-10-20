@@ -205,7 +205,7 @@ export function SendConnectionModal({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                  <MessageSquare className="h-3.5 w-3.5 text-palm-leaf-600" />
+                  <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
                   <span>Personalized Invitation Note</span>
                 </label>
 
@@ -213,7 +213,7 @@ export function SendConnectionModal({
                   <button
                     type="button"
                     onClick={() => setIncludeNote(!includeNote)}
-                    className="text-[11px] text-palm-leaf-700 dark:text-palm-leaf-400 font-semibold hover:underline cursor-pointer"
+                    className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold hover:underline cursor-pointer"
                   >
                     {includeNote ? "Remove note" : "Add custom note"}
                   </button>
@@ -228,11 +228,11 @@ export function SendConnectionModal({
                     onChange={(e) => setNote(e.target.value)}
                     maxLength={300}
                     placeholder="Add an optional personalized note to increase acceptance rate..."
-                    className="w-full text-xs p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-hidden focus:ring-2 focus:ring-palm-leaf-500/30 resize-none"
+                    className="w-full text-xs p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-hidden focus:ring-2 focus:ring-neutral-900/10 dark:focus:ring-white/10 resize-none"
                   />
                   <div className="flex items-center justify-between text-[10px] text-neutral-400">
                     <span className="flex items-center gap-1">
-                      <Sparkles className="h-3 w-3 text-palm-leaf-600" />
+                      <Sparkles className="h-3 w-3 text-emerald-600" />
                       Profiles with custom notes have ~40% higher acceptance
                     </span>
                     <span>{activeNote.length} / 300</span>

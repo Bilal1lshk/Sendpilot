@@ -57,9 +57,15 @@ export async function POST(req: Request, { params }: Ctx) {
       return NextResponse.json({ success: false, error: "Launch or resume the campaign before sending" }, { status: 400 });
     }
     if (event === "sent") {
-      const connection = campaign.senderAccountId
+      let connection = campaign.senderAccountId
         ? await LinkedInConnection.findOne({ id: campaign.senderAccountId, userId: ctx.userId })
         : null;
+      if (!connection) {
+        connection = await LinkedInConnection.findOne({ userId: ctx.userId, confirmedAt: { $ne: null } }).sort({ updatedAt: -1 });
+        if (connection) {
+          await Campaign.updateOne({ _id: campaign._id }, { senderAccountId: connection.id, senderName: connection.linkedinName });
+        }
+      }
       if (!connection) return NextResponse.json({ success: false, error: "Connection not found" }, { status: 404 });
       if (!connection.confirmedAt) {
         return NextResponse.json({ success: false, error: "Confirm the LinkedIn sender account before sending" }, { status: 409 });
@@ -85,13 +91,14 @@ export async function POST(req: Request, { params }: Ctx) {
       switch (event) {
         case "sent": {
           const step = steps[e.currentStep];
-          const sendable = step && step.type !== "wait" && (e.state === "queued" || e.state === "accepted");
+          const sendable = step && step.type !== "wait" && (e.state === "queued" || e.state === "accepted" || e.state === "failed");
           if (!sendable) {
             ignored++;
             continue;
           }
-          if (step.type === "connect" && e.state === "queued") e.state = "invited";
-          if (step.type === "message" && e.state === "queued") e.state = "accepted";
+          if (step.type === "connect" && (e.state === "queued" || e.state === "failed")) e.state = "invited";
+          if (step.type === "message" && (e.state === "queued" || e.state === "failed")) e.state = "accepted";
+          e.lastError = undefined;
           e.history.push({ event: "step_sent", at: now, stepIndex: e.currentStep, note });
           const next = nextActionable(steps, e.currentStep + 1, now);
           e.currentStep = next.currentStep;
@@ -106,20 +113,28 @@ export async function POST(req: Request, { params }: Ctx) {
             continue;
           }
           e.state = event;
+          e.lastError = undefined;
           e.history.push({ event, at: now, note });
           if (event !== "accepted") e.nextActionAt = undefined; // a reply stops the automated sequence
           break;
         }
-        case "failed":
-        case "skipped": {
-          e.state = event;
+        case "failed": {
+          e.state = "failed";
           e.nextActionAt = undefined;
-          e.history.push({ event, at: now, note });
+          e.lastError = note || "Failed to execute step";
+          e.history.push({ event: "failed", at: now, stepIndex: e.currentStep, note, error: note });
+          break;
+        }
+        case "skipped": {
+          e.state = "skipped";
+          e.nextActionAt = undefined;
+          e.history.push({ event: "skipped", at: now, stepIndex: e.currentStep, note });
           break;
         }
         case "reset": {
           const first = nextActionable(steps, 0, now);
           e.state = "queued";
+          e.lastError = undefined;
           e.currentStep = first.currentStep;
           e.nextActionAt = first.nextActionAt;
           e.history.push({ event: "reset", at: now, note });
