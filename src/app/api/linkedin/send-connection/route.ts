@@ -83,13 +83,79 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Dispatch Playwright connection request
-    const result = await sendLinkedInConnectionWithPlaywright({
-      profileUrl: profileUrl.trim(),
-      liAtCookie: liAt,
-      jSessionId: jsessionId || undefined,
-      note: typeof note === "string" ? note.trim() : undefined,
-    });
+    // 3. Check for dedicated residential worker runner offload
+    const clientWorkerUrl =
+      typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
+        ? body.workerUrl.trim()
+        : undefined;
+    let configuredWorkerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
+    if (!configuredWorkerUrl && !clientWorkerUrl) {
+      try {
+        const fs = await import("fs");
+        const path = await import("path");
+        const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
+        if (fs.existsSync(tunnelFilePath)) {
+          const saved = fs.readFileSync(tunnelFilePath, "utf8").trim();
+          if (saved && saved.startsWith("http")) {
+            configuredWorkerUrl = saved;
+          }
+        }
+      } catch {}
+    }
+    const workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
+
+    let result: {
+      success: boolean;
+      status: string;
+      message: string;
+      recipientName?: string;
+      requiresReconnect?: boolean;
+    };
+
+    if (workerUrl) {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Bypass-Tunnel-Reminder": "true",
+        "User-Agent": "SendPilot-Worker-Client/1.0",
+      };
+      const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
+      if (workerSecret) headers["x-worker-secret"] = workerSecret;
+
+      try {
+        const workerRes = await fetch(`${workerUrl}/api/send-connection`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            profileUrl: profileUrl.trim(),
+            note: typeof note === "string" ? note.trim() : undefined,
+            liAtCookie: liAt,
+            jSessionId: jsessionId || undefined,
+          }),
+          signal: AbortSignal.timeout(50000),
+        });
+
+        const raw = await workerRes.json().catch(() => null);
+        if (!raw) {
+          throw new Error(`Worker returned HTTP ${workerRes.status}`);
+        }
+        result = raw;
+      } catch (workerErr: unknown) {
+        console.warn("[send-connection] Worker runner error, falling back to local:", workerErr);
+        result = await sendLinkedInConnectionWithPlaywright({
+          profileUrl: profileUrl.trim(),
+          liAtCookie: liAt,
+          jSessionId: jsessionId || undefined,
+          note: typeof note === "string" ? note.trim() : undefined,
+        });
+      }
+    } else {
+      result = await sendLinkedInConnectionWithPlaywright({
+        profileUrl: profileUrl.trim(),
+        liAtCookie: liAt,
+        jSessionId: jsessionId || undefined,
+        note: typeof note === "string" ? note.trim() : undefined,
+      });
+    }
 
     if (!result.success) {
       const isAuthError =

@@ -93,7 +93,21 @@ export async function POST(req: Request) {
       typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
         ? body.workerUrl.trim()
         : undefined;
-    const workerUrl = (clientWorkerUrl || process.env.LINKEDIN_WORKER_URL?.trim())?.replace(/\/+$/, "");
+    let configuredWorkerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
+    if (!configuredWorkerUrl && !clientWorkerUrl) {
+      try {
+        const fs = await import("fs");
+        const path = await import("path");
+        const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
+        if (fs.existsSync(tunnelFilePath)) {
+          const saved = fs.readFileSync(tunnelFilePath, "utf8").trim();
+          if (saved && saved.startsWith("http")) {
+            configuredWorkerUrl = saved;
+          }
+        }
+      } catch {}
+    }
+    const workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
 
     let result: {
       success: boolean;

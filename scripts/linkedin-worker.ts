@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { extractLinkedInSession, type ExtractedSessionResult } from "@/lib/linkedin-session-extractor";
 import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
+import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
 
 const PORT = parseInt(process.env.WORKER_PORT || process.env.PORT || "4000", 10);
 const HOST = process.env.WORKER_HOST || "0.0.0.0";
@@ -514,6 +515,61 @@ const server = http.createServer(async (req, res) => {
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         log("ERROR", `Unhandled exception during send-message: ${errMsg}`);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: false, error: errMsg }));
+      }
+    });
+
+    return;
+  }
+
+  // 5. Send Connection Request Endpoint
+  if (req.method === "POST" && url.pathname === "/api/send-connection") {
+    let bodyText = "";
+    req.on("data", (chunk) => {
+      bodyText += chunk;
+      if (bodyText.length > 512 * 1024) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: false, error: "Payload too large" }));
+        req.destroy();
+      }
+    });
+
+    req.on("end", async () => {
+      try {
+        const body = JSON.parse(bodyText || "{}");
+        const { profileUrl, note, liAtCookie, jSessionId } = body;
+
+        if (!profileUrl || !liAtCookie) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              success: false,
+              error: "Missing required 'profileUrl' or 'liAtCookie' parameter.",
+            })
+          );
+          return;
+        }
+
+        log("INFO", `[worker] Connection request dispatch to ${profileUrl}${note ? " (with custom note)" : ""}`);
+        const result = await sendLinkedInConnectionWithPlaywright({
+          profileUrl,
+          note,
+          liAtCookie,
+          jSessionId,
+        });
+
+        const statusCode = result.success ? 200 : 422;
+        log(
+          "INFO",
+          `[worker] Connection status: ${result.status} (success: ${result.success}) for ${profileUrl}`
+        );
+
+        res.writeHead(statusCode, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        log("ERROR", `Unhandled exception during send-connection: ${errMsg}`);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: false, error: errMsg }));
       }
