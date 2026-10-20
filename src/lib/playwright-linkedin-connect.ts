@@ -180,9 +180,14 @@ export async function sendLinkedInConnectionWithPlaywright({
         (el) => el.textContent?.trim() === "1st" || el.textContent?.trim() === "1st degree connection"
       );
       const hasMessageBtn = Boolean(document.querySelector('button[aria-label*="Message"]'));
-      const hasConnectBtn = Boolean(
-        document.querySelector('button:has-text("Connect"), button[aria-label*="Connect"]')
-      );
+      // NOTE: `:has-text()` is a Playwright-only pseudo-selector and is invalid inside
+      // page.evaluate (native querySelector throws). Match button text/aria-label manually.
+      const scope = document.querySelector("main") || document.body;
+      const hasConnectBtn = Array.from(scope.querySelectorAll("button")).some((btn) => {
+        const text = (btn.textContent || "").trim().toLowerCase();
+        const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
+        return text === "connect" || aria.includes("connect") || aria.includes("invite ");
+      });
       return Boolean(badges && hasMessageBtn && !hasConnectBtn);
     });
 
