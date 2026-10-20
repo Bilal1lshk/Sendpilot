@@ -4,6 +4,7 @@ import connectDB from "@/lib/mongodb";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import Workspace from "@/models/Workspace";
 import Lead from "@/models/Lead";
+import CampaignLead from "@/models/CampaignLead";
 import { decryptConnectionSecrets } from "@/lib/connection-crypto";
 import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
 import { invalidateDbCache } from "@/lib/db-cache";
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { profileUrl, note, leadId } = body;
+    const { profileUrl, note, leadId, enrollmentId, campaignId } = body;
 
     if (!profileUrl || typeof profileUrl !== "string" || !profileUrl.trim()) {
       return NextResponse.json(
@@ -125,6 +126,39 @@ export async function POST(req: Request) {
         await Lead.updateOne(
           { userId: ctx.userId, linkedinUrl: cleanUrl },
           { $set: { status: "contacted" }, $push: { tags: "invited" } }
+        ).catch(() => null);
+      }
+
+      // Update CampaignLead model if campaign enrollment is specified
+      if (enrollmentId) {
+        await CampaignLead.updateOne(
+          { userId: ctx.userId, _id: enrollmentId },
+          {
+            $set: { state: "invited", currentStep: 1, lastError: null },
+            $push: {
+              history: {
+                event: "sent",
+                at: new Date(),
+                stepIndex: 0,
+                note: typeof note === "string" && note.trim() ? `Connection request sent with note: "${note.trim()}"` : "Connection request sent without note",
+              },
+            },
+          }
+        ).catch(() => null);
+      } else if (campaignId && leadId) {
+        await CampaignLead.updateOne(
+          { userId: ctx.userId, campaignId, leadId },
+          {
+            $set: { state: "invited", currentStep: 1, lastError: null },
+            $push: {
+              history: {
+                event: "sent",
+                at: new Date(),
+                stepIndex: 0,
+                note: typeof note === "string" && note.trim() ? `Connection request sent with note: "${note.trim()}"` : "Connection request sent without note",
+              },
+            },
+          }
         ).catch(() => null);
       }
 

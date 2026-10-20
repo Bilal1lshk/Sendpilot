@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import {
@@ -24,6 +24,8 @@ export interface SendConnectionTarget {
   company?: string;
   linkedinUrl: string;
   avatar?: string;
+  enrollmentId?: string;
+  campaignId?: string;
 }
 
 interface SendConnectionModalProps {
@@ -32,6 +34,7 @@ interface SendConnectionModalProps {
   onClose: () => void;
   onSuccess?: (leadId: string) => void;
   senderAccountName?: string;
+  initialNote?: string;
 }
 
 export function SendConnectionModal({
@@ -40,19 +43,28 @@ export function SendConnectionModal({
   onClose,
   onSuccess,
   senderAccountName,
+  initialNote,
 }: SendConnectionModalProps) {
   const [includeNote, setIncludeNote] = useState(true);
   const [note, setNote] = useState("");
   const [isSending, setIsSending] = useState(false);
 
-  // Initialize or reset note when modal opens for a new target
-  const defaultNote = target
-    ? `Hi ${target.firstName || target.name.split(" ")[0] || "there"}, I came across your profile and work at ${
-        target.company || "your company"
-      }. Would love to connect!`
-    : "";
+  // Sync initial note when target or initialNote changes
+  useEffect(() => {
+    if (target) {
+      if (typeof initialNote === "string") {
+        setNote(initialNote.slice(0, 300));
+      } else {
+        const defaultNote = `Hi ${target.firstName || target.name.split(" ")[0] || "there"}, I came across your profile and work at ${
+          target.company || "your company"
+        }. Would love to connect!`;
+        setNote(defaultNote.slice(0, 300));
+      }
+      setIncludeNote(true);
+    }
+  }, [target, initialNote]);
 
-  const activeNote = note !== "" ? note : defaultNote;
+  const activeNote = note;
 
   const handleSend = async (sendWithNote: boolean) => {
     if (!target) return;
@@ -71,6 +83,8 @@ export function SendConnectionModal({
         body: JSON.stringify({
           profileUrl: target.linkedinUrl,
           leadId: target.id,
+          enrollmentId: target.enrollmentId,
+          campaignId: target.campaignId,
           note: sendWithNote ? activeNote.trim() : undefined,
         }),
       });
