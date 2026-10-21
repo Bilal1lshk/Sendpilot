@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import {
@@ -24,6 +24,8 @@ export interface SendConnectionTarget {
   company?: string;
   linkedinUrl: string;
   avatar?: string;
+  enrollmentId?: string;
+  campaignId?: string;
 }
 
 interface SendConnectionModalProps {
@@ -32,6 +34,7 @@ interface SendConnectionModalProps {
   onClose: () => void;
   onSuccess?: (leadId: string) => void;
   senderAccountName?: string;
+  initialNote?: string;
 }
 
 export function SendConnectionModal({
@@ -40,19 +43,29 @@ export function SendConnectionModal({
   onClose,
   onSuccess,
   senderAccountName,
+  initialNote,
 }: SendConnectionModalProps) {
-  const [includeNote, setIncludeNote] = useState(true);
-  const [note, setNote] = useState("");
+  const [includeNote, setIncludeNote] = useState(Boolean(initialNote));
+  const [note, setNote] = useState(initialNote ? initialNote.slice(0, 300) : "");
   const [isSending, setIsSending] = useState(false);
 
-  // Initialize or reset note when modal opens for a new target
-  const defaultNote = target
-    ? `Hi ${target.firstName || target.name.split(" ")[0] || "there"}, I came across your profile and work at ${
-        target.company || "your company"
-      }. Would love to connect!`
-    : "";
+  // Sync note when target or initialNote changes
+  useEffect(() => {
+    if (target) {
+      if (typeof initialNote === "string" && initialNote.trim()) {
+        setNote(initialNote.slice(0, 300));
+        setIncludeNote(true);
+      } else {
+        const defaultNote = `Hi ${target.firstName || target.name.split(" ")[0] || "there"}, I came across your profile and work at ${
+          target.company || "your company"
+        }. Would love to connect!`;
+        setNote(defaultNote.slice(0, 300));
+        setIncludeNote(false); // Default to simple connection request without a note
+      }
+    }
+  }, [target, initialNote]);
 
-  const activeNote = note !== "" ? note : defaultNote;
+  const activeNote = note;
 
   const handleSend = async (sendWithNote: boolean) => {
     if (!target) return;
@@ -71,6 +84,8 @@ export function SendConnectionModal({
         body: JSON.stringify({
           profileUrl: target.linkedinUrl,
           leadId: target.id,
+          enrollmentId: target.enrollmentId,
+          campaignId: target.campaignId,
           note: sendWithNote ? activeNote.trim() : undefined,
         }),
       });
@@ -78,10 +93,11 @@ export function SendConnectionModal({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data.success) {
-        if (data.requiresAccountConnection || data.requiresReconnect || data.error?.toLowerCase().includes("reconnect")) {
+        if (data.requiresAccountConnection || data.requiresReconnect) {
           toast.error(
             data.error || "Your LinkedIn account authorization has expired. Please reconnect your account to continue.",
             {
+              duration: 8000,
               action: {
                 label: "Reconnect Now",
                 onClick: () => {
@@ -90,9 +106,6 @@ export function SendConnectionModal({
               },
             }
           );
-          setTimeout(() => {
-            window.location.href = data.redirectUrl || "/dashboard/accounts?reconnect=true";
-          }, 1500);
         } else {
           toast.error(data.error || "Failed to send connection request.");
         }
@@ -207,36 +220,40 @@ export function SendConnectionModal({
             {/* Note Options Toggle */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                  <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />
-                  <span>Personalized Invitation Note</span>
+                <label className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeNote}
+                    onChange={(e) => setIncludeNote(e.target.checked)}
+                    className="rounded border-neutral-300 text-[#0a66c2] focus:ring-[#0a66c2] h-3.5 w-3.5"
+                  />
+                  <MessageSquare className="h-3.5 w-3.5 text-neutral-500" />
+                  <span>Add personalized invitation note</span>
                 </label>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIncludeNote(!includeNote)}
-                    className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold hover:underline cursor-pointer"
-                  >
-                    {includeNote ? "Remove note" : "Add custom note"}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIncludeNote(!includeNote)}
+                  className="text-[11px] text-[#0a66c2] dark:text-blue-400 font-semibold hover:underline cursor-pointer"
+                >
+                  {includeNote ? "Send without note" : "Add note"}
+                </button>
               </div>
 
               {includeNote && (
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 pt-1">
                   <textarea
                     rows={3}
                     value={activeNote}
                     onChange={(e) => setNote(e.target.value)}
                     maxLength={300}
-                    placeholder="Add an optional personalized note to increase acceptance rate..."
+                    placeholder="Add an optional personalized note to introduce yourself..."
                     className="w-full text-xs p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 focus:outline-hidden focus:ring-2 focus:ring-neutral-900/10 dark:focus:ring-white/10 resize-none"
                   />
                   <div className="flex items-center justify-between text-[10px] text-neutral-400">
                     <span className="flex items-center gap-1">
                       <Sparkles className="h-3 w-3 text-emerald-600" />
-                      Profiles with custom notes have ~40% higher acceptance
+                      Keep notes under 300 characters
                     </span>
                     <span>{activeNote.length} / 300</span>
                   </div>
@@ -255,18 +272,20 @@ export function SendConnectionModal({
                 Cancel
               </button>
 
-              <button
-                type="button"
-                onClick={() => handleSend(false)}
-                disabled={isSending}
-                className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-50"
-              >
-                Send without note
-              </button>
+              {includeNote && (
+                <button
+                  type="button"
+                  onClick={() => handleSend(false)}
+                  disabled={isSending}
+                  className="px-3.5 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-xs font-semibold text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 cursor-pointer disabled:opacity-50"
+                >
+                  Skip Note
+                </button>
+              )}
 
               <button
                 type="button"
-                onClick={() => handleSend(includeNote)}
+                onClick={() => handleSend(includeNote && Boolean(activeNote.trim()))}
                 disabled={isSending}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0a66c2] hover:bg-[#004182] text-white text-xs font-semibold shadow-xs cursor-pointer disabled:opacity-50"
               >
@@ -278,7 +297,11 @@ export function SendConnectionModal({
                 ) : (
                   <>
                     <Send className="h-3.5 w-3.5" />
-                    <span>Send Connection Request</span>
+                    <span>
+                      {includeNote && activeNote.trim()
+                        ? "Send with Note"
+                        : "Send Connection Request"}
+                    </span>
                   </>
                 )}
               </button>

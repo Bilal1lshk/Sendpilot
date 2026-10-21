@@ -46,7 +46,7 @@ export function ConnectLinkedInModal({
   onConnected,
   defaultUserName = "LinkedIn User",
 }: ConnectLinkedInModalProps) {
-  const [activeTab, setActiveTab] = useState<"auto" | "manual">("auto");
+  const [activeTab, setActiveTab] = useState<"auto" | "manual">("manual");
 
   // Auto method fields
   const [email, setEmail] = useState("");
@@ -355,20 +355,8 @@ export function ConnectLinkedInModal({
               <div className="grid grid-cols-2 p-1 rounded-xl bg-neutral-100 dark:bg-neutral-800/60 text-xs font-medium">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("auto")}
-                  className={`py-2 px-3 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 ${
-                    activeTab === "auto"
-                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-semibold shadow-xs"
-                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
-                  }`}
-                >
-                  <KeyRound className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Automatic Login</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => setActiveTab("manual")}
-                  className={`py-2 px-3 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 ${
+                  className={`py-2 px-3 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5 ${
                     activeTab === "manual"
                       ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-semibold shadow-xs"
                       : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
@@ -376,6 +364,21 @@ export function ConnectLinkedInModal({
                 >
                   <Cookie className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                   <span>Paste Cookies</span>
+                  <span className="text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded-full font-medium">
+                    Recommended
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("auto")}
+                  className={`py-2 px-3 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center gap-2 ${
+                    activeTab === "auto"
+                      ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 font-semibold shadow-xs"
+                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200"
+                  }`}
+                >
+                  <KeyRound className="h-3.5 w-3.5 text-neutral-500" />
+                  <span>Automatic Login</span>
                 </button>
               </div>
 

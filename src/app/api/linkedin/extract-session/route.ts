@@ -285,8 +285,22 @@ export async function POST(req: Request) {
       );
     }
 
+    // Verify the extracted session against LinkedIn to ensure it was not revoked upon browser exit
+    const verification = await verifyLinkedInSession(result.li_at, result.jsessionId);
+    if (!verification.active) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "LinkedIn anti-bot defense revoked the automated login session immediately. To connect safely without being blocked, please use the 'Paste Cookies' tab with your active browser's li_at cookie.",
+        },
+        { status: 400 }
+      );
+    }
+
     // Protectedly store encrypted credentials & deterministic hardware fingerprint in MongoDB (AES-256-GCM)
     const memberName =
+      [verification.profile?.firstName, verification.profile?.lastName].filter(Boolean).join(" ") ||
       [result.profile?.firstName, result.profile?.lastName].filter(Boolean).join(" ") ||
       email.trim();
     const connId = createConnectionId();

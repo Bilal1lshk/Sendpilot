@@ -43,6 +43,7 @@ import { Step1SelectLeads } from "@/components/campaigns/Step1SelectLeads";
 import { Step2SelectFlow } from "@/components/campaigns/Step2SelectFlow";
 import { Step3ReviewLaunch } from "@/components/campaigns/Step3ReviewLaunch";
 import { SequenceStepItem, FlowItem, EnrollmentMode } from "@/components/campaigns/types";
+import { SendConnectionModal, SendConnectionTarget } from "@/components/dashboard/SendConnectionModal";
 
 export interface SequenceDraft {
   id: string;
@@ -427,6 +428,12 @@ export default function CampaignsPage() {
   const [monitoringLead, setMonitoringLead] = useState<any | null>(null);
   const [isRetryingAll, setIsRetryingAll] = useState<boolean>(false);
 
+  // Individual & Batch Send Connection state
+  const [connectTarget, setConnectTarget] = useState<SendConnectionTarget | null>(null);
+  const [connectInitialNote, setConnectInitialNote] = useState<string>("");
+  const [selectedEnrolledIds, setSelectedEnrolledIds] = useState<string[]>([]);
+  const [isBatchSending, setIsBatchSending] = useState<boolean>(false);
+
   const filteredAddLeads = useMemo(() => {
     if (!addLeadSearch.trim()) return databaseLeads;
     const q = addLeadSearch.toLowerCase();
@@ -711,9 +718,10 @@ export default function CampaignsPage() {
 
         if (!sendRes.ok || !sendData.success) {
           const errMsg = sendData.error || "Failed to dispatch connection request.";
-          if (sendData.requiresReconnect || sendData.redirectUrl || errMsg.toLowerCase().includes("reconnect")) {
+          if (sendData.requiresReconnect || sendData.redirectUrl) {
             await recordFailure("LinkedIn account authorization expired. Reconnect required.");
-            toast.error("Your LinkedIn account authorization has expired. Redirecting to reconnect your account...", {
+            toast.error("Your LinkedIn account authorization has expired. Please reconnect your account to resume sending.", {
+              duration: 8000,
               action: {
                 label: "Reconnect Now",
                 onClick: () => {
@@ -721,9 +729,6 @@ export default function CampaignsPage() {
                 },
               },
             });
-            setTimeout(() => {
-              router.push(sendData.redirectUrl || "/dashboard/accounts?reconnect=true");
-            }, 1800);
             return;
           }
           await recordFailure(errMsg);
@@ -748,9 +753,10 @@ export default function CampaignsPage() {
 
         if (!sendRes.ok || !sendData.success) {
           const errMsg = sendData.error || "Failed to dispatch follow-up message.";
-          if (sendData.requiresReconnect || sendData.redirectUrl || errMsg.toLowerCase().includes("reconnect")) {
+          if (sendData.requiresReconnect || sendData.redirectUrl) {
             await recordFailure("LinkedIn account authorization expired. Reconnect required.");
-            toast.error("Your LinkedIn account authorization has expired. Redirecting to reconnect your account...", {
+            toast.error("Your LinkedIn account authorization has expired. Please reconnect your account to resume sending.", {
+              duration: 8000,
               action: {
                 label: "Reconnect Now",
                 onClick: () => {
@@ -758,9 +764,6 @@ export default function CampaignsPage() {
                 },
               },
             });
-            setTimeout(() => {
-              router.push(sendData.redirectUrl || "/dashboard/accounts?reconnect=true");
-            }, 1800);
             return;
           }
           await recordFailure(errMsg);
@@ -841,6 +844,104 @@ export default function CampaignsPage() {
     } catch {
       toast.error("Failed to remove lead");
     }
+  };
+
+  const getRenderedConnectNote = (lead: any) => {
+    const connectStep = selectedCampaignSteps.find((s: any) => s.type === "connect");
+    const rawTemplate =
+      connectStep?.template ||
+      "Hi {{firstName}}, noticed your work at {{company}}. Would love to connect and follow along!";
+    const firstName = lead.firstName || (lead.name ? lead.name.split(" ")[0] : "there");
+    const lastName = lead.lastName || "";
+    const company = lead.company || "your team";
+    const title = lead.title || lead.jobTitle || "industry professional";
+
+    return rawTemplate
+      .replace(/\{\{\s*firstName\s*\}\}/gi, firstName)
+      .replace(/\{\{\s*lastName\s*\}\}/gi, lastName)
+      .replace(/\{\{\s*company\s*\}\}/gi, company)
+      .replace(/\{\{\s*title\s*\}\}/gi, title);
+  };
+
+  const handleOpenSendConnection = (item: any) => {
+    const lead = item.lead || {};
+    if (!lead.linkedinUrl) {
+      toast.error(`Cannot send connection: ${lead.name || "Prospect"} does not have a LinkedIn profile URL.`);
+      return;
+    }
+
+    const note = item.nextAction?.message || getRenderedConnectNote(lead);
+    setConnectInitialNote(note);
+    setConnectTarget({
+      id: lead.id || lead._id || item.enrollmentId,
+      name: lead.name || `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Prospect",
+      firstName: lead.firstName,
+      lastName: lead.lastName,
+      title: lead.title || lead.jobTitle,
+      company: lead.company,
+      linkedinUrl: lead.linkedinUrl,
+      enrollmentId: item.enrollmentId,
+      campaignId: selectedCampaignId,
+    });
+  };
+
+  const handleBatchSendConnections = async () => {
+    if (selectedEnrolledIds.length === 0) return;
+
+    const targets = enrolledLeads.filter(
+      (item) => selectedEnrolledIds.includes(item.enrollmentId) && item.lead?.linkedinUrl
+    );
+
+    if (targets.length === 0) {
+      toast.error("None of the selected prospects have a valid LinkedIn profile URL.");
+      return;
+    }
+
+    setIsBatchSending(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    toast.info(`Dispatching connection requests to ${targets.length} prospects...`);
+
+    for (let i = 0; i < targets.length; i++) {
+      const item = targets[i];
+      const lead = item.lead || {};
+      const note = item.nextAction?.message || getRenderedConnectNote(lead);
+
+      try {
+        const res = await fetch("/api/linkedin/send-connection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileUrl: lead.linkedinUrl,
+            leadId: lead.id || lead._id,
+            enrollmentId: item.enrollmentId,
+            campaignId: selectedCampaignId,
+            note: typeof note === "string" ? note.trim() : undefined,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch {
+        failCount++;
+      }
+
+      // 2-second anti-bot pacing between sequential dispatches
+      if (i < targets.length - 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+
+    setIsBatchSending(false);
+    setSelectedEnrolledIds([]);
+    toast.success(`Batch finished: ${successCount} sent successfully${failCount > 0 ? `, ${failCount} failed` : ""}.`);
+    fetchEnrolledLeads(selectedCampaignId);
+    fetchCampaignDetail(selectedCampaignId, true);
+    dispatch(fetchOverviewIfNeeded({ force: true }));
   };
 
 
@@ -1431,6 +1532,16 @@ export default function CampaignsPage() {
                                   <div className="inline-flex items-center gap-2 justify-end">
                                     <button
                                       type="button"
+                                      disabled={isSending || isBatchSending}
+                                      onClick={() => handleOpenSendConnection(item)}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0a66c2] hover:bg-[#004182] text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                                      title="Send connection request with cookie and session ID"
+                                    >
+                                      <UserPlus className="h-3 w-3" />
+                                      <span>Send Connection</span>
+                                    </button>
+                                    <button
+                                      type="button"
                                       disabled={isSending}
                                       onClick={() => handleSendQueuedLeadStep(item)}
                                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
@@ -1512,66 +1623,150 @@ export default function CampaignsPage() {
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto -mx-6 mt-2">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-neutral-100 dark:border-neutral-800 text-neutral-400 font-medium">
-                      <th className="py-3 px-6">Prospect</th>
-                      <th className="py-3 px-4">State</th>
-                      <th className="py-3 px-4">Step Progress</th>
-                      <th className="py-3 px-4">Next Action / Cadence</th>
-                      <th className="py-3 px-6 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
-                    {filteredEnrolledLeads.map((item) => {
-                      const lead = item.lead || {};
-                      const initials = (lead.name || lead.firstName || "L")[0].toUpperCase();
-                      const isSending = isSendingStep === item.enrollmentId;
-                      const leadError = leadErrors[item.enrollmentId];
+              <div className="space-y-3 mt-2">
+                {/* Batch Selection Action Bar */}
+                {selectedEnrolledIds.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 rounded-2xl bg-palm-leaf-50/80 dark:bg-palm-leaf-950/40 border border-palm-leaf-200 dark:border-palm-leaf-800 text-xs shadow-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-palm-leaf-900 dark:text-palm-leaf-200">
+                        {selectedEnrolledIds.length} prospect{selectedEnrolledIds.length > 1 ? "s" : ""} selected
+                      </span>
+                      <span className="text-neutral-300 dark:text-neutral-700">•</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEnrolledIds([])}
+                        className="text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 cursor-pointer underline font-medium"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
 
-                      const stateBadgeClass =
-                        item.state === "queued"
-                          ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200/60"
-                          : item.state === "invited"
-                          ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60"
-                          : item.state === "accepted"
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60"
-                          : item.state === "replied"
-                          ? "bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200/60"
-                          : "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 border-neutral-200";
+                    <button
+                      type="button"
+                      disabled={isBatchSending}
+                      onClick={handleBatchSendConnections}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0a66c2] hover:bg-[#004182] text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {isBatchSending ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Dispatching Connection Requests...</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus className="h-3.5 w-3.5" />
+                          <span>Send Connection to Selected ({selectedEnrolledIds.length})</span>
+                        </>
+                      )}
+                    </button>
+                  </motion.div>
+                )}
 
-                      return (
-                        <tr key={item.enrollmentId} className="hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40 transition-colors">
-                          <td className="py-3.5 px-6">
-                            <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-full bg-palm-leaf-100 dark:bg-palm-leaf-950 text-palm-leaf-700 dark:text-palm-leaf-300 font-bold text-xs flex items-center justify-center shrink-0">
-                                {initials}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-semibold text-neutral-900 dark:text-neutral-100 truncate">
-                                    {lead.name || `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Prospect"}
-                                  </span>
-                                  {lead.linkedinUrl && (
-                                    <a
-                                      href={lead.linkedinUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="text-neutral-400 hover:text-palm-leaf-600 transition-colors"
-                                      title="Open LinkedIn Profile"
-                                    >
-                                      <ExternalLink className="h-3 w-3" />
-                                    </a>
-                                  )}
+                <div className="overflow-x-auto -mx-6">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-neutral-100 dark:border-neutral-800 text-neutral-400 font-medium">
+                        <th className="py-3 pl-6 pr-2 w-10">
+                          <input
+                            type="checkbox"
+                            checked={
+                              filteredEnrolledLeads.length > 0 &&
+                              selectedEnrolledIds.length === filteredEnrolledLeads.length
+                            }
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedEnrolledIds(filteredEnrolledLeads.map((i) => i.enrollmentId));
+                              } else {
+                                setSelectedEnrolledIds([]);
+                              }
+                            }}
+                            className="rounded border-neutral-300 dark:border-neutral-700 text-palm-leaf-600 focus:ring-palm-leaf-500 cursor-pointer"
+                            title="Select All"
+                          />
+                        </th>
+                        <th className="py-3 px-4">Prospect</th>
+                        <th className="py-3 px-4">State</th>
+                        <th className="py-3 px-4">Step Progress</th>
+                        <th className="py-3 px-4">Next Action / Cadence</th>
+                        <th className="py-3 px-6 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
+                      {filteredEnrolledLeads.map((item) => {
+                        const lead = item.lead || {};
+                        const initials = (lead.name || lead.firstName || "L")[0].toUpperCase();
+                        const isSending = isSendingStep === item.enrollmentId;
+                        const leadError = leadErrors[item.enrollmentId];
+                        const isSelected = selectedEnrolledIds.includes(item.enrollmentId);
+
+                        const stateBadgeClass =
+                          item.state === "queued"
+                            ? "bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200/60"
+                            : item.state === "invited"
+                            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60"
+                            : item.state === "accepted"
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60"
+                            : item.state === "replied"
+                            ? "bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200/60"
+                            : "bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300 border-neutral-200";
+
+                        return (
+                          <tr
+                            key={item.enrollmentId}
+                            className={`transition-colors ${
+                              isSelected
+                                ? "bg-palm-leaf-50/40 dark:bg-palm-leaf-950/20"
+                                : "hover:bg-neutral-50/60 dark:hover:bg-neutral-800/40"
+                            }`}
+                          >
+                            <td className="py-3.5 pl-6 pr-2 w-10">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedEnrolledIds((prev) =>
+                                    prev.includes(item.enrollmentId)
+                                      ? prev.filter((id) => id !== item.enrollmentId)
+                                      : [...prev, item.enrollmentId]
+                                  );
+                                }}
+                                className="rounded border-neutral-300 dark:border-neutral-700 text-palm-leaf-600 focus:ring-palm-leaf-500 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-full bg-palm-leaf-100 dark:bg-palm-leaf-950 text-palm-leaf-700 dark:text-palm-leaf-300 font-bold text-xs flex items-center justify-center shrink-0">
+                                  {initials}
                                 </div>
-                                <p className="text-[11px] text-neutral-500 truncate">
-                                  {[lead.title || lead.jobTitle, lead.company].filter(Boolean).join(" • ")}
-                                </p>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                                      {lead.name || `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Prospect"}
+                                    </span>
+                                    {lead.linkedinUrl && (
+                                      <a
+                                        href={lead.linkedinUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-neutral-400 hover:text-palm-leaf-600 transition-colors"
+                                        title="Open LinkedIn Profile"
+                                      >
+                                        <ExternalLink className="h-3 w-3" />
+                                      </a>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-neutral-500 truncate">
+                                    {[lead.title || lead.jobTitle, lead.company].filter(Boolean).join(" • ")}
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          </td>
+                            </td>
 
                           <td className="py-3.5 px-4">
                             {leadError ? (
@@ -1645,6 +1840,20 @@ export default function CampaignsPage() {
 
                           <td className="py-3.5 px-6 text-right">
                             <div className="inline-flex items-center gap-2 justify-end">
+                              {/* 1-Click Pick & Send Connection Request */}
+                              {item.state !== "accepted" && item.state !== "replied" && (
+                                <button
+                                  type="button"
+                                  disabled={isSending || isBatchSending}
+                                  onClick={() => handleOpenSendConnection(item)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0a66c2] hover:bg-[#004182] text-white font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                                  title="Pick this prospect and send connection request using cookie and session ID"
+                                >
+                                  <UserPlus className="h-3 w-3" />
+                                  <span>Send Connection</span>
+                                </button>
+                              )}
+
                               {(item.state === "failed" || leadError) ? (
                                 <button
                                   type="button"
@@ -1666,7 +1875,7 @@ export default function CampaignsPage() {
                                   )}
                                 </button>
                               ) : (
-                                (item.state === "queued" || (item.state === "accepted" && item.nextAction?.due)) && (
+                                (item.state === "accepted" && item.nextAction?.due) && (
                                   <button
                                     type="button"
                                     disabled={isSending}
@@ -1681,7 +1890,7 @@ export default function CampaignsPage() {
                                     ) : (
                                       <>
                                         <Send className="h-3 w-3" />
-                                        <span>Send Now</span>
+                                        <span>Send Follow-Up</span>
                                       </>
                                     )}
                                   </button>
@@ -1711,8 +1920,9 @@ export default function CampaignsPage() {
                   </tbody>
                 </table>
               </div>
-            )}
-          </motion.div>
+            </div>
+          )}
+        </motion.div>
 
           {/* Step Execution Monitor Modal */}
           {monitoringLead && (
@@ -2212,6 +2422,21 @@ export default function CampaignsPage() {
           )}
         </motion.div>
       )}
+
+      {/* Send Connection Request Modal */}
+      <SendConnectionModal
+        isOpen={Boolean(connectTarget)}
+        target={connectTarget}
+        initialNote={connectInitialNote}
+        onClose={() => setConnectTarget(null)}
+        senderAccountName={selectedCampaign?.sender || "Connected LinkedIn"}
+        onSuccess={() => {
+          toast.success("Connection request dispatched!");
+          fetchEnrolledLeads(selectedCampaignId);
+          fetchCampaignDetail(selectedCampaignId, true);
+          dispatch(fetchOverviewIfNeeded({ force: true }));
+        }}
+      />
     </motion.div>
   );
 }

@@ -4,6 +4,7 @@ import connectDB from "@/lib/mongodb";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import Workspace from "@/models/Workspace";
 import Lead from "@/models/Lead";
+import CampaignLead from "@/models/CampaignLead";
 import { decryptConnectionSecrets } from "@/lib/connection-crypto";
 import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
 import { invalidateDbCache } from "@/lib/db-cache";
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { profileUrl, note, leadId } = body;
+    const { profileUrl, note, leadId, enrollmentId, campaignId } = body;
 
     if (!profileUrl || typeof profileUrl !== "string" || !profileUrl.trim()) {
       return NextResponse.json(
@@ -82,13 +83,111 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Dispatch Playwright connection request
-    const result = await sendLinkedInConnectionWithPlaywright({
-      profileUrl: profileUrl.trim(),
-      liAtCookie: liAt,
-      jSessionId: jsessionId || undefined,
-      note: typeof note === "string" ? note.trim() : undefined,
-    });
+    // 3. Check for dedicated residential worker runner offload
+    const clientWorkerUrl =
+      typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
+        ? body.workerUrl.trim()
+        : undefined;
+    let configuredWorkerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
+    let fromTunnelFile = false;
+    if (!configuredWorkerUrl && !clientWorkerUrl) {
+      try {
+        const fs = await import("fs");
+        const path = await import("path");
+        const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
+        if (fs.existsSync(tunnelFilePath)) {
+          const saved = fs.readFileSync(tunnelFilePath, "utf8").trim();
+          if (saved && saved.startsWith("http")) {
+            configuredWorkerUrl = saved;
+            fromTunnelFile = true;
+          }
+        }
+      } catch {}
+    }
+    let workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
+
+    // Quick health check if reading from a local tunnel file to avoid 502 latency hangs
+    if (workerUrl && fromTunnelFile) {
+      try {
+        const healthRes = await fetch(`${workerUrl}/health`, {
+          method: "GET",
+          signal: AbortSignal.timeout(2500),
+        });
+        if (!healthRes.ok) {
+          throw new Error(`Worker health check failed: HTTP ${healthRes.status}`);
+        }
+      } catch (healthErr) {
+        console.warn("[send-connection] Stale tunnel detected, removing .tunnel-url:", healthErr);
+        try {
+          const fs = await import("fs");
+          const path = await import("path");
+          const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
+          if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
+        } catch {}
+        workerUrl = undefined;
+      }
+    }
+
+    let result: {
+      success: boolean;
+      status: string;
+      message: string;
+      recipientName?: string;
+      requiresReconnect?: boolean;
+    };
+
+    if (workerUrl) {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Bypass-Tunnel-Reminder": "true",
+        "User-Agent": "SendPilot-Worker-Client/1.0",
+      };
+      const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
+      if (workerSecret) headers["x-worker-secret"] = workerSecret;
+
+      try {
+        const workerRes = await fetch(`${workerUrl}/api/send-connection`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            profileUrl: profileUrl.trim(),
+            note: typeof note === "string" ? note.trim() : undefined,
+            liAtCookie: liAt,
+            jSessionId: jsessionId || undefined,
+          }),
+          signal: AbortSignal.timeout(45000),
+        });
+
+        const raw = await workerRes.json().catch(() => null);
+        if (!raw) {
+          throw new Error(`Worker returned HTTP ${workerRes.status}`);
+        }
+        result = raw;
+      } catch (workerErr: unknown) {
+        console.warn("[send-connection] Worker runner error, falling back to local:", workerErr);
+        if (fromTunnelFile) {
+          try {
+            const fs = await import("fs");
+            const path = await import("path");
+            const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
+            if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
+          } catch {}
+        }
+        result = await sendLinkedInConnectionWithPlaywright({
+          profileUrl: profileUrl.trim(),
+          liAtCookie: liAt,
+          jSessionId: jsessionId || undefined,
+          note: typeof note === "string" ? note.trim() : undefined,
+        });
+      }
+    } else {
+      result = await sendLinkedInConnectionWithPlaywright({
+        profileUrl: profileUrl.trim(),
+        liAtCookie: liAt,
+        jSessionId: jsessionId || undefined,
+        note: typeof note === "string" ? note.trim() : undefined,
+      });
+    }
 
     if (!result.success) {
       const isAuthError =
@@ -125,6 +224,39 @@ export async function POST(req: Request) {
         await Lead.updateOne(
           { userId: ctx.userId, linkedinUrl: cleanUrl },
           { $set: { status: "contacted" }, $push: { tags: "invited" } }
+        ).catch(() => null);
+      }
+
+      // Update CampaignLead model if campaign enrollment is specified
+      if (enrollmentId) {
+        await CampaignLead.updateOne(
+          { userId: ctx.userId, _id: enrollmentId },
+          {
+            $set: { state: "invited", currentStep: 1, lastError: null },
+            $push: {
+              history: {
+                event: "sent",
+                at: new Date(),
+                stepIndex: 0,
+                note: typeof note === "string" && note.trim() ? `Connection request sent with note: "${note.trim()}"` : "Connection request sent without note",
+              },
+            },
+          }
+        ).catch(() => null);
+      } else if (campaignId && leadId) {
+        await CampaignLead.updateOne(
+          { userId: ctx.userId, campaignId, leadId },
+          {
+            $set: { state: "invited", currentStep: 1, lastError: null },
+            $push: {
+              history: {
+                event: "sent",
+                at: new Date(),
+                stepIndex: 0,
+                note: typeof note === "string" && note.trim() ? `Connection request sent with note: "${note.trim()}"` : "Connection request sent without note",
+              },
+            },
+          }
         ).catch(() => null);
       }
 
