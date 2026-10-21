@@ -309,8 +309,11 @@ function printBanner(port: number, tunnelUrl: string | null, providerName = "Tun
   if (tunnelUrl) {
     console.log(`  ${providerName.padEnd(20)} \x1b[32m${tunnelUrl}\x1b[0m`);
     console.log("-".repeat(72));
-    console.log("  SendPilot uses the configured LINKEDIN_WORKER_URL; no URL entry in the UI is needed.");
-    console.log("  To update the deployment to this tunnel, set:");
+    console.log("  HOW TO CONNECT WITH SENDPILOT (Choose Option A or B):");
+    console.log("  Option A (Instant - Recommended):");
+    console.log("  1. In SendPilot, click '⚙️ Local Runner Tunnel URL'");
+    console.log(`  2. Paste this URL: \x1b[36m${tunnelUrl}\x1b[0m`);
+    console.log("  Option B (Permanent via Vercel):");
     console.log(`  Set Vercel Env:      \x1b[36mLINKEDIN_WORKER_URL=${tunnelUrl}\x1b[0m`);
     if (WORKER_SECRET) {
       console.log(`  Vercel Env Secret:   \x1b[36mLINKEDIN_WORKER_SECRET=${WORKER_SECRET}\x1b[0m`);

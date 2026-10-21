@@ -11,7 +11,6 @@ import { createConnectionId, disconnectOtherAccounts } from "@/lib/linkedin-conn
 import { encryptConnectionSecrets, decryptConnectionSecrets } from "@/lib/connection-crypto";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import { connectDB } from "@/lib/mongodb";
-import { DEFAULT_LINKEDIN_WORKER_URL } from "@/lib/linkedin-worker-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -148,9 +147,11 @@ export async function POST(req: Request) {
     const normalized2FA: TwoFactorMethod = twoFactorMethod === "app" ? "app" : "otp";
 
     let result: ExtractedSessionResult;
-    let workerUrl: string | undefined = (
-      process.env.LINKEDIN_WORKER_URL?.trim() || DEFAULT_LINKEDIN_WORKER_URL
-    ).replace(/\/+$/, "");
+    const clientWorkerUrl =
+      typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
+        ? body.workerUrl.trim()
+        : undefined;
+    let workerUrl = (clientWorkerUrl || process.env.LINKEDIN_WORKER_URL?.trim())?.replace(/\/+$/, "");
 
     // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
     if (workerUrl) {

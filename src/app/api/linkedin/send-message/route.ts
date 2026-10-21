@@ -6,7 +6,6 @@ import Lead from "@/models/Lead";
 import CampaignLead from "@/models/CampaignLead";
 import { decryptConnectionSecrets } from "@/lib/connection-crypto";
 import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
-import { DEFAULT_LINKEDIN_WORKER_URL } from "@/lib/linkedin-worker-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -90,9 +89,25 @@ export async function POST(req: Request) {
     }
 
     // 3. Check for dedicated runner offload
-    let workerUrl: string | undefined = (
-      process.env.LINKEDIN_WORKER_URL?.trim() || DEFAULT_LINKEDIN_WORKER_URL
-    ).replace(/\/+$/, "");
+    const clientWorkerUrl =
+      typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
+        ? body.workerUrl.trim()
+        : undefined;
+    let configuredWorkerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
+    if (!configuredWorkerUrl && !clientWorkerUrl) {
+      try {
+        const fs = await import("fs");
+        const path = await import("path");
+        const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
+        if (fs.existsSync(tunnelFilePath)) {
+          const saved = fs.readFileSync(tunnelFilePath, "utf8").trim();
+          if (saved && saved.startsWith("http")) {
+            configuredWorkerUrl = saved;
+          }
+        }
+      } catch {}
+    }
+    let workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
 
     // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
     if (workerUrl) {

@@ -104,21 +104,30 @@ export function SendConnectionModal({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data.success) {
-        const isAuthError =
-          data.requiresAccountConnection === true || data.requiresReconnect === true;
+        const isAuthError = Boolean(
+          data.requiresAccountConnection ||
+          data.requiresReconnect ||
+          (data.error && (
+            data.error.toLowerCase().includes("reconnect") ||
+            data.error.toLowerCase().includes("expired") ||
+            data.error.toLowerCase().includes("redirect loop") ||
+            data.error.toLowerCase().includes("rejected this session") ||
+            data.error.toLowerCase().includes("authorization") ||
+            data.error.toLowerCase().includes("delete me") ||
+            data.error.toLowerCase().includes("re-authenticate")
+          ))
+        );
 
         const errorMessage = data.error || (
           isAuthError
-            ? "LinkedIn rejected the current account session. Reconnect your account to refresh credentials."
+            ? "LinkedIn rejected this session or entered a redirect loop. Please reconnect your LinkedIn account to refresh credentials."
             : "Connection request sending failed. Please check the profile or try again."
         );
 
         setErrorInfo({
           isSessionExpired: isAuthError,
           message: errorMessage,
-          redirectUrl: isAuthError
-            ? data.redirectUrl || "/dashboard/accounts?reconnect=true"
-            : undefined,
+          redirectUrl: data.redirectUrl || "/dashboard/accounts?reconnect=true",
         });
 
         if (isAuthError) {
@@ -254,13 +263,13 @@ export function SendConnectionModal({
                   </div>
                   <div className="space-y-1">
                     <h4 className="text-xs font-bold text-red-900 dark:text-red-200">
-                      LinkedIn Account Needs Reconnection
+                      LinkedIn Session Expired or Rejected
                     </h4>
                     <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed font-medium">
                       {errorInfo.message}
                     </p>
                     <p className="text-[11px] text-red-600/80 dark:text-red-400/80 leading-normal pt-0.5">
-                      Reconnect using the <strong>Paste Cookies</strong> tab to refresh your LinkedIn credentials.
+                      LinkedIn rejected this session or entered a redirect loop. Please reconnect your account using the <strong>Paste Cookies</strong> tab to refresh your credentials.
                     </p>
                   </div>
                 </div>
