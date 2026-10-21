@@ -52,6 +52,8 @@ export async function POST(req: Request) {
           error:
             "No connected LinkedIn account found. Please connect your LinkedIn account first from Accounts or Settings.",
           requiresAccountConnection: true,
+          requiresReconnect: true,
+          redirectUrl: "/dashboard/accounts?reconnect=true",
         },
         { status: 400 }
       );
@@ -106,24 +108,27 @@ export async function POST(req: Request) {
     }
     let workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
 
-    // Quick health check if reading from a local tunnel file to avoid 502 latency hangs
-    if (workerUrl && fromTunnelFile) {
+    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
+    if (workerUrl) {
       try {
         const healthRes = await fetch(`${workerUrl}/health`, {
           method: "GET",
+          headers: { "Bypass-Tunnel-Reminder": "true" },
           signal: AbortSignal.timeout(2500),
         });
         if (!healthRes.ok) {
           throw new Error(`Worker health check failed: HTTP ${healthRes.status}`);
         }
       } catch (healthErr) {
-        console.warn("[send-connection] Stale tunnel detected, removing .tunnel-url:", healthErr);
-        try {
-          const fs = await import("fs");
-          const path = await import("path");
-          const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
-          if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
-        } catch {}
+        console.warn("[send-connection] Worker offline / unreachable, falling back to local runner:", healthErr);
+        if (fromTunnelFile) {
+          try {
+            const fs = await import("fs");
+            const path = await import("path");
+            const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
+            if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
+          } catch {}
+        }
         workerUrl = undefined;
       }
     }
@@ -194,8 +199,20 @@ export async function POST(req: Request) {
         result.requiresReconnect ||
         result.message.toLowerCase().includes("reconnect") ||
         result.message.toLowerCase().includes("re-authenticate") ||
+        result.message.toLowerCase().includes("redirect loop") ||
+        result.message.toLowerCase().includes("rejected this session") ||
+        result.message.toLowerCase().includes("delete me") ||
         result.message.toLowerCase().includes("expired") ||
         result.message.toLowerCase().includes("authorization");
+
+      if (isAuthError) {
+        try {
+          await LinkedInConnection.updateOne(
+            { id: activeConn.id },
+            { $set: { status: "expired" } }
+          );
+        } catch {}
+      }
 
       return NextResponse.json(
         {

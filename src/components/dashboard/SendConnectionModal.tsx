@@ -12,6 +12,8 @@ import {
   ShieldCheck,
   Sparkles,
   MessageSquare,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { LinkedInIcon } from "@/components/icons/LinkedInIcon";
 
@@ -48,9 +50,17 @@ export function SendConnectionModal({
   const [includeNote, setIncludeNote] = useState(Boolean(initialNote));
   const [note, setNote] = useState(initialNote ? initialNote.slice(0, 300) : "");
   const [isSending, setIsSending] = useState(false);
+  const [errorInfo, setErrorInfo] = useState<{
+    isSessionExpired: boolean;
+    message: string;
+    redirectUrl?: string;
+  } | null>(null);
 
-  // Sync note when target or initialNote changes
+  // Reset errors and sync note when target or initialNote changes
   useEffect(() => {
+    if (isOpen) {
+      setErrorInfo(null);
+    }
     if (target) {
       if (typeof initialNote === "string" && initialNote.trim()) {
         setNote(initialNote.slice(0, 300));
@@ -76,6 +86,7 @@ export function SendConnectionModal({
     }
 
     setIsSending(true);
+    setErrorInfo(null);
 
     try {
       const res = await fetch("/api/linkedin/send-connection", {
@@ -93,21 +104,44 @@ export function SendConnectionModal({
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || !data.success) {
-        if (data.requiresAccountConnection || data.requiresReconnect) {
-          toast.error(
-            data.error || "Your LinkedIn account authorization has expired. Please reconnect your account to continue.",
-            {
-              duration: 8000,
-              action: {
-                label: "Reconnect Now",
-                onClick: () => {
-                  window.location.href = data.redirectUrl || "/dashboard/accounts?reconnect=true";
-                },
+        const isAuthError = Boolean(
+          data.requiresAccountConnection ||
+          data.requiresReconnect ||
+          (data.error && (
+            data.error.toLowerCase().includes("reconnect") ||
+            data.error.toLowerCase().includes("expired") ||
+            data.error.toLowerCase().includes("redirect loop") ||
+            data.error.toLowerCase().includes("rejected this session") ||
+            data.error.toLowerCase().includes("authorization") ||
+            data.error.toLowerCase().includes("delete me") ||
+            data.error.toLowerCase().includes("re-authenticate")
+          ))
+        );
+
+        const errorMessage = data.error || (
+          isAuthError
+            ? "LinkedIn rejected this session or entered a redirect loop. Please reconnect your LinkedIn account to refresh credentials."
+            : "Connection request sending failed. Please check the profile or try again."
+        );
+
+        setErrorInfo({
+          isSessionExpired: isAuthError,
+          message: errorMessage,
+          redirectUrl: data.redirectUrl || "/dashboard/accounts?reconnect=true",
+        });
+
+        if (isAuthError) {
+          toast.error(errorMessage, {
+            duration: 8000,
+            action: {
+              label: "Reconnect Now",
+              onClick: () => {
+                window.location.href = data.redirectUrl || "/dashboard/accounts?reconnect=true";
               },
-            }
-          );
+            },
+          });
         } else {
-          toast.error(data.error || "Failed to send connection request.");
+          toast.error(errorMessage);
         }
         return;
       }
@@ -127,9 +161,12 @@ export function SendConnectionModal({
       onSuccess?.(target.id);
       onClose();
     } catch (err: unknown) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to connect to LinkedIn automation service."
-      );
+      const msg = err instanceof Error ? err.message : "Failed to connect to LinkedIn automation service.";
+      setErrorInfo({
+        isSessionExpired: false,
+        message: msg,
+      });
+      toast.error(msg);
     } finally {
       setIsSending(false);
     }
@@ -214,6 +251,73 @@ export function SendConnectionModal({
                 <span>
                   Sending from connected account: <strong>{senderAccountName}</strong>
                 </span>
+              </div>
+            )}
+
+            {/* Error Message Banners */}
+            {errorInfo?.isSessionExpired && (
+              <div className="p-4 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/90 dark:bg-red-950/40 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="h-8 w-8 rounded-lg bg-red-100 dark:bg-red-900/60 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <RefreshCw className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-red-900 dark:text-red-200">
+                      LinkedIn Session Expired or Rejected
+                    </h4>
+                    <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed font-medium">
+                      {errorInfo.message}
+                    </p>
+                    <p className="text-[11px] text-red-600/80 dark:text-red-400/80 leading-normal pt-0.5">
+                      LinkedIn rejected this session or entered a redirect loop. Please reconnect your account using the <strong>Paste Cookies</strong> tab to refresh your credentials.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 pl-11">
+                  <a
+                    href={errorInfo.redirectUrl || "/dashboard/accounts?reconnect=true"}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    <span>Reconnect LinkedIn Account</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setErrorInfo(null)}
+                    className="px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900/60 text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-100/50 dark:hover:bg-red-900/40 cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {errorInfo && !errorInfo.isSessionExpired && (
+              <div className="p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/90 dark:bg-amber-950/40 space-y-2">
+                <div className="flex items-start gap-2.5">
+                  <div className="h-7 w-7 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <AlertCircle className="h-4 w-4" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                      Connection Request Sending Failed
+                    </h4>
+                    <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                      {errorInfo.message}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setErrorInfo(null)}
+                    className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 hover:underline cursor-pointer"
+                  >
+                    Dismiss & Try Again
+                  </button>
+                </div>
               </div>
             )}
 

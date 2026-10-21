@@ -151,7 +151,24 @@ export async function POST(req: Request) {
       typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
         ? body.workerUrl.trim()
         : undefined;
-    const workerUrl = (clientWorkerUrl || process.env.LINKEDIN_WORKER_URL?.trim())?.replace(/\/+$/, "");
+    let workerUrl = (clientWorkerUrl || process.env.LINKEDIN_WORKER_URL?.trim())?.replace(/\/+$/, "");
+
+    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
+    if (workerUrl) {
+      try {
+        const healthRes = await fetch(`${workerUrl}/health`, {
+          method: "GET",
+          headers: { "Bypass-Tunnel-Reminder": "true" },
+          signal: AbortSignal.timeout(2500),
+        });
+        if (!healthRes.ok) {
+          throw new Error(`Worker health check failed: HTTP ${healthRes.status}`);
+        }
+      } catch (healthErr) {
+        console.warn("[extract-session] Worker offline / unreachable, falling back to local runner:", healthErr);
+        workerUrl = undefined;
+      }
+    }
 
     if (workerUrl) {
       // Offload Playwright browser extraction to dedicated local runner / tunnel

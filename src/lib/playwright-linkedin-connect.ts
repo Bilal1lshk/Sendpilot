@@ -143,7 +143,7 @@ export async function sendLinkedInConnectionWithPlaywright({
           status: "failed",
           requiresReconnect: true,
           message:
-            "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
+            "LinkedIn rejected this session or entered a redirect loop. Please reconnect your LinkedIn account to refresh credentials.",
         };
       }
       throw navErr;
