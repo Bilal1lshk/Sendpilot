@@ -147,11 +147,7 @@ export async function POST(req: Request) {
     const normalized2FA: TwoFactorMethod = twoFactorMethod === "app" ? "app" : "otp";
 
     let result: ExtractedSessionResult;
-    const clientWorkerUrl =
-      typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
-        ? body.workerUrl.trim()
-        : undefined;
-    let workerUrl = (clientWorkerUrl || process.env.LINKEDIN_WORKER_URL?.trim())?.replace(/\/+$/, "");
+    let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
 
     // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
     if (workerUrl) {

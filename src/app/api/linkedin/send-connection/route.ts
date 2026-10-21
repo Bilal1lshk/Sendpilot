@@ -85,28 +85,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Check for dedicated residential worker runner offload
-    const clientWorkerUrl =
-      typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
-        ? body.workerUrl.trim()
-        : undefined;
-    let configuredWorkerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
-    let fromTunnelFile = false;
-    if (!configuredWorkerUrl && !clientWorkerUrl) {
-      try {
-        const fs = await import("fs");
-        const path = await import("path");
-        const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
-        if (fs.existsSync(tunnelFilePath)) {
-          const saved = fs.readFileSync(tunnelFilePath, "utf8").trim();
-          if (saved && saved.startsWith("http")) {
-            configuredWorkerUrl = saved;
-            fromTunnelFile = true;
-          }
-        }
-      } catch {}
-    }
-    let workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
+    // Runner location and authentication are server-only configuration.
+    let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
 
     // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
     if (workerUrl) {
@@ -121,14 +101,6 @@ export async function POST(req: Request) {
         }
       } catch (healthErr) {
         console.warn("[send-connection] Worker offline / unreachable, falling back to local runner:", healthErr);
-        if (fromTunnelFile) {
-          try {
-            const fs = await import("fs");
-            const path = await import("path");
-            const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
-            if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
-          } catch {}
-        }
         workerUrl = undefined;
       }
     }
@@ -170,14 +142,6 @@ export async function POST(req: Request) {
         result = raw;
       } catch (workerErr: unknown) {
         console.warn("[send-connection] Worker runner error, falling back to local:", workerErr);
-        if (fromTunnelFile) {
-          try {
-            const fs = await import("fs");
-            const path = await import("path");
-            const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
-            if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
-          } catch {}
-        }
         result = await sendLinkedInConnectionWithPlaywright({
           profileUrl: profileUrl.trim(),
           liAtCookie: liAt,
