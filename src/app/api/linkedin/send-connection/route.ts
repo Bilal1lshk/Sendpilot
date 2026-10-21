@@ -7,6 +7,7 @@ import Lead from "@/models/Lead";
 import CampaignLead from "@/models/CampaignLead";
 import { decryptConnectionSecrets } from "@/lib/connection-crypto";
 import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
+import { DEFAULT_LINKEDIN_WORKER_URL } from "@/lib/linkedin-worker-config";
 import { invalidateDbCache } from "@/lib/db-cache";
 
 export const runtime = "nodejs";
@@ -86,27 +87,9 @@ export async function POST(req: Request) {
     }
 
     // 3. Check for dedicated residential worker runner offload
-    const clientWorkerUrl =
-      typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
-        ? body.workerUrl.trim()
-        : undefined;
-    let configuredWorkerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
-    let fromTunnelFile = false;
-    if (!configuredWorkerUrl && !clientWorkerUrl) {
-      try {
-        const fs = await import("fs");
-        const path = await import("path");
-        const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
-        if (fs.existsSync(tunnelFilePath)) {
-          const saved = fs.readFileSync(tunnelFilePath, "utf8").trim();
-          if (saved && saved.startsWith("http")) {
-            configuredWorkerUrl = saved;
-            fromTunnelFile = true;
-          }
-        }
-      } catch {}
-    }
-    let workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
+    let workerUrl: string | undefined = (
+      process.env.LINKEDIN_WORKER_URL?.trim() || DEFAULT_LINKEDIN_WORKER_URL
+    ).replace(/\/+$/, "");
 
     // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
     if (workerUrl) {
@@ -121,14 +104,6 @@ export async function POST(req: Request) {
         }
       } catch (healthErr) {
         console.warn("[send-connection] Worker offline / unreachable, falling back to local runner:", healthErr);
-        if (fromTunnelFile) {
-          try {
-            const fs = await import("fs");
-            const path = await import("path");
-            const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
-            if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
-          } catch {}
-        }
         workerUrl = undefined;
       }
     }
@@ -170,14 +145,6 @@ export async function POST(req: Request) {
         result = raw;
       } catch (workerErr: unknown) {
         console.warn("[send-connection] Worker runner error, falling back to local:", workerErr);
-        if (fromTunnelFile) {
-          try {
-            const fs = await import("fs");
-            const path = await import("path");
-            const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
-            if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
-          } catch {}
-        }
         result = await sendLinkedInConnectionWithPlaywright({
           profileUrl: profileUrl.trim(),
           liAtCookie: liAt,
@@ -192,18 +159,10 @@ export async function POST(req: Request) {
         jSessionId: jsessionId || undefined,
         note: typeof note === "string" ? note.trim() : undefined,
       });
-    }
+    };
 
     if (!result.success) {
-      const isAuthError =
-        result.requiresReconnect ||
-        result.message.toLowerCase().includes("reconnect") ||
-        result.message.toLowerCase().includes("re-authenticate") ||
-        result.message.toLowerCase().includes("redirect loop") ||
-        result.message.toLowerCase().includes("rejected this session") ||
-        result.message.toLowerCase().includes("delete me") ||
-        result.message.toLowerCase().includes("expired") ||
-        result.message.toLowerCase().includes("authorization");
+      const isAuthError = result.requiresReconnect === true;
 
       if (isAuthError) {
         try {
@@ -221,7 +180,7 @@ export async function POST(req: Request) {
           status: result.status,
           requiresAccountConnection: isAuthError,
           requiresReconnect: isAuthError,
-          redirectUrl: isAuthError ? "/dashboard/accounts?reconnect=true" : undefined,
+          ...(isAuthError && { redirectUrl: "/dashboard/accounts?reconnect=true" }),
         },
         { status: 422 }
       );

@@ -142,10 +142,8 @@ export async function warmupLinkedInSession(
   const onResponse = (response: any) => {
     try {
       const headers = response.headers();
-      const status = response.status();
       const setCookie = headers["set-cookie"] || "";
       if (
-        status === 999 ||
         setCookie.includes("li_at=delete me") ||
         setCookie.includes("li_at=delete%20me") ||
         setCookie.includes('li_at=""')
@@ -166,12 +164,12 @@ export async function warmupLinkedInSession(
     page.off("response", onResponse);
 
     const status = res?.status() || 200;
-    if (status === 999 || status === 403 || status === 429 || cookieRevoked) {
+    if (status === 401 || cookieRevoked) {
       return {
         ok: false,
         requiresReconnect: true,
         error:
-          "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
+          "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
       };
     }
 
@@ -188,6 +186,16 @@ export async function warmupLinkedInSession(
         requiresReconnect: true,
         error:
           "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
+      };
+    }
+
+    if (status === 999 || status === 403 || status === 429) {
+      return {
+        ok: false,
+        error:
+          status === 429
+            ? "LinkedIn is temporarily rate limiting requests. Please wait and try again."
+            : "LinkedIn temporarily blocked the session check. Please try again later.",
       };
     }
 
@@ -215,9 +223,8 @@ export async function warmupLinkedInSession(
     if (msg.includes("ERR_TOO_MANY_REDIRECTS") || msg.includes("status 999")) {
       return {
         ok: false,
-        requiresReconnect: true,
         error:
-          "LinkedIn rejected this session or entered a redirect loop. Please reconnect your LinkedIn account to refresh credentials.",
+          "LinkedIn could not complete the session check because of a redirect loop. Please try again shortly.",
       };
     }
 

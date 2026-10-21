@@ -51,6 +51,8 @@ export async function sendLinkedInConnectionWithPlaywright({
   const targetUrl = normalizeLinkedInProfileUrl(profileUrl);
 
   let browser: Browser | null = null;
+  let currentPageUrl = "";
+  let authCookieRevoked = false;
 
   try {
     browser = await launchBrowserWithFallback();
@@ -69,6 +71,15 @@ export async function sendLinkedInConnectionWithPlaywright({
         const req = response.request();
         const method = req ? req.method() : "";
         const postData = req ? (req.postData() || "") : "";
+        const setCookie = response.headers()["set-cookie"] || "";
+
+        if (
+          setCookie.includes("li_at=delete me") ||
+          setCookie.includes("li_at=delete%20me") ||
+          setCookie.includes('li_at=""')
+        ) {
+          authCookieRevoked = true;
+        }
 
         const isInviteEndpoint =
           url.includes("normInvitations") ||
@@ -114,12 +125,13 @@ export async function sendLinkedInConnectionWithPlaywright({
 
     // 1. Warm up session on feed to lock in edge cookies (lidc, bcookie) and prevent redirect loops
     const warmup = await warmupLinkedInSession(page, 20000);
+    currentPageUrl = page.url().toLowerCase();
     if (!warmup.ok) {
       return {
         success: false,
         status: "failed",
-        requiresReconnect: true,
-        message: warmup.error || "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
+        requiresReconnect: warmup.requiresReconnect === true,
+        message: warmup.error || "LinkedIn could not verify the current session. Please try again.",
       };
     }
 
@@ -129,8 +141,26 @@ export async function sendLinkedInConnectionWithPlaywright({
         waitUntil: "domcontentloaded",
         timeout: 35000,
       });
+      currentPageUrl = page.url().toLowerCase();
     } catch (navErr: unknown) {
       const navMsg = navErr instanceof Error ? navErr.message : String(navErr);
+      currentPageUrl = page.url().toLowerCase();
+      const redirectedToAuth =
+        currentPageUrl.includes("/login") ||
+        currentPageUrl.includes("/authwall") ||
+        currentPageUrl.includes("/checkpoint") ||
+        currentPageUrl.includes("/uas/");
+
+      if (authCookieRevoked || redirectedToAuth) {
+        return {
+          success: false,
+          status: "failed",
+          requiresReconnect: true,
+          message:
+            "LinkedIn rejected the current account session. Reconnect your LinkedIn account to refresh credentials.",
+        };
+      }
+
       if (
         navMsg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
         navMsg.includes("ERR_TOO_MANY_REDIRECTS") ||
@@ -141,21 +171,21 @@ export async function sendLinkedInConnectionWithPlaywright({
         return {
           success: false,
           status: "failed",
-          requiresReconnect: true,
           message:
-            "LinkedIn rejected this session or entered a redirect loop. Please reconnect your LinkedIn account to refresh credentials.",
+            "LinkedIn could not load this profile right now. Please try again later; your account was not marked as expired.",
         };
       }
       throw navErr;
     }
 
     // 3. Verify landing URL
-    const currentUrl = page.url().toLowerCase();
+    currentPageUrl = page.url().toLowerCase();
     if (
-      currentUrl.includes("/login") ||
-      currentUrl.includes("/authwall") ||
-      currentUrl.includes("/checkpoint") ||
-      currentUrl.includes("/uas/")
+      currentPageUrl.includes("/login") ||
+      currentPageUrl.includes("/authwall") ||
+      currentPageUrl.includes("/checkpoint") ||
+      currentPageUrl.includes("/uas/") ||
+      authCookieRevoked
     ) {
       return {
         success: false,
@@ -645,20 +675,18 @@ export async function sendLinkedInConnectionWithPlaywright({
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     if (
-      errorMsg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
-      errorMsg.includes("ERR_TOO_MANY_REDIRECTS") ||
-      errorMsg.includes("999") ||
-      errorMsg.includes("403") ||
-      errorMsg.includes("429") ||
-      errorMsg.includes("login") ||
-      errorMsg.includes("authwall")
+      authCookieRevoked ||
+      currentPageUrl.includes("/login") ||
+      currentPageUrl.includes("/authwall") ||
+      currentPageUrl.includes("/checkpoint") ||
+      currentPageUrl.includes("/uas/")
     ) {
       return {
         success: false,
         status: "failed",
         requiresReconnect: true,
         message:
-          "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
+          "LinkedIn rejected the current account session. Reconnect your LinkedIn account to refresh credentials.",
       };
     }
     return {

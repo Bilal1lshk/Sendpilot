@@ -212,7 +212,7 @@ npm run worker:local
 1. Starts a lightweight HTTP server on port `4000`.
 2. Automatically provisions a public tunnel via **Cloudflare Quick Tunnels** (or falls back to **Localtunnel**).
 3. Writes the active tunnel URL to `.tunnel-url` and logs the webhook endpoint.
-4. When `LINKEDIN_WORKER_URL` is set in your web application `.env`, outbound connection dispatches and profile extractions automatically route to this worker!
+4. Outbound connection dispatches, messages, and profile extractions use the fixed `https://sendpilot-bilal-runner.loca.lt` worker URL by default. Keep the runner subdomain set to `sendpilot-bilal-runner`.
 
 ---
 
@@ -238,7 +238,7 @@ npm run worker:local
 | `PROXY_USER` | *(Optional)* Residential proxy username | `customer-username` |
 | `PROXY_PASS` | *(Optional)* Residential proxy password | Proxy password |
 | `PROXY_COUNTRY` | *(Optional)* Country code for IP rotation & browser timezone | `US` |
-| `LINKEDIN_WORKER_URL`| *(Optional)* Dedicated worker tunnel URL | `https://*.trycloudflare.com` |
+| `LINKEDIN_WORKER_URL`| Dedicated worker tunnel URL | `https://sendpilot-bilal-runner.loca.lt` |
 | `LINKEDIN_WORKER_SECRET` | *(Optional)* Shared secret for worker endpoint security | Shared auth secret |
 
 ---
