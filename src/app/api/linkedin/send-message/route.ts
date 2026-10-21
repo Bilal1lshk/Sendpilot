@@ -107,7 +107,24 @@ export async function POST(req: Request) {
         }
       } catch {}
     }
-    const workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
+    let workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
+
+    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
+    if (workerUrl) {
+      try {
+        const healthRes = await fetch(`${workerUrl}/health`, {
+          method: "GET",
+          headers: { "Bypass-Tunnel-Reminder": "true" },
+          signal: AbortSignal.timeout(2500),
+        });
+        if (!healthRes.ok) {
+          throw new Error(`Worker health check failed: HTTP ${healthRes.status}`);
+        }
+      } catch (healthErr) {
+        console.warn("[send-message] Worker offline / unreachable, falling back to local runner:", healthErr);
+        workerUrl = undefined;
+      }
+    }
 
     let result: {
       success: boolean;
