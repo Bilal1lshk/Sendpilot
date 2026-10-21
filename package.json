@@ -6,8 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "worker": "npx tsx scripts/linkedin-worker.ts",
-    "worker:headed": "npx tsx scripts/linkedin-worker.ts --headed",
+    "worker": "npx tsx scripts/linkedin-worker.ts --lt",
+    "worker:headed": "npx tsx scripts/linkedin-worker.ts --headed --lt",
     "worker:local": "npx tsx scripts/linkedin-worker.ts --no-tunnel",
     "lint": "eslint",
     "test:security": "node --experimental-strip-types --test tests/*.test.mjs"
