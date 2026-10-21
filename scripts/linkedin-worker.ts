@@ -24,6 +24,7 @@ if (fs.existsSync(".env")) {
 import { extractLinkedInSession, type ExtractedSessionResult } from "@/lib/linkedin-session-extractor";
 import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
 import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
+import { extractSearchLeadsWithPlaywright } from "@/lib/playwright-linkedin-extractor";
 
 const PORT = parseInt(process.env.WORKER_PORT || process.env.PORT || "4000", 10);
 const HOST = process.env.WORKER_HOST || "0.0.0.0";
@@ -602,6 +603,63 @@ const server = http.createServer(async (req, res) => {
         log("ERROR", `Unhandled exception during send-connection: ${errMsg}`);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: false, error: errMsg }));
+      }
+    });
+
+    return;
+  }
+
+  // 6. Lead Extraction Endpoint (Search URL via residential worker IP)
+  if (req.method === "POST" && url.pathname === "/api/extract-leads") {
+    let bodyText = "";
+    req.on("data", (chunk) => {
+      bodyText += chunk;
+      if (bodyText.length > 512 * 1024) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: false, error: "Payload too large" }));
+        req.destroy();
+      }
+    });
+
+    req.on("end", async () => {
+      try {
+        const body = JSON.parse(bodyText || "{}");
+        const { searchUrl, liAtCookie, jSessionId, maxLeads } = body;
+
+        if (!searchUrl || !liAtCookie) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              leads: [],
+              authwallDetected: false,
+              error: "Missing required 'searchUrl' or 'liAtCookie' parameter.",
+              pagesScraped: 0,
+            })
+          );
+          return;
+        }
+
+        log("INFO", `[worker] Extracting leads from search URL: ${searchUrl} (maxLeads: ${maxLeads || 10})`);
+        const result = await extractSearchLeadsWithPlaywright({
+          searchUrl,
+          liAtCookie,
+          jSessionId,
+          maxLeads: Number(maxLeads) || 10,
+        });
+
+        const statusCode = result.leads.length > 0 ? 200 : 422;
+        log(
+          "INFO",
+          `[worker] Lead extraction completed -> ${result.leads.length} leads (pages: ${result.pagesScraped})`
+        );
+
+        res.writeHead(statusCode, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        log("ERROR", `Unhandled exception during extract-leads: ${errMsg}`);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ leads: [], authwallDetected: false, error: errMsg, pagesScraped: 0 }));
       }
     });
 

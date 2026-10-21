@@ -413,12 +413,65 @@ export async function POST(req: Request) {
         );
       }
 
-      const pwResult = await extractSearchLeadsWithPlaywright({
-        searchUrl: resolvedSearchUrl,
-        liAtCookie: resolvedLiAt,
-        jSessionId: resolvedJSession || undefined,
-        maxLeads: Number(maxLeads) || 10,
-      });
+      let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
+      if (workerUrl) {
+        try {
+          const healthRes = await fetch(`${workerUrl}/health`, {
+            method: "GET",
+            headers: { "Bypass-Tunnel-Reminder": "true" },
+            signal: AbortSignal.timeout(2500),
+          });
+          if (!healthRes.ok) {
+            throw new Error(`Worker health check failed: HTTP ${healthRes.status}`);
+          }
+        } catch {
+          workerUrl = undefined;
+        }
+      }
+
+      let pwResult: Awaited<ReturnType<typeof extractSearchLeadsWithPlaywright>>;
+      if (workerUrl) {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "Bypass-Tunnel-Reminder": "true",
+          "User-Agent": "SendPilot-Worker-Client/1.0",
+        };
+        const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
+        if (workerSecret) headers["x-worker-secret"] = workerSecret;
+
+        try {
+          const workerRes = await fetch(`${workerUrl}/api/extract-leads`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              searchUrl: resolvedSearchUrl,
+              liAtCookie: resolvedLiAt,
+              jSessionId: resolvedJSession || undefined,
+              maxLeads: Number(maxLeads) || 10,
+            }),
+            signal: AbortSignal.timeout(50000),
+          });
+          const raw = await workerRes.json().catch(() => null);
+          if (!raw || !Array.isArray(raw.leads)) {
+            throw new Error(`Worker returned HTTP ${workerRes.status}`);
+          }
+          pwResult = raw;
+        } catch {
+          pwResult = await extractSearchLeadsWithPlaywright({
+            searchUrl: resolvedSearchUrl,
+            liAtCookie: resolvedLiAt,
+            jSessionId: resolvedJSession || undefined,
+            maxLeads: Number(maxLeads) || 10,
+          });
+        }
+      } else {
+        pwResult = await extractSearchLeadsWithPlaywright({
+          searchUrl: resolvedSearchUrl,
+          liAtCookie: resolvedLiAt,
+          jSessionId: resolvedJSession || undefined,
+          maxLeads: Number(maxLeads) || 10,
+        });
+      }
 
       if (pwResult.leads.length > 0) {
         result = {
@@ -429,18 +482,11 @@ export async function POST(req: Request) {
         };
       } else if (mode === "playwright") {
         const isAuthError =
-          pwResult.requiresReconnect ||
-          pwResult.authwallDetected ||
-          pwResult.error?.toLowerCase().includes("reconnect") ||
-          pwResult.error?.toLowerCase().includes("re-authenticate") ||
-          pwResult.error?.toLowerCase().includes("expired") ||
-          pwResult.error?.toLowerCase().includes("authorization") ||
-          pwResult.error?.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
-          pwResult.error?.includes("ERR_TOO_MANY_REDIRECTS") ||
-          pwResult.error?.includes("999");
+          pwResult.requiresReconnect === true || pwResult.authwallDetected === true;
 
         const errorMsg = isAuthError
-          ? "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue."
+          ? pwResult.error ||
+            "Your LinkedIn session cookie was revoked by LinkedIn. Please reconnect your LinkedIn account using the Paste Cookies tab."
           : pwResult.error || "Playwright could not find profile cards on that Search URL. Verify your search URL.";
 
         return NextResponse.json(
