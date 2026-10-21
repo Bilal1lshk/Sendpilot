@@ -671,11 +671,81 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: "Endpoint not found" }));
 });
 
+// Self-healing tunnel health monitor
+// Localtunnel can silently freeze (SSL renegotiation hangs) without its process exiting.
+// This monitor probes the public URL every 30s and force-restarts the tunnel when frozen.
+let tunnelHealthCheckTimer: NodeJS.Timeout | null = null;
+const TUNNEL_HEALTH_INTERVAL_MS = 30_000;
+const TUNNEL_HEALTH_TIMEOUT_MS = 6_000;
+let consecutiveTunnelFailures = 0;
+const MAX_TUNNEL_FAILURES_BEFORE_RESTART = 2;
+
+async function checkTunnelHealth(): Promise<boolean> {
+  if (!activeTunnelUrl || isShuttingDown || disableTunnel) return true;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TUNNEL_HEALTH_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${activeTunnelUrl}/health`, {
+        method: "GET",
+        headers: { "Bypass-Tunnel-Reminder": "true", "User-Agent": "SendPilot-TunnelHealthCheck/1.0" },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      return res.ok;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return false;
+  }
+}
+
+async function runTunnelHealthMonitor() {
+  if (isShuttingDown || disableTunnel) return;
+
+  const healthy = await checkTunnelHealth();
+
+  if (healthy) {
+    consecutiveTunnelFailures = 0;
+  } else {
+    consecutiveTunnelFailures++;
+    log(
+      "WARN",
+      `Tunnel health check failed (${consecutiveTunnelFailures}/${MAX_TUNNEL_FAILURES_BEFORE_RESTART}): ${activeTunnelUrl}`
+    );
+
+    if (consecutiveTunnelFailures >= MAX_TUNNEL_FAILURES_BEFORE_RESTART) {
+      consecutiveTunnelFailures = 0;
+      log("WARN", "Tunnel appears frozen. Force-killing tunnel process and restarting...");
+      if (tunnelProcess) {
+        try { tunnelProcess.kill("SIGKILL"); } catch {}
+        tunnelProcess = null;
+      }
+      activeTunnelUrl = null;
+      persistTunnelUrl(null);
+      // Small delay to let OS clean up the port binding
+      await new Promise((r) => setTimeout(r, 1500));
+      if (!isShuttingDown) {
+        await startTunnel(PORT);
+        log("INFO", `Tunnel restarted. New URL: ${activeTunnelUrl || "unknown"}`);
+      }
+    }
+  }
+
+  if (!isShuttingDown && !disableTunnel) {
+    tunnelHealthCheckTimer = setTimeout(runTunnelHealthMonitor, TUNNEL_HEALTH_INTERVAL_MS);
+  }
+}
+
 // Start the HTTP server
 server.listen(PORT, HOST, async () => {
   log("INFO", `Worker HTTP server listening on http://${HOST}:${PORT}`);
   if (!disableTunnel) {
     await startTunnel(PORT);
+    // Start tunnel health monitor 30s after initial startup
+    tunnelHealthCheckTimer = setTimeout(runTunnelHealthMonitor, TUNNEL_HEALTH_INTERVAL_MS);
+    log("INFO", `Tunnel self-healing monitor started (checks every ${TUNNEL_HEALTH_INTERVAL_MS / 1000}s).`);
   } else {
     printBanner(PORT, null, "Local Only");
   }
@@ -685,6 +755,7 @@ server.listen(PORT, HOST, async () => {
 function handleShutdown(signal: string) {
   isShuttingDown = true;
   if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (tunnelHealthCheckTimer) clearTimeout(tunnelHealthCheckTimer);
   persistTunnelUrl(null);
   log("INFO", `Received ${signal}. Shutting down worker...`);
   if (tunnelProcess) {

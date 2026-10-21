@@ -3,7 +3,7 @@ import AutomationFlow, { IAutomationFlow } from "@/models/AutomationFlow";
 import { ICampaignStep } from "@/models/Campaign";
 import { requireUser, apiError, sanitizeSteps } from "@/lib/crm";
 
-export const DEFAULT_AUTOMATION_TEMPLATES = [
+const DEFAULT_AUTOMATION_TEMPLATES = [
   {
     id: "tpl_warm_connection",
     name: "Warm Connection & Value Follow-Up",
