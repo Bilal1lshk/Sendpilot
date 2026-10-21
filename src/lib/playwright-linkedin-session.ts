@@ -59,7 +59,7 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
     cleanJSessionRaw ||
     `ajax:${Math.floor(1000000000000000 + Math.random() * 9000000000000000)}`;
 
-  const domains = [".linkedin.com", ".www.linkedin.com"];
+  const domains = [".linkedin.com"];
   const cookies: Array<{
     name: string;
     value: string;
@@ -67,6 +67,7 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
     path: string;
     httpOnly: boolean;
     secure: boolean;
+    sameSite: "Lax";
   }> = [];
 
   for (const domain of domains) {
@@ -78,6 +79,7 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
         path: "/",
         httpOnly: true,
         secure: true,
+        sameSite: "Lax",
       },
       {
         name: "JSESSIONID",
@@ -86,6 +88,7 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
         path: "/",
         httpOnly: false,
         secure: true,
+        sameSite: "Lax",
       }
     );
   }

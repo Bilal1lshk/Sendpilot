@@ -89,6 +89,7 @@ export async function POST(req: Request) {
         ? body.workerUrl.trim()
         : undefined;
     let configuredWorkerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
+    let fromTunnelFile = false;
     if (!configuredWorkerUrl && !clientWorkerUrl) {
       try {
         const fs = await import("fs");
@@ -98,11 +99,34 @@ export async function POST(req: Request) {
           const saved = fs.readFileSync(tunnelFilePath, "utf8").trim();
           if (saved && saved.startsWith("http")) {
             configuredWorkerUrl = saved;
+            fromTunnelFile = true;
           }
         }
       } catch {}
     }
-    const workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
+    let workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
+
+    // Quick health check if reading from a local tunnel file to avoid 502 latency hangs
+    if (workerUrl && fromTunnelFile) {
+      try {
+        const healthRes = await fetch(`${workerUrl}/health`, {
+          method: "GET",
+          signal: AbortSignal.timeout(2500),
+        });
+        if (!healthRes.ok) {
+          throw new Error(`Worker health check failed: HTTP ${healthRes.status}`);
+        }
+      } catch (healthErr) {
+        console.warn("[send-connection] Stale tunnel detected, removing .tunnel-url:", healthErr);
+        try {
+          const fs = await import("fs");
+          const path = await import("path");
+          const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
+          if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
+        } catch {}
+        workerUrl = undefined;
+      }
+    }
 
     let result: {
       success: boolean;
@@ -131,7 +155,7 @@ export async function POST(req: Request) {
             liAtCookie: liAt,
             jSessionId: jsessionId || undefined,
           }),
-          signal: AbortSignal.timeout(50000),
+          signal: AbortSignal.timeout(45000),
         });
 
         const raw = await workerRes.json().catch(() => null);
@@ -141,6 +165,14 @@ export async function POST(req: Request) {
         result = raw;
       } catch (workerErr: unknown) {
         console.warn("[send-connection] Worker runner error, falling back to local:", workerErr);
+        if (fromTunnelFile) {
+          try {
+            const fs = await import("fs");
+            const path = await import("path");
+            const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
+            if (fs.existsSync(tunnelFilePath)) fs.unlinkSync(tunnelFilePath);
+          } catch {}
+        }
         result = await sendLinkedInConnectionWithPlaywright({
           profileUrl: profileUrl.trim(),
           liAtCookie: liAt,
