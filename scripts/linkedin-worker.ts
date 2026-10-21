@@ -1,6 +1,26 @@
 import http from "node:http";
 import fs from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
+
+// Automatically load local .env file
+if (fs.existsSync(".env")) {
+  try {
+    const envContent = fs.readFileSync(".env", "utf8");
+    for (const line of envContent.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx > 0) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "");
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  } catch {}
+}
+
 import { extractLinkedInSession, type ExtractedSessionResult } from "@/lib/linkedin-session-extractor";
 import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
 import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
@@ -70,7 +90,13 @@ function startLocaltunnel(port: number): Promise<string> {
   return new Promise((resolve) => {
     log("INFO", "Initiating Localtunnel (npx localtunnel)...");
 
-    const child = spawnTool(["--yes", "localtunnel", "--port", String(port)]);
+    const customSubdomain = (process.env.WORKER_SUBDOMAIN || process.env.SERVE_SUBDOMAIN || "sendpilot-bilal-runner").trim();
+    const toolArgs = ["--yes", "localtunnel", "--port", String(port)];
+    if (customSubdomain) {
+      toolArgs.push("--subdomain", customSubdomain);
+    }
+
+    const child = spawnTool(toolArgs);
     tunnelProcess = child;
     let resolved = false;
 
@@ -80,7 +106,7 @@ function startLocaltunnel(port: number): Promise<string> {
       if (match && !resolved) {
         resolved = true;
         activeTunnelUrl = match[0];
-        tunnelProviderName = "Localtunnel";
+        tunnelProviderName = "Localtunnel (Fixed URL)";
         persistTunnelUrl(activeTunnelUrl);
         printBanner(port, activeTunnelUrl, tunnelProviderName);
         resolve(match[0]);
@@ -250,8 +276,11 @@ function startServeoTunnel(port: number): Promise<string> {
  * Tunnel coordinator: Tries Serveo (SSH) first, then Localtunnel, then Cloudflare.
  */
 async function startTunnel(port: number): Promise<string> {
-  if (useLocaltunnelOnly) {
-    return await startLocaltunnel(port);
+  const customSubdomain = (process.env.WORKER_SUBDOMAIN || process.env.SERVE_SUBDOMAIN || "sendpilot-bilal-runner").trim();
+
+  if (useLocaltunnelOnly || customSubdomain) {
+    const ltUrl = await startLocaltunnel(port);
+    if (ltUrl) return ltUrl;
   }
 
   if (useCloudflareOnly) {
