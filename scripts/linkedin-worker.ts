@@ -28,6 +28,7 @@ import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-
 const PORT = parseInt(process.env.WORKER_PORT || process.env.PORT || "4000", 10);
 const HOST = process.env.WORKER_HOST || "0.0.0.0";
 const WORKER_SECRET = process.env.LINKEDIN_WORKER_SECRET || process.env.WORKER_SECRET || "";
+const FIXED_LOCALTUNNEL_SUBDOMAIN = "sendpilot-bilal-runner";
 
 // Command-line flag parsing
 const args = process.argv.slice(2);
@@ -90,11 +91,9 @@ function startLocaltunnel(port: number): Promise<string> {
   return new Promise((resolve) => {
     log("INFO", "Initiating Localtunnel (npx localtunnel)...");
 
-    const customSubdomain = (process.env.WORKER_SUBDOMAIN || process.env.SERVE_SUBDOMAIN || "sendpilot-bilal-runner").trim();
+    const expectedTunnelUrl = `https://${FIXED_LOCALTUNNEL_SUBDOMAIN}.loca.lt`;
     const toolArgs = ["--yes", "localtunnel", "--port", String(port)];
-    if (customSubdomain) {
-      toolArgs.push("--subdomain", customSubdomain);
-    }
+    toolArgs.push("--subdomain", FIXED_LOCALTUNNEL_SUBDOMAIN);
 
     const child = spawnTool(toolArgs);
     tunnelProcess = child;
@@ -104,12 +103,23 @@ function startLocaltunnel(port: number): Promise<string> {
       const text = data.toString();
       const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.loca\.lt/);
       if (match && !resolved) {
+        if (match[0] !== expectedTunnelUrl) {
+          log(
+            "ERROR",
+            `Localtunnel returned an unexpected URL (${match[0]}); keeping the required URL ${expectedTunnelUrl}.`
+          );
+          child.kill();
+          resolved = true;
+          resolve("");
+          return;
+        }
+
         resolved = true;
-        activeTunnelUrl = match[0];
+        activeTunnelUrl = expectedTunnelUrl;
         tunnelProviderName = "Localtunnel (Fixed URL)";
         persistTunnelUrl(activeTunnelUrl);
         printBanner(port, activeTunnelUrl, tunnelProviderName);
-        resolve(match[0]);
+        resolve(expectedTunnelUrl);
       }
     };
 
@@ -133,6 +143,8 @@ function startLocaltunnel(port: number): Promise<string> {
 
     setTimeout(() => {
       if (!resolved) {
+        log("WARN", `Localtunnel did not confirm ${expectedTunnelUrl}; restarting with the same fixed URL.`);
+        child.kill();
         resolved = true;
         resolve("");
       }
@@ -273,19 +285,14 @@ function startServeoTunnel(port: number): Promise<string> {
 }
 
 /**
- * Tunnel coordinator: Tries Serveo (SSH) first, then Localtunnel, then Cloudflare.
+ * Uses the fixed Localtunnel hostname by default; Cloudflare is available via --cf.
  */
 async function startTunnel(port: number): Promise<string> {
-  const customSubdomain = (process.env.WORKER_SUBDOMAIN || process.env.SERVE_SUBDOMAIN || "sendpilot-bilal-runner").trim();
+  if (useCloudflareOnly) return await startCloudflareTunnel(port);
+  if (useLocaltunnelOnly) return await startLocaltunnel(port);
 
-  if (useLocaltunnelOnly || customSubdomain) {
-    const ltUrl = await startLocaltunnel(port);
-    if (ltUrl) return ltUrl;
-  }
-
-  if (useCloudflareOnly) {
-    return await startCloudflareTunnel(port);
-  }
+  const customSubdomain = (process.env.WORKER_SUBDOMAIN || process.env.SERVE_SUBDOMAIN || FIXED_LOCALTUNNEL_SUBDOMAIN).trim();
+  if (customSubdomain) return await startLocaltunnel(port);
 
   // 1. Primary: Serveo (SSH tunnel) - fast, stable, no gateway timeouts
   const serveoUrl = await startServeoTunnel(port);
