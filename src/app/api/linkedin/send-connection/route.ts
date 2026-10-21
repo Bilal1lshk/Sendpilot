@@ -52,6 +52,8 @@ export async function POST(req: Request) {
           error:
             "No connected LinkedIn account found. Please connect your LinkedIn account first from Accounts or Settings.",
           requiresAccountConnection: true,
+          requiresReconnect: true,
+          redirectUrl: "/dashboard/accounts?reconnect=true",
         },
         { status: 400 }
       );
@@ -194,8 +196,20 @@ export async function POST(req: Request) {
         result.requiresReconnect ||
         result.message.toLowerCase().includes("reconnect") ||
         result.message.toLowerCase().includes("re-authenticate") ||
+        result.message.toLowerCase().includes("redirect loop") ||
+        result.message.toLowerCase().includes("rejected this session") ||
+        result.message.toLowerCase().includes("delete me") ||
         result.message.toLowerCase().includes("expired") ||
         result.message.toLowerCase().includes("authorization");
+
+      if (isAuthError) {
+        try {
+          await LinkedInConnection.updateOne(
+            { id: activeConn.id },
+            { $set: { status: "expired" } }
+          );
+        } catch {}
+      }
 
       return NextResponse.json(
         {
