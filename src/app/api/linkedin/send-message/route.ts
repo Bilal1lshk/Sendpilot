@@ -88,26 +88,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Check for dedicated runner offload
-    const clientWorkerUrl =
-      typeof body.workerUrl === "string" && body.workerUrl.trim().startsWith("http")
-        ? body.workerUrl.trim()
-        : undefined;
-    let configuredWorkerUrl = process.env.LINKEDIN_WORKER_URL?.trim();
-    if (!configuredWorkerUrl && !clientWorkerUrl) {
-      try {
-        const fs = await import("fs");
-        const path = await import("path");
-        const tunnelFilePath = path.join(process.cwd(), ".tunnel-url");
-        if (fs.existsSync(tunnelFilePath)) {
-          const saved = fs.readFileSync(tunnelFilePath, "utf8").trim();
-          if (saved && saved.startsWith("http")) {
-            configuredWorkerUrl = saved;
-          }
-        }
-      } catch {}
-    }
-    let workerUrl = (clientWorkerUrl || configuredWorkerUrl)?.replace(/\/+$/, "");
+    // Runner location and authentication are server-only configuration.
+    let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
 
     // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
     if (workerUrl) {

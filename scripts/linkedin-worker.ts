@@ -27,8 +27,9 @@ import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-
 
 const PORT = parseInt(process.env.WORKER_PORT || process.env.PORT || "4000", 10);
 const HOST = process.env.WORKER_HOST || "0.0.0.0";
-const WORKER_SECRET = process.env.LINKEDIN_WORKER_SECRET || process.env.WORKER_SECRET || "";
-const FIXED_LOCALTUNNEL_SUBDOMAIN = "sendpilot-bilal-runner";
+const WORKER_SECRET = process.env.LINKEDIN_WORKER_SECRET || "";
+const FIXED_LOCALTUNNEL_SUBDOMAIN =
+  process.env.WORKER_SUBDOMAIN?.trim() || "sendpilot-bilal-runner";
 
 // Command-line flag parsing
 const args = process.argv.slice(2);
@@ -316,15 +317,8 @@ function printBanner(port: number, tunnelUrl: string | null, providerName = "Tun
   if (tunnelUrl) {
     console.log(`  ${providerName.padEnd(20)} \x1b[32m${tunnelUrl}\x1b[0m`);
     console.log("-".repeat(72));
-    console.log("  HOW TO CONNECT WITH SENDPILOT (Choose Option A or B):");
-    console.log("  Option A (Instant - Recommended):");
-    console.log("  1. In SendPilot, click '⚙️ Local Runner Tunnel URL'");
-    console.log(`  2. Paste this URL: \x1b[36m${tunnelUrl}\x1b[0m`);
-    console.log("  Option B (Permanent via Vercel):");
-    console.log(`  Set Vercel Env:      \x1b[36mLINKEDIN_WORKER_URL=${tunnelUrl}\x1b[0m`);
-    if (WORKER_SECRET) {
-      console.log(`  Vercel Env Secret:   \x1b[36mLINKEDIN_WORKER_SECRET=${WORKER_SECRET}\x1b[0m`);
-    }
+    console.log("  SendPilot reads LINKEDIN_WORKER_URL and LINKEDIN_WORKER_SECRET from server environment.");
+    console.log("  No tunnel URL entry is required in the UI.");
   } else {
     console.log("  Tunnel:              (Disabled or failed to connect)");
   }

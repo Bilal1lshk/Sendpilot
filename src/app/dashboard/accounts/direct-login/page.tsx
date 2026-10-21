@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
@@ -52,62 +52,7 @@ export default function DirectLoginCookieExtractorPage() {
   const [loading, setLoading] = useState(false);
   const [progressStage, setProgressStage] = useState<string>("");
 
-  // Runner URL state (persisted in localStorage)
-  const [workerUrl, setWorkerUrl] = useState("");
-  const [showRunnerConfig, setShowRunnerConfig] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [testingTunnel, setTestingTunnel] = useState(false);
-  const [tunnelTestStatus, setTunnelTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("sendpilot_worker_url");
-      if (saved) setWorkerUrl(saved);
-    } catch {}
-  }, []);
-
-  const handleWorkerUrlChange = (val: string) => {
-    setWorkerUrl(val);
-    setTunnelTestStatus(null);
-    try {
-      if (val.trim()) {
-        localStorage.setItem("sendpilot_worker_url", val.trim());
-      } else {
-        localStorage.removeItem("sendpilot_worker_url");
-      }
-    } catch {}
-  };
-
-  const handleTestTunnel = async () => {
-    if (!workerUrl.trim()) return;
-    setTestingTunnel(true);
-    setTunnelTestStatus(null);
-    try {
-      const clean = workerUrl.trim().replace(/\/+$/, "");
-      const res = await fetch(`${clean}/health`, {
-        signal: AbortSignal.timeout(6000),
-      });
-      if (res.ok) {
-        const data = await res.json().catch(() => null);
-        setTunnelTestStatus({
-          ok: true,
-          msg: `✓ Tunnel online & responding (service: ${data?.service || "LinkedIn Worker"})`,
-        });
-      } else {
-        setTunnelTestStatus({
-          ok: false,
-          msg: `✕ Tunnel returned HTTP ${res.status}. This tunnel URL has expired or disconnected. Check your npm run worker terminal for the fresh URL.`,
-        });
-      }
-    } catch {
-      setTunnelTestStatus({
-        ok: false,
-        msg: "✕ Cannot connect to tunnel (Offline / expired). Make sure 'npm run worker' is running in your terminal.",
-      });
-    } finally {
-      setTestingTunnel(false);
-    }
-  };
 
   // Result state
   const [result, setResult] = useState<{
@@ -159,7 +104,6 @@ export default function DirectLoginCookieExtractorPage() {
           twoFactorMethod,
           verificationCode: verificationCode.trim() || undefined,
           pendingChallengeToken,
-          workerUrl: workerUrl.trim() || undefined,
         };
       } else {
         if (!liAt.trim()) {
@@ -480,54 +424,6 @@ export default function DirectLoginCookieExtractorPage() {
                       </div>
                     )}
 
-                    {/* Local Runner URL Configuration */}
-                    <div className="pt-1 border-t border-neutral-100 dark:border-neutral-800/80">
-                      <button
-                        type="button"
-                        onClick={() => setShowRunnerConfig(!showRunnerConfig)}
-                        className="text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 flex items-center justify-between w-full py-1 font-medium transition-colors cursor-pointer"
-                      >
-                        <span>⚙️ Local Runner Tunnel URL</span>
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                          {workerUrl ? "Configured ✓" : "Configure (Optional)"}
-                        </span>
-                      </button>
-
-                      {showRunnerConfig && (
-                        <div className="mt-2 p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-2">
-                          <label className="text-[11px] font-medium text-neutral-700 dark:text-neutral-300 block">
-                            Active Tunnel URL (from terminal)
-                          </label>
-                          <div className="flex gap-2 items-center">
-                            <input
-                              type="url"
-                              placeholder="https://07d1c59b...serveousercontent.com"
-                              value={workerUrl}
-                              onChange={(e) => handleWorkerUrlChange(e.target.value)}
-                              disabled={loading}
-                              className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleTestTunnel}
-                              disabled={testingTunnel || !workerUrl.trim()}
-                              className="px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-[11px] font-medium text-neutral-700 dark:text-neutral-200 transition-colors disabled:opacity-50 cursor-pointer shrink-0"
-                            >
-                              {testingTunnel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Test URL"}
-                            </button>
-                          </div>
-                          {tunnelTestStatus && (
-                            <p className={`text-[11px] font-medium leading-tight ${tunnelTestStatus.ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
-                              {tunnelTestStatus.msg}
-                            </p>
-                          )}
-                          <p className="text-[10px] text-neutral-500 dark:text-neutral-400 leading-tight">
-                            Paste the tunnel URL from your <code className="text-emerald-600 font-mono">npm run worker</code> terminal. Saved in your browser so you don&apos;t have to update Vercel environment variables.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
                     <div className="flex items-center gap-2.5 pt-2">
                       <button
                         type="button"
@@ -663,53 +559,6 @@ export default function DirectLoginCookieExtractorPage() {
                       </p>
                     </div>
 
-                    {/* Local Runner URL Configuration */}
-                    <div className="pt-1 border-t border-neutral-100 dark:border-neutral-800/80">
-                      <button
-                        type="button"
-                        onClick={() => setShowRunnerConfig(!showRunnerConfig)}
-                        className="text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 flex items-center justify-between w-full py-1 font-medium transition-colors cursor-pointer"
-                      >
-                        <span>⚙️ Local Runner Tunnel URL</span>
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                          {workerUrl ? "Configured ✓" : "Configure (Optional)"}
-                        </span>
-                      </button>
-
-                      {showRunnerConfig && (
-                        <div className="mt-2 p-3 rounded-xl bg-neutral-100/70 dark:bg-neutral-950/60 border border-neutral-200 dark:border-neutral-800 space-y-2">
-                          <label className="text-[11px] font-medium text-neutral-700 dark:text-neutral-300 block">
-                            Active Tunnel URL (from terminal)
-                          </label>
-                          <div className="flex gap-2 items-center">
-                            <input
-                              type="url"
-                              placeholder="https://07d1c59b...serveousercontent.com"
-                              value={workerUrl}
-                              onChange={(e) => handleWorkerUrlChange(e.target.value)}
-                              disabled={loading}
-                              className="flex-1 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-1.5 text-xs font-mono text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 outline-none focus:border-emerald-500"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleTestTunnel}
-                              disabled={testingTunnel || !workerUrl.trim()}
-                              className="px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-[11px] font-medium text-neutral-700 dark:text-neutral-200 transition-colors disabled:opacity-50 cursor-pointer shrink-0"
-                            >
-                              {testingTunnel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Test URL"}
-                            </button>
-                          </div>
-                          {tunnelTestStatus && (
-                            <p className={`text-[11px] font-medium leading-tight ${tunnelTestStatus.ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
-                              {tunnelTestStatus.msg}
-                            </p>
-                          )}
-                          <p className="text-[10px] text-neutral-500 dark:text-neutral-400 leading-tight">
-                            Paste the tunnel URL from your <code className="text-emerald-600 font-mono">npm run worker</code> terminal. Saved in your browser so you don&apos;t have to update Vercel environment variables.
-                          </p>
-                        </div>
-                      )}
-                    </div>
                   </>
                 ) : (
                   <>
