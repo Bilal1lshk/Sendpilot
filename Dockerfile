@@ -8,9 +8,9 @@ FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 WORKDIR /app
 
-# Install Node dependencies first (layer-cached unless lock file changes)
+# Install dependencies (tsx and typescript are needed to run tsx worker/server.ts)
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Copy the rest of the source
 COPY . .
