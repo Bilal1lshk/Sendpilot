@@ -237,10 +237,11 @@ export function categorizeProxyError(err: unknown, stage = "browser_launch"): Ca
   }
 
   if (
-    msg.includes("err_timed_out") ||
-    msg.includes("etimedout") ||
-    msg.includes("timeout") ||
-    msg.includes("proxy timed out")
+    process.env.PROXY_SERVER &&
+    (msg.includes("err_timed_out") ||
+      msg.includes("etimedout") ||
+      msg.includes("timeout") ||
+      msg.includes("proxy timed out"))
   ) {
     return {
       code: "PROXY_TIMEOUT",

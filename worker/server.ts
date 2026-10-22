@@ -48,6 +48,12 @@ const RENDER_CHROMIUM_ARGS = [
   "--disable-gpu",
   "--disable-extensions",
   "--no-zygote",
+  "--single-process",
+  "--disable-background-networking",
+  "--disable-background-timer-throttling",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-renderer-backgrounding",
+  "--disable-ipc-flooding-protection",
   "--js-flags=--max-old-space-size=192",
 ];
 
