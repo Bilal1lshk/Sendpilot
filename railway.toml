@@ -1,0 +1,16 @@
+# railway.toml
+# Railway deployment config for the SendPilot LinkedIn Worker.
+# Railway auto-detects the Dockerfile in the repo root.
+# Docs: https://docs.railway.com/reference/config-as-code
+
+[build]
+# Use the Dockerfile at the repo root
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Render-compatible: same PORT, same health check path
+startCommand = "npx tsx worker/server.ts"
+healthcheckPath = "/health"
+healthcheckTimeout = 60       # seconds — allow cold Chromium boot
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
