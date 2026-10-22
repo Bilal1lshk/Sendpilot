@@ -19,7 +19,11 @@
  *   3. Forces AUTO_TUNNEL=false — no localtunnel/cloudflared on Render.
  *   4. Monkey-patches playwright-core's chromium.launch() to inject
  *      memory-optimised Render args BEFORE the frozen worker imports it.
+ *   5. Monkey-patches createStealthContext() to always block heavy assets.
  */
+
+// Make this a module so top-level await works
+export {};
 
 // ─── 1. Secret guard — crash before spawning any browser ─────────────────────
 const secret = process.env.LINKEDIN_WORKER_SECRET?.trim();
@@ -46,11 +50,11 @@ process.env.AUTO_TUNNEL = "false";
 //  is imported, so every launchBrowser() call in the codebase gets these args.
 //
 //  Flags explained:
-//   --no-sandbox / --disable-setuid-sandbox  required in Docker (no root namespace)
+//   --no-sandbox / --disable-setuid-sandbox  required in Docker (no root ns)
 //   --disable-dev-shm-usage                 use /tmp instead of /dev/shm (64 MB)
 //   --disable-gpu                           no GPU in a container
 //   --disable-extensions                    saves ~20 MB RSS
-//   --no-zygote                             prevents forking a zygote process
+//   --no-zygote                             prevents a forked zygote process
 //   --js-flags=--max-old-space-size=192     cap V8 heap inside renderer to 192 MB
 
 const RENDER_CHROMIUM_ARGS = [
@@ -68,8 +72,8 @@ async function patchPlaywrightCore(): Promise<void> {
   const chromium = pw.chromium;
   const originalLaunch = chromium.launch.bind(chromium);
 
-  // @ts-expect-error — intentional monkey-patch to inject Render flags
-  chromium.launch = async function renderOptimisedLaunch(
+  // Cast through unknown to avoid TypeScript readonly complaints
+  (chromium as unknown as Record<string, unknown>).launch = async function renderOptimisedLaunch(
     opts: Parameters<typeof originalLaunch>[0] = {}
   ) {
     const mergedArgs = Array.from(new Set([...(opts?.args ?? []), ...RENDER_CHROMIUM_ARGS]));
@@ -77,35 +81,37 @@ async function patchPlaywrightCore(): Promise<void> {
   };
 }
 
-/**
- * Patches createStealthContext from browser-launcher.ts to always inject
- * blockHeavyResources:true so images/media/fonts are blocked on every context.
- * This reduces renderer RSS on the 512 MB free tier significantly.
- *
- * We patch the ESM live binding BEFORE the frozen worker files import it —
- * the only way to do this without editing any frozen file.
- */
+// ─── 5. Block heavy assets on every context to cut renderer RSS ───────────────
+//
+//  browser-launcher.ts already has a route interceptor for images/media/fonts,
+//  guarded by `options.blockHeavyResources === true`.  The callers in
+//  playwright-linkedin-connect.ts and playwright-linkedin-messaging.ts don't
+//  pass that flag (frozen — can't edit).  So we patch createStealthContext()
+//  via its ESM live binding to always inject the flag before the frozen files
+//  call it.
+
 async function patchBrowserLauncher(): Promise<void> {
   const launcher = await import("@/lib/browser-launcher");
-  const originalCreateStealthContext = launcher.createStealthContext;
+  const originalFn = launcher.createStealthContext;
 
-  // @ts-expect-error — intentional patch of ESM live binding
-  launcher.createStealthContext = async function renderCreateStealthContext(
-    browser: Parameters<typeof originalCreateStealthContext>[0],
-    opts: Parameters<typeof originalCreateStealthContext>[1] = {}
-  ) {
-    return originalCreateStealthContext(browser, {
-      ...opts,
-      blockHeavyResources: true,
-      bandwidthSaver: true,
-    });
-  };
+  // Replace the live binding via the module namespace object
+  (launcher as unknown as Record<string, unknown>).createStealthContext =
+    async function renderCreateStealthContext(
+      browser: Parameters<typeof originalFn>[0],
+      opts: Parameters<typeof originalFn>[1] = {}
+    ) {
+      return originalFn(browser, {
+        ...opts,
+        blockHeavyResources: true,
+        bandwidthSaver: true,
+      });
+    };
 }
 
 // ─── Boot sequence ─────────────────────────────────────────────────────────────
 console.log(
   `[worker/server] SendPilot Render worker starting on PORT=${process.env.PORT} ` +
-    `(headless, no-tunnel, max-old-space=${process.env.NODE_OPTIONS ?? "default"})`
+    `(headless, no-tunnel, NODE_OPTIONS=${process.env.NODE_OPTIONS ?? "default"})`
 );
 
 await patchPlaywrightCore();
@@ -113,4 +119,6 @@ await patchBrowserLauncher();
 
 // Dynamic import ensures all patches above are applied BEFORE the frozen
 // worker module initialises its http.createServer and imports playwright libs.
-await import("../scripts/linkedin-worker.ts");
+// We strip the .ts extension so allowImportingTsExtensions is not required;
+// tsx resolves the file by convention when run from the project root.
+await import("../scripts/linkedin-worker");
