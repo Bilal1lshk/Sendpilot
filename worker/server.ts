@@ -17,9 +17,8 @@
  *   1. Hard crash at boot when LINKEDIN_WORKER_SECRET is missing.
  *   2. Ensures PORT comes from process.env.PORT (Render injects it).
  *   3. Forces AUTO_TUNNEL=false — no localtunnel/cloudflared on Render.
- *   4. Monkey-patches playwright-core's chromium.launch() to inject
- *      memory-optimised Render args BEFORE the frozen worker imports it.
- *   5. Monkey-patches createStealthContext() to always block heavy assets.
+ *   4. Patches Playwright's chromium.launch and newContext to inject
+ *      memory-optimised Render args and block heavy media without touching frozen modules.
  */
 
 // ─── 1. Secret guard — crash before spawning any browser ─────────────────────
@@ -57,34 +56,49 @@ async function patchPlaywrightCore(): Promise<void> {
   const chromium = pw.chromium;
   const originalLaunch = chromium.launch.bind(chromium);
 
-  // Cast through unknown to avoid TypeScript readonly complaints
-  (chromium as unknown as Record<string, unknown>).launch = async function renderOptimisedLaunch(
+  // Patch chromium.launch to inject low-memory flags and route interception
+  // @ts-expect-error monkey-patching launch
+  chromium.launch = async function renderOptimisedLaunch(
     opts: Parameters<typeof originalLaunch>[0] = {}
   ) {
     const mergedArgs = Array.from(new Set([...(opts?.args ?? []), ...RENDER_CHROMIUM_ARGS]));
-    return originalLaunch({ ...opts, headless: true, args: mergedArgs });
+    const browser = await originalLaunch({ ...opts, headless: true, args: mergedArgs });
+
+    // Intercept newContext on the returned browser to automatically block heavy media
+    const originalNewContext = browser.newContext.bind(browser);
+    // @ts-expect-error monkey-patching newContext
+    browser.newContext = async function renderNewContext(contextOpts: Parameters<typeof originalNewContext>[0]) {
+      const context = await originalNewContext(contextOpts);
+
+      // Block images, media, and fonts on non-essential domains to stay within 512 MB RAM
+      await context
+        .route("**/*", (route) => {
+          const type = route.request().resourceType();
+          const url = route.request().url().toLowerCase();
+
+          const isEssential =
+            url.includes("linkedin.com") ||
+            url.includes("licdn.com") ||
+            url.includes("arkose") ||
+            url.includes("recaptcha") ||
+            url.includes("checkpoint") ||
+            url.includes("challenge");
+
+          if (!isEssential && ["image", "media", "font"].includes(type)) {
+            return route.abort();
+          }
+          return route.continue();
+        })
+        .catch(() => {});
+
+      return context;
+    };
+
+    return browser;
   };
 }
 
-// ─── 5. Block heavy assets on every context to cut renderer RSS ───────────────
-async function patchBrowserLauncher(): Promise<void> {
-  const launcher = await import("@/lib/browser-launcher");
-  const originalFn = launcher.createStealthContext;
-
-  (launcher as unknown as Record<string, unknown>).createStealthContext =
-    async function renderCreateStealthContext(
-      browser: Parameters<typeof originalFn>[0],
-      opts: Parameters<typeof originalFn>[1] = {}
-    ) {
-      return originalFn(browser, {
-        ...opts,
-        blockHeavyResources: true,
-        bandwidthSaver: true,
-      });
-    };
-}
-
-// ─── Boot sequence wrapped in standard async main to avoid CJS top-level await ─
+// ─── Boot sequence ─────────────────────────────────────────────────────────────
 async function main() {
   console.log(
     `[worker/server] SendPilot Render worker starting on PORT=${process.env.PORT} ` +
@@ -92,7 +106,6 @@ async function main() {
   );
 
   await patchPlaywrightCore();
-  await patchBrowserLauncher();
 
   // Dynamic import ensures all patches above are applied BEFORE the frozen
   // worker module initialises its http.createServer and imports playwright libs.
