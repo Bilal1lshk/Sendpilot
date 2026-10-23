@@ -37,9 +37,9 @@ export async function getWorkerHealth(workerUrl: string): Promise<{
     const raw = (await healthRes.json().catch(() => null)) as WorkerHealthResponse | null;
     const contractVersion = typeof raw?.contractVersion === "number" ? raw.contractVersion : undefined;
     const outOfDate =
-      Boolean(raw) &&
-      typeof contractVersion === "number" &&
-      contractVersion !== WORKER_CONTRACT_VERSION;
+      healthRes.ok &&
+      raw !== null &&
+      (contractVersion !== WORKER_CONTRACT_VERSION || raw.status !== "ok");
 
     return {
       ok: healthRes.ok && Boolean(raw),

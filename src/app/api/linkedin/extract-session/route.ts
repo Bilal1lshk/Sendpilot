@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireUser, apiError } from "@/lib/crm";
 import { consumeRateLimit } from "@/lib/rate-limit";
-import {
-  extractLinkedInSession,
-  verifyLinkedInSession,
-  type TwoFactorMethod,
-  type ExtractedSessionResult,
-} from "@/lib/linkedin-session-extractor";
+import type { TwoFactorMethod, ExtractedSessionResult } from "@/lib/linkedin-session-extractor";
+import { verifyLinkedInSession } from "@/lib/linkedin-session-verifier";
 import { createConnectionId, disconnectOtherAccounts } from "@/lib/linkedin-connections";
 import { encryptConnectionSecrets, decryptConnectionSecrets } from "@/lib/connection-crypto";
 import { getWorkerHealth } from "@/lib/worker-contract";
@@ -148,123 +144,123 @@ export async function POST(req: Request) {
     const normalized2FA: TwoFactorMethod = twoFactorMethod === "app" ? "app" : "otp";
 
     let result: ExtractedSessionResult;
-    let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
+    const workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
 
-    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs.
-    // If the worker version is stale, queue the request and wait for the deployed worker to catch up.
-    if (workerUrl) {
-      try {
-        const health = await getWorkerHealth(workerUrl);
-        if (!health.ok) {
-          console.warn("[extract-session] Worker offline / unreachable, falling back to local runner:", health.error);
-          workerUrl = undefined;
-        } else if (health.outOfDate) {
-          console.warn("[extract-session] worker out of date");
-          return NextResponse.json(
-            {
-              success: false,
-              pending: true,
-              queued: true,
-              retryable: true,
-              stage: "waiting_for_worker_update",
-              message: "The LinkedIn worker is updating. Your request is queued and will retry automatically.",
-            },
-            { status: 202 }
-          );
-        }
-      } catch (healthErr) {
-        console.warn("[extract-session] Worker health check failed:", healthErr);
-        workerUrl = undefined;
-      }
+    if (!workerUrl) {
+      console.warn("[extract-session] LINKEDIN_WORKER_URL is not configured.");
+      return NextResponse.json(
+        {
+          success: false,
+          pending: true,
+          retryable: true,
+          stage: "waiting_for_worker",
+          message: "The LinkedIn worker is not configured yet. Please retry shortly.",
+        },
+        { status: 202 }
+      );
     }
 
-    if (workerUrl) {
-      // Offload Playwright browser extraction to dedicated local runner / tunnel
-      const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "Bypass-Tunnel-Reminder": "true",
-        "User-Agent": "SendPilot-Worker-Client/1.0",
-      };
-      if (workerSecret) {
-        headers["x-worker-secret"] = workerSecret;
+    const health = await getWorkerHealth(workerUrl);
+    if (!health.ok) {
+      console.warn("[extract-session] Worker is offline or unreachable:", health.error);
+      return NextResponse.json(
+        {
+          success: false,
+          pending: true,
+          retryable: true,
+          stage: "waiting_for_worker",
+          message: "The LinkedIn worker is starting. Retrying shortly...",
+        },
+        { status: 202 }
+      );
+    }
+    if (health.outOfDate) {
+      console.warn("[extract-session] worker out of date");
+      return NextResponse.json(
+        {
+          success: false,
+          pending: true,
+          queued: true,
+          retryable: true,
+          stage: "waiting_for_worker_update",
+          message: "The LinkedIn worker is updating. Your request will retry automatically.",
+        },
+        { status: 202 }
+      );
+    }
+
+    const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
+    if (!workerSecret) {
+      console.error("[extract-session] LINKEDIN_WORKER_SECRET is not configured.");
+      return NextResponse.json(
+        { success: false, error: "LinkedIn worker authentication is not configured." },
+        { status: 503 }
+      );
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Bypass-Tunnel-Reminder": "true",
+      "User-Agent": "SendPilot-Worker-Client/1.0",
+      "x-worker-secret": workerSecret,
+    };
+
+    try {
+      const workerRes = await fetch(`${workerUrl}/api/extract-session`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          twoFactorMethod: normalized2FA,
+          verificationCode:
+            typeof verificationCode === "string" && verificationCode.trim()
+              ? verificationCode.trim()
+              : undefined,
+          pendingChallengeToken:
+            typeof pendingChallengeToken === "string" && pendingChallengeToken.trim()
+              ? pendingChallengeToken.trim()
+              : undefined,
+          existingFingerprint,
+        }),
+        signal: AbortSignal.timeout(50000),
+      });
+
+      const rawText = await workerRes.text().catch(() => "");
+      let workerData: ExtractedSessionResult | null = null;
+      try {
+        workerData = JSON.parse(rawText);
+      } catch {
+        workerData = null;
       }
 
-      try {
-        const workerRes = await fetch(`${workerUrl.replace(/\/+$/, "")}/api/extract-session`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            email: email.trim(),
-            password,
-            twoFactorMethod: normalized2FA,
-            verificationCode:
-              typeof verificationCode === "string" && verificationCode.trim()
-                ? verificationCode.trim()
-                : undefined,
-            pendingChallengeToken:
-              typeof pendingChallengeToken === "string" && pendingChallengeToken.trim()
-                ? pendingChallengeToken.trim()
-                : undefined,
-            existingFingerprint,
-          }),
-          signal: AbortSignal.timeout(50000),
-        });
-
-        const rawText = await workerRes.text().catch(() => "");
-        let workerData: ExtractedSessionResult | null = null;
-        try {
-          workerData = JSON.parse(rawText);
-        } catch {
-          workerData = null;
-        }
-
-        if (!workerData) {
-          // Tunnel proxy (e.g. Serveo edge) timed out and returned 502 while background Playwright
-          // is still actively logging in. Return 202 Pending so frontend polls silently instead of showing 502!
-          return NextResponse.json(
-            {
-              success: false,
-              pending: true,
-              retryable: true,
-              stage: "extracting",
-              message: "Logging into LinkedIn via residential runner... Finalizing connection...",
-            },
-            { status: 202 }
-          );
-        }
-
-        result = workerData;
-      } catch (workerErr: unknown) {
-        // Network timeout / tunnel blip while browser is operating - keep polling
+      if (!workerData) {
+        // Keep polling if the worker's response channel times out while extraction is still running.
         return NextResponse.json(
           {
             success: false,
             pending: true,
             retryable: true,
             stage: "extracting",
-            message: "Verifying credentials with LinkedIn runner...",
+            message: "Logging into LinkedIn via Render worker...",
           },
           { status: 202 }
         );
       }
-    } else {
-      result = await extractLinkedInSession({
-        email: email.trim(),
-        password,
-        twoFactorMethod: normalized2FA,
-        verificationCode:
-          typeof verificationCode === "string" && verificationCode.trim()
-            ? verificationCode.trim()
-            : undefined,
-        pendingChallengeToken:
-          typeof pendingChallengeToken === "string" && pendingChallengeToken.trim()
-            ? pendingChallengeToken.trim()
-            : undefined,
-        headless: true,
-        timeout: 24000,
-        existingFingerprint,
-      });
+
+      result = workerData;
+    } catch (workerErr: unknown) {
+      console.warn("[extract-session] Worker request failed; client can retry:", workerErr);
+      return NextResponse.json(
+        {
+          success: false,
+          pending: true,
+          retryable: true,
+          stage: "extracting",
+          message: "Verifying credentials with LinkedIn runner...",
+        },
+        { status: 202 }
+      );
     }
 
     if (result.proxyError) {

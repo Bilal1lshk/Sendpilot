@@ -15,7 +15,12 @@ import {
   decryptConnectionSecrets,
   encryptConnectionSecrets,
 } from "@/lib/connection-crypto";
+import {
+  LINKEDIN_BROWSER_USER_AGENT as BROWSER_UA,
+} from "@/lib/linkedin-session-verifier";
 import { ProxyAgent } from "undici";
+
+export { verifyLinkedInSession } from "@/lib/linkedin-session-verifier";
 
 export type TwoFactorMethod = "otp" | "app";
 
@@ -85,9 +90,6 @@ interface PendingChallengePayload {
   createdAt: number;
 }
 
-const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36";
-
 const PIN_INPUT_SELECTOR = [
   'input[name="pin"]:visible',
   "input#input__phone_verification_pin:visible",
@@ -112,131 +114,6 @@ function isValidLiAtValue(val: string | undefined | null): val is string {
   if (!val || typeof val !== "string") return false;
   const clean = val.trim();
   return clean.length > 25 && clean.toLowerCase() !== "delete me";
-}
-
-/**
- * Verifies active session using LinkedIn Voyager API (with cloud-IP fallback for Vercel)
- */
-export async function verifyLinkedInSession(liAt: string, jsessionId?: string) {
-  const cleanLiAt = liAt
-    .trim()
-    .replace(/^li_at\s*=\s*/i, "")
-    .replace(/;.*$/, "")
-    .replace(/^["']|["']$/g, "")
-    .trim();
-
-  if (!cleanLiAt || cleanLiAt.length < 30) {
-    return { active: false, status: 400, error: "Invalid li_at cookie format" };
-  }
-
-  let cleanCsrf = jsessionId
-    ? jsessionId
-        .trim()
-        .replace(/^JSESSIONID\s*=\s*/i, "")
-        .replace(/;.*$/, "")
-        .replace(/"/g, "")
-        .trim()
-    : "";
-
-  if (!cleanCsrf) {
-    cleanCsrf = `ajax:${Date.now()}`;
-  }
-
-  try {
-    const res = await fetch("https://www.linkedin.com/voyager/api/me", {
-      redirect: "manual",
-      headers: {
-        Cookie: `li_at=${cleanLiAt}; JSESSIONID="${cleanCsrf}"`,
-        "csrf-token": cleanCsrf,
-        "x-restli-protocol-version": "2.0.0",
-        "x-li-lang": "en_US",
-        "User-Agent": BROWSER_UA,
-        Accept: "application/vnd.linkedin.normalized+json+2.1",
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(8000),
-    });
-
-    const resSetCookie = (res.headers.get("set-cookie") || "").toLowerCase();
-    if (resSetCookie.includes("delete me")) {
-      return { active: false, status: 401, error: "LinkedIn session cookie was revoked by LinkedIn (delete me)." };
-    }
-
-    if (res.status === 200) {
-      const json = await res.json().catch(() => null);
-      const plainInfo = json?.data || json?.miniProfile || {};
-      const firstName = plainInfo.firstName || plainInfo.localizedFirstName || "";
-      const lastName = plainInfo.lastName || plainInfo.localizedLastName || "";
-      const headline = plainInfo.occupation || plainInfo.headline || "";
-
-      return {
-        active: true,
-        status: 200,
-        profile: { firstName, lastName, headline },
-      };
-    }
-
-    if (res.status === 401 || res.status === 403) {
-      return { active: false, status: res.status, error: "Unauthorized session credentials." };
-    }
-
-    const feedRes = await fetch("https://www.linkedin.com/feed/", {
-      redirect: "manual",
-      headers: {
-        Cookie: `li_at=${cleanLiAt}; JSESSIONID="${cleanCsrf}"`,
-        "User-Agent": BROWSER_UA,
-        Accept: "text/html,application/xhtml+xml",
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(8000),
-    });
-
-    const feedSetCookie = (feedRes.headers.get("set-cookie") || "").toLowerCase();
-    if (feedSetCookie.includes("delete me")) {
-      return { active: false, status: 401, error: "LinkedIn session cookie was revoked by LinkedIn (delete me)." };
-    }
-
-    const location = (feedRes.headers.get("location") || "").toLowerCase();
-    if (
-      location.includes("/login") ||
-      location.includes("/uas/login") ||
-      location.includes("/authwall") ||
-      location.includes("/checkpoint") ||
-      location.includes("/feed") ||
-      location.includes("/voyager/api/me")
-    ) {
-      return { active: false, status: 401, error: "Session redirected away from feed." };
-    }
-
-    if (feedRes.status === 200) {
-      let firstName = "";
-      let lastName = "";
-      let headline = "";
-
-      const html = await feedRes.text().catch(() => "");
-      const fnMatch = html.match(/"firstName"\s*:\s*"([^"]+)"/);
-      const lnMatch = html.match(/"lastName"\s*:\s*"([^"]+)"/);
-      const occMatch = html.match(/"occupation"\s*:\s*"([^"]+)"/);
-      if (fnMatch?.[1]) firstName = fnMatch[1];
-      if (lnMatch?.[1]) lastName = lnMatch[1];
-      if (occMatch?.[1]) headline = occMatch[1];
-
-      return {
-        active: true,
-        status: 200,
-        profile: { firstName, lastName, headline },
-      };
-    }
-
-    return {
-      active: false,
-      status: feedRes.status || res.status,
-      error: "Session verification failed.",
-    };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Network error during verification";
-    return { active: false, error: message };
-  }
 }
 
 /**
@@ -1064,7 +941,6 @@ export async function extractLinkedInSession({
     let codeSubmitted = false;
     let ensuredMethodOnce = false;
     let unresolvedCheckpointChecks = 0;
-    let nonCheckpointChecks = 0;
     let captchaChecks = 0;
 
     while (Date.now() - overallStart < maxBudgetMs) {

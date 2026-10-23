@@ -7,7 +7,6 @@ import Lead from "@/models/Lead";
 import CampaignLead from "@/models/CampaignLead";
 import { decryptConnectionSecrets } from "@/lib/connection-crypto";
 import { getWorkerHealth } from "@/lib/worker-contract";
-import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
 import { invalidateDbCache } from "@/lib/db-cache";
 
 export const runtime = "nodejs";
@@ -87,33 +86,35 @@ export async function POST(req: Request) {
     }
 
     // Runner location and authentication are server-only configuration.
-    let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
+    const workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
+    if (!workerUrl) {
+      return NextResponse.json(
+        { success: false, error: "LinkedIn worker is not configured.", retryable: true },
+        { status: 503 }
+      );
+    }
 
-    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs.
-    if (workerUrl) {
-      try {
-        const health = await getWorkerHealth(workerUrl);
-        if (!health.ok) {
-          console.warn("[send-connection] Worker offline / unreachable, falling back to local runner:", health.error);
-          workerUrl = undefined;
-        } else if (health.outOfDate) {
-          console.warn("[send-connection] worker out of date");
-          return NextResponse.json(
-            {
-              success: false,
-              pending: true,
-              queued: true,
-              retryable: true,
-              stage: "waiting_for_worker_update",
-              message: "The LinkedIn worker is updating. The task is queued and will retry automatically.",
-            },
-            { status: 202 }
-          );
-        }
-      } catch (healthErr) {
-        console.warn("[send-connection] Worker health check failed:", healthErr);
-        workerUrl = undefined;
-      }
+    const health = await getWorkerHealth(workerUrl);
+    if (!health.ok) {
+      console.warn("[send-connection] Worker offline or unreachable:", health.error);
+      return NextResponse.json(
+        { success: false, error: "LinkedIn worker is starting. Please retry shortly.", retryable: true },
+        { status: 503 }
+      );
+    }
+    if (health.outOfDate) {
+      console.warn("[send-connection] worker out of date");
+      return NextResponse.json(
+        {
+          success: false,
+          pending: true,
+          queued: true,
+          retryable: true,
+          stage: "waiting_for_worker_update",
+          message: "The LinkedIn worker is updating. Please retry shortly.",
+        },
+        { status: 202 }
+      );
     }
 
     let result: {
@@ -124,17 +125,24 @@ export async function POST(req: Request) {
       requiresReconnect?: boolean;
     };
 
-    if (workerUrl) {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "Bypass-Tunnel-Reminder": "true",
-        "User-Agent": "SendPilot-Worker-Client/1.0",
-      };
-      const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
-      if (workerSecret) headers["x-worker-secret"] = workerSecret;
+    const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
+    if (!workerSecret) {
+      console.error("[send-connection] LINKEDIN_WORKER_SECRET is not configured.");
+      return NextResponse.json(
+        { success: false, error: "LinkedIn worker authentication is not configured." },
+        { status: 503 }
+      );
+    }
 
-      try {
-        const workerRes = await fetch(`${workerUrl}/api/send-connection`, {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Bypass-Tunnel-Reminder": "true",
+      "User-Agent": "SendPilot-Worker-Client/1.0",
+      "x-worker-secret": workerSecret,
+    };
+
+    try {
+      const workerRes = await fetch(`${workerUrl}/api/send-connection`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -144,29 +152,19 @@ export async function POST(req: Request) {
             jSessionId: jsessionId || undefined,
           }),
           signal: AbortSignal.timeout(45000),
-        });
-
-        const raw = await workerRes.json().catch(() => null);
-        if (!raw) {
-          throw new Error(`Worker returned HTTP ${workerRes.status}`);
-        }
-        result = raw;
-      } catch (workerErr: unknown) {
-        console.warn("[send-connection] Worker runner error, falling back to local:", workerErr);
-        result = await sendLinkedInConnectionWithPlaywright({
-          profileUrl: profileUrl.trim(),
-          liAtCookie: liAt,
-          jSessionId: jsessionId || undefined,
-          note: typeof note === "string" ? note.trim() : undefined,
-        });
-      }
-    } else {
-      result = await sendLinkedInConnectionWithPlaywright({
-        profileUrl: profileUrl.trim(),
-        liAtCookie: liAt,
-        jSessionId: jsessionId || undefined,
-        note: typeof note === "string" ? note.trim() : undefined,
       });
+
+      const raw = await workerRes.json().catch(() => null);
+      if (!raw) {
+        throw new Error(`Worker returned HTTP ${workerRes.status}`);
+      }
+      result = raw;
+    } catch (workerErr: unknown) {
+      console.warn("[send-connection] Worker request failed:", workerErr);
+      return NextResponse.json(
+        { success: false, error: "LinkedIn worker is unavailable. Please retry shortly.", retryable: true },
+        { status: 503 }
+      );
     }
 
     if (!result.success) {
@@ -256,12 +254,12 @@ export async function POST(req: Request) {
       const workspace = await Workspace.findOne({ userId: ctx.userId });
       if (workspace?.step3?.data?.leads && Array.isArray(workspace.step3.data.leads)) {
         let changed = false;
-        workspace.step3.data.leads = workspace.step3.data.leads.map((l: any) => {
-          if (l.id === leadId || (l.linkedinUrl && l.linkedinUrl.includes(cleanUrl))) {
+        workspace.step3.data.leads = workspace.step3.data.leads.map((lead) => {
+          if (lead.id === leadId || lead.linkedinUrl.includes(cleanUrl)) {
             changed = true;
-            return { ...l, status: "invited" };
+            return { ...lead, status: "invited" };
           }
-          return l;
+          return lead;
         });
 
         if (changed) {

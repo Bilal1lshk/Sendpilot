@@ -302,89 +302,8 @@ export function getOrGenerateAccountFingerprint(
   };
 }
 
-const PLAYWRIGHT_REQUIRED_DISABLED_FEATURES = [
-  "AvoidUnnecessaryBeforeUnloadCheckSync",
-  "DestroyProfileOnBrowserClose",
-  "DialMediaRouteProvider",
-  "GlobalMediaControls",
-  "HttpsUpgrades",
-  "LensOverlay",
-  "MediaRouter",
-  "PaintHolding",
-  "ThirdPartyStoragePartitioning",
-  "BlockOriginHeaderModificationOnRedirect",
-  "AvoidCorsURLLoaderRestartOnRedirect",
-  "Translate",
-  "AutoDeElevate",
-  "OptimizationHints",
-  "NetworkTimeServiceQuerying",
-  "AimEnabled",
-  "msForceBrowserSignIn",
-  "msEdgeUpdateLaunchServicesPreferredVersion",
-];
-
 /**
- * Builds clean Chromium launch arguments for @sparticuz/chromium (`chrome-headless-shell`)
- * when launched via `playwright-core`:
- * - Strips `--headless='shell'` / `--headless=new` so Playwright's native `--headless` switch
- *   is not overridden with invalid single-quoted `'shell'` or unsupported `new` mode.
- * - Merges `--disable-features` and `--enable-features` so `sparticuz.args` does not overwrite
- *   Playwright's critical `DestroyProfileOnBrowserClose` and redirect flags.
- */
-function buildServerlessChromiumArgs(rawSparticuzArgs: string[]): string[] {
-  const disabledFeatures = new Set<string>(PLAYWRIGHT_REQUIRED_DISABLED_FEATURES);
-  const enabledFeatures = new Set<string>(["CDPScreenshotNewSurface"]);
-  const filteredArgs: string[] = [];
-
-  for (const arg of rawSparticuzArgs) {
-    if (!arg) continue;
-    // Playwright already passes `--headless`; `--headless='shell'` has literal quotes in spawn()
-    if (arg === "--headless" || arg.startsWith("--headless=")) {
-      continue;
-    }
-    // Strip flags that break Same-Origin Policy checks inside PerimeterX / reCAPTCHA iframes or disable WebGL
-    if (
-      arg === "--disable-web-security" ||
-      arg === "--allow-running-insecure-content" ||
-      arg === "--disable-webgl"
-    ) {
-      continue;
-    }
-    if (arg.startsWith("--disable-features=")) {
-      const list = arg.slice("--disable-features=".length).split(",");
-      for (const item of list) {
-        const clean = item.trim();
-        if (clean) disabledFeatures.add(clean);
-      }
-      continue;
-    }
-    if (arg.startsWith("--enable-features=")) {
-      const list = arg.slice("--enable-features=".length).split(",");
-      for (const item of list) {
-        const clean = item.trim();
-        if (clean) enabledFeatures.add(clean);
-      }
-      continue;
-    }
-    filteredArgs.push(arg);
-  }
-
-  return [
-    ...filteredArgs,
-    `--disable-features=${Array.from(disabledFeatures).join(",")}`,
-    `--enable-features=${Array.from(enabledFeatures).join(",")}`,
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-blink-features=AutomationControlled",
-    "--window-size=1280,800",
-  ];
-}
-
-/**
- * Launches a Chromium browser instance that works in both:
- * 1. Vercel / AWS Lambda serverless environments (via @sparticuz/chromium + playwright-core)
- * 2. Local development on Windows / macOS / Linux (bundled Chromium, Chrome, or Edge)
+ * Launches a local Chromium browser for development or the Render worker.
  */
 export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise<Browser> {
   const isServerless = Boolean(
@@ -393,53 +312,15 @@ export async function launchBrowser(options: LaunchBrowserOptions = {}): Promise
       process.env.AWS_EXECUTION_ENV ||
       process.env.LAMBDA_TASK_ROOT
   );
-  const headless = isServerless ? true : (options.headless ?? true);
+  if (isServerless) {
+    throw new Error("LinkedIn browser automation must run on the configured worker, not Vercel.");
+  }
 
+  const headless = options.headless ?? true;
   const pw = await import("playwright-core");
   const chromium = pw.chromium;
 
-  // 1. Serverless (Vercel / AWS Lambda): use @sparticuz/chromium (chrome-headless-shell)
-  if (isServerless) {
-    const sparticuzModule = await import("@sparticuz/chromium");
-    const sparticuz = sparticuzModule.default || sparticuzModule;
-
-    // Keep graphicsMode enabled so WebGL works (required by LinkedIn anti-bot checks)
-    try {
-      sparticuz.setGraphicsMode = true;
-    } catch {
-      // Ignore if read-only in a future version
-    }
-
-    const executablePath = await sparticuz.executablePath();
-    const serverlessArgs = buildServerlessChromiumArgs(sparticuz.args || []);
-
-    const launchOptions: {
-      args: string[];
-      executablePath: string;
-      headless: boolean;
-      chromiumSandbox: boolean;
-      timeout: number;
-      proxy?: { server: string; username?: string; password?: string };
-    } = {
-      args: serverlessArgs,
-      executablePath,
-      headless: true,
-      chromiumSandbox: false,
-      timeout: 15000,
-    };
-
-    if (options.proxy?.server) {
-      launchOptions.proxy = {
-        server: options.proxy.server,
-        username: options.proxy.username,
-        password: options.proxy.password,
-      };
-    }
-
-    return await chromium.launch(launchOptions);
-  }
-
-  // 2. Local environment: try Playwright's bundled Chromium, then Chrome, then Edge
+  // Try Playwright's bundled Chromium, then Chrome, then Edge.
   const localArgs = [
     "--no-sandbox",
     "--disable-setuid-sandbox",

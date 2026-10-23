@@ -6,7 +6,6 @@ import Lead from "@/models/Lead";
 import CampaignLead from "@/models/CampaignLead";
 import { decryptConnectionSecrets } from "@/lib/connection-crypto";
 import { getWorkerHealth } from "@/lib/worker-contract";
-import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -90,33 +89,35 @@ export async function POST(req: Request) {
     }
 
     // Runner location and authentication are server-only configuration.
-    let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
+    const workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
+    if (!workerUrl) {
+      return NextResponse.json(
+        { success: false, error: "LinkedIn worker is not configured.", retryable: true },
+        { status: 503 }
+      );
+    }
 
-    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs.
-    if (workerUrl) {
-      try {
-        const health = await getWorkerHealth(workerUrl);
-        if (!health.ok) {
-          console.warn("[send-message] Worker offline / unreachable, falling back to local runner:", health.error);
-          workerUrl = undefined;
-        } else if (health.outOfDate) {
-          console.warn("[send-message] worker out of date");
-          return NextResponse.json(
-            {
-              success: false,
-              pending: true,
-              queued: true,
-              retryable: true,
-              stage: "waiting_for_worker_update",
-              message: "The LinkedIn worker is updating. The task is queued and will retry automatically.",
-            },
-            { status: 202 }
-          );
-        }
-      } catch (healthErr) {
-        console.warn("[send-message] Worker health check failed:", healthErr);
-        workerUrl = undefined;
-      }
+    const health = await getWorkerHealth(workerUrl);
+    if (!health.ok) {
+      console.warn("[send-message] Worker offline or unreachable:", health.error);
+      return NextResponse.json(
+        { success: false, error: "LinkedIn worker is starting. Please retry shortly.", retryable: true },
+        { status: 503 }
+      );
+    }
+    if (health.outOfDate) {
+      console.warn("[send-message] worker out of date");
+      return NextResponse.json(
+        {
+          success: false,
+          pending: true,
+          queued: true,
+          retryable: true,
+          stage: "waiting_for_worker_update",
+          message: "The LinkedIn worker is updating. Please retry shortly.",
+        },
+        { status: 202 }
+      );
     }
 
     let result: {
@@ -124,19 +125,27 @@ export async function POST(req: Request) {
       status: string;
       message: string;
       recipientName?: string;
+      requiresReconnect?: boolean;
     };
 
-    if (workerUrl) {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "Bypass-Tunnel-Reminder": "true",
-        "User-Agent": "SendPilot-Worker-Client/1.0",
-      };
-      const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
-      if (workerSecret) headers["x-worker-secret"] = workerSecret;
+    const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
+    if (!workerSecret) {
+      console.error("[send-message] LINKEDIN_WORKER_SECRET is not configured.");
+      return NextResponse.json(
+        { success: false, error: "LinkedIn worker authentication is not configured." },
+        { status: 503 }
+      );
+    }
 
-      try {
-        const workerRes = await fetch(`${workerUrl}/api/send-message`, {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Bypass-Tunnel-Reminder": "true",
+      "User-Agent": "SendPilot-Worker-Client/1.0",
+      "x-worker-secret": workerSecret,
+    };
+
+    try {
+      const workerRes = await fetch(`${workerUrl}/api/send-message`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -146,35 +155,24 @@ export async function POST(req: Request) {
             jSessionId: jsessionId || undefined,
           }),
           signal: AbortSignal.timeout(45000),
-        });
-
-        const raw = await workerRes.json().catch(() => null);
-        if (!raw) {
-          throw new Error(`Worker returned HTTP ${workerRes.status}`);
-        }
-        result = raw;
-      } catch (workerErr: unknown) {
-        // Fallback to direct execution if runner is unreachable
-        console.warn("[send-message] Worker runner error, falling back to local:", workerErr);
-        result = await sendLinkedInMessageWithPlaywright({
-          profileUrl: profileUrl.trim(),
-          message: message.trim(),
-          liAtCookie: liAt,
-          jSessionId: jsessionId || undefined,
-        });
-      }
-    } else {
-      result = await sendLinkedInMessageWithPlaywright({
-        profileUrl: profileUrl.trim(),
-        message: message.trim(),
-        liAtCookie: liAt,
-        jSessionId: jsessionId || undefined,
       });
+
+      const raw = await workerRes.json().catch(() => null);
+      if (!raw) {
+        throw new Error(`Worker returned HTTP ${workerRes.status}`);
+      }
+      result = raw;
+    } catch (workerErr: unknown) {
+      console.warn("[send-message] Worker request failed:", workerErr);
+      return NextResponse.json(
+        { success: false, error: "LinkedIn worker is unavailable. Please retry shortly.", retryable: true },
+        { status: 503 }
+      );
     }
 
     if (!result.success) {
       const isAuthError =
-        (result as any).requiresReconnect ||
+        result.requiresReconnect ||
         result.message.toLowerCase().includes("reconnect") ||
         result.message.toLowerCase().includes("re-authenticate") ||
         result.message.toLowerCase().includes("expired") ||

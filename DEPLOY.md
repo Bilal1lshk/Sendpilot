@@ -10,6 +10,8 @@ This repo deploys the same `main` branch to two targets without manual branch co
 - Keep the shared worker contract in `src/lib/worker-contract.ts`.
 - Update the version only when the worker API contract changes.
 - Reuse the same `LINKEDIN_WORKER_SECRET`, `ENCRYPTION_KEY`, and `DATABASE_URL` values in both providers.
+- `DATABASE_URL` is accepted as a fallback for `MONGODB_URI`, and `ENCRYPTION_KEY` is accepted as a fallback for `COOKIE_ENC_KEY`.
+- LinkedIn browser operations run on the Render worker. Vercel API routes dispatch to Render and do not launch Chromium locally; an unavailable worker returns a retryable response.
 
 ## Render
 
@@ -22,7 +24,7 @@ This repo deploys the same `main` branch to two targets without manual branch co
 
 - Vercel is a standard Next.js deployment from `main`.
 - `vercel.json`'s `ignoreCommand` skips builds when only worker or deployment files changed.
-- Do not add Playwright browser installation to the Vercel build; keep the worker isolated in Docker.
+- Do not add Playwright browser installation to the Vercel build; keep the worker and Chromium binaries isolated in Docker.
 - Set the environment variables in the Vercel project:
   - `LINKEDIN_WORKER_URL`
   - `LINKEDIN_WORKER_SECRET`

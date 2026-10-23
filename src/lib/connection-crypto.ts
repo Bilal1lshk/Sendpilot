@@ -7,20 +7,20 @@ type EncryptedBlob = {
 };
 
 function getKey(): Buffer {
-  let encodedKey = process.env.COOKIE_ENC_KEY;
+  let encodedKey = process.env.COOKIE_ENC_KEY || process.env.ENCRYPTION_KEY;
   if (!encodedKey && typeof process.loadEnvFile === "function") {
     try {
       process.loadEnvFile(".env");
-      encodedKey = process.env.COOKIE_ENC_KEY;
+      encodedKey = process.env.COOKIE_ENC_KEY || process.env.ENCRYPTION_KEY;
     } catch {}
   }
   if (!encodedKey) {
-    throw new Error("COOKIE_ENC_KEY must be configured on the server");
+    throw new Error("COOKIE_ENC_KEY or ENCRYPTION_KEY must be configured on the server");
   }
 
   const key = Buffer.from(encodedKey, "base64");
   if (key.length !== 32 || key.toString("base64") !== encodedKey) {
-    throw new Error("COOKIE_ENC_KEY must be a base64-encoded 32-byte key");
+    throw new Error("COOKIE_ENC_KEY or ENCRYPTION_KEY must be a base64-encoded 32-byte key");
   }
   return key;
 }

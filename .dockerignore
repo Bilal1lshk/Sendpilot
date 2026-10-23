@@ -6,7 +6,6 @@ tsconfig.tsbuildinfo
 node_modules/
 .env
 .env.*
-!.env.example
 
 # ── Tunnel state ──────────────────────────────────────────────────────────────
 .tunnel-url

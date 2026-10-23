@@ -7,7 +7,6 @@ import Workspace from "@/models/Workspace";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import { decryptConnectionSecrets } from "@/lib/connection-crypto";
 import { getWorkerHealth } from "@/lib/worker-contract";
-import { extractSearchLeadsWithPlaywright } from "@/lib/playwright-linkedin-extractor";
 import { invalidateDbCache } from "@/lib/db-cache";
 
 export const runtime = "nodejs";
@@ -27,6 +26,14 @@ interface ExtractedLead {
   icpScore: number;
   status?: string;
   source?: string;
+}
+
+interface PlaywrightSearchResult {
+  leads: ExtractedLead[];
+  authwallDetected: boolean;
+  requiresReconnect?: boolean;
+  error?: string;
+  pagesScraped?: number;
 }
 
 function generateFallbackLeads(keywords: string, location: string, count: number): ExtractedLead[] {
@@ -414,74 +421,77 @@ export async function POST(req: Request) {
         );
       }
 
-      let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
-      if (workerUrl) {
-        try {
-          const health = await getWorkerHealth(workerUrl);
-          if (!health.ok) {
-            console.warn("[extractor/linkedin] Worker offline / unreachable, falling back to local runner:", health.error);
-            workerUrl = undefined;
-          } else if (health.outOfDate) {
-            console.warn("[extractor/linkedin] worker out of date");
-            return NextResponse.json(
-              {
-                success: false,
-                pending: true,
-                queued: true,
-                retryable: true,
-                stage: "waiting_for_worker_update",
-                message: "The LinkedIn worker is updating. Your extraction request is queued and will retry automatically.",
-              },
-              { status: 202 }
-            );
-          }
-        } catch {
-          workerUrl = undefined;
-        }
+      const workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
+      if (!workerUrl) {
+        return NextResponse.json(
+          { success: false, error: "LinkedIn worker is not configured.", retryable: true },
+          { status: 503 }
+        );
       }
 
-      let pwResult: Awaited<ReturnType<typeof extractSearchLeadsWithPlaywright>>;
-      if (workerUrl) {
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-          "Bypass-Tunnel-Reminder": "true",
-          "User-Agent": "SendPilot-Worker-Client/1.0",
-        };
-        const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
-        if (workerSecret) headers["x-worker-secret"] = workerSecret;
+      const health = await getWorkerHealth(workerUrl);
+      if (!health.ok) {
+        console.warn("[extractor/linkedin] Worker is offline or unreachable:", health.error);
+        return NextResponse.json(
+          { success: false, error: "LinkedIn worker is starting. Please retry shortly.", retryable: true },
+          { status: 503 }
+        );
+      }
+      if (health.outOfDate) {
+        console.warn("[extractor/linkedin] worker out of date");
+        return NextResponse.json(
+          {
+            success: false,
+            pending: true,
+            queued: true,
+            retryable: true,
+            stage: "waiting_for_worker_update",
+            message: "The LinkedIn worker is updating. Please retry shortly.",
+          },
+          { status: 202 }
+        );
+      }
 
-        try {
-          const workerRes = await fetch(`${workerUrl}/api/extract-leads`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              searchUrl: resolvedSearchUrl,
-              liAtCookie: resolvedLiAt,
-              jSessionId: resolvedJSession || undefined,
-              maxLeads: Number(maxLeads) || 10,
-            }),
-            signal: AbortSignal.timeout(50000),
-          });
-          const raw = await workerRes.json().catch(() => null);
-          if (!raw || !Array.isArray(raw.leads)) {
-            throw new Error(`Worker returned HTTP ${workerRes.status}`);
-          }
-          pwResult = raw;
-        } catch {
-          pwResult = await extractSearchLeadsWithPlaywright({
+      const workerSecret = process.env.LINKEDIN_WORKER_SECRET?.trim();
+      if (!workerSecret) {
+        console.error("[extractor/linkedin] LINKEDIN_WORKER_SECRET is not configured.");
+        return NextResponse.json(
+          { success: false, error: "LinkedIn worker authentication is not configured." },
+          { status: 503 }
+        );
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Bypass-Tunnel-Reminder": "true",
+        "User-Agent": "SendPilot-Worker-Client/1.0",
+        "x-worker-secret": workerSecret,
+      };
+
+      let pwResult: PlaywrightSearchResult;
+      try {
+        const workerRes = await fetch(`${workerUrl}/api/extract-leads`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
             searchUrl: resolvedSearchUrl,
             liAtCookie: resolvedLiAt,
             jSessionId: resolvedJSession || undefined,
             maxLeads: Number(maxLeads) || 10,
-          });
-        }
-      } else {
-        pwResult = await extractSearchLeadsWithPlaywright({
-          searchUrl: resolvedSearchUrl,
-          liAtCookie: resolvedLiAt,
-          jSessionId: resolvedJSession || undefined,
-          maxLeads: Number(maxLeads) || 10,
+          }),
+          signal: AbortSignal.timeout(50000),
         });
+        const raw = (await workerRes.json().catch(() => null)) as PlaywrightSearchResult | null;
+        if (!workerRes.ok || !raw || !Array.isArray(raw.leads)) {
+          throw new Error(`Worker returned an invalid response (HTTP ${workerRes.status}).`);
+        }
+        pwResult = raw;
+      } catch (workerError) {
+        console.error("[extractor/linkedin] Worker extraction failed:", workerError);
+        return NextResponse.json(
+          { success: false, error: "LinkedIn worker is unavailable. Please retry shortly.", retryable: true },
+          { status: 503 }
+        );
       }
 
       if (pwResult.leads.length > 0) {
