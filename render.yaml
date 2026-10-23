@@ -2,34 +2,44 @@ services:
   - type: web
     name: sendpilot-worker
     runtime: docker
-    # Swap to "standard" ($7/mo, 512 MB → 1 GB) or point at a custom host
-    # without any other changes — same image, same env vars.
     plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /health
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - worker/**
+        - src/lib/**
+        - Dockerfile
+        - package.json
+        - package-lock.json
+      ignoredPaths:
+        - app/**
+        - src/app/**
+        - public/**
+        - "**/*.md"
 
     envVars:
-      # Render injects PORT automatically; we mirror it here for explicitness.
       - key: PORT
         value: "10000"
 
-      # ── Secrets (fill in Render dashboard → Environment → Secret Files) ──
       - key: LINKEDIN_WORKER_SECRET
-        sync: false          # generate with: openssl rand -hex 32
+        sync: false
 
       - key: DATABASE_URL
-        sync: false          # MongoDB Atlas connection string
+        sync: false
 
       - key: ENCRYPTION_KEY
-        sync: false          # same AES key the Next.js app uses to decrypt sessions
+        sync: false
 
-      # ── Behaviour knobs ──────────────────────────────────────────────────
       - key: MAX_CONCURRENCY
-        value: "1"           # free tier: one browser at a time
+        value: "1"
 
       - key: HEADLESS
         value: "true"
 
-      # Worker knows it's on Render; disables localtunnel / cloudflared
       - key: AUTO_TUNNEL
         value: "false"
 

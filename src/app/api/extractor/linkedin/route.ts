@@ -6,6 +6,7 @@ import connectDB from "@/lib/mongodb";
 import Workspace from "@/models/Workspace";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import { decryptConnectionSecrets } from "@/lib/connection-crypto";
+import { getWorkerHealth } from "@/lib/worker-contract";
 import { extractSearchLeadsWithPlaywright } from "@/lib/playwright-linkedin-extractor";
 import { invalidateDbCache } from "@/lib/db-cache";
 
@@ -416,13 +417,23 @@ export async function POST(req: Request) {
       let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
       if (workerUrl) {
         try {
-          const healthRes = await fetch(`${workerUrl}/health`, {
-            method: "GET",
-            headers: { "Bypass-Tunnel-Reminder": "true" },
-            signal: AbortSignal.timeout(2500),
-          });
-          if (!healthRes.ok) {
-            throw new Error(`Worker health check failed: HTTP ${healthRes.status}`);
+          const health = await getWorkerHealth(workerUrl);
+          if (!health.ok) {
+            console.warn("[extractor/linkedin] Worker offline / unreachable, falling back to local runner:", health.error);
+            workerUrl = undefined;
+          } else if (health.outOfDate) {
+            console.warn("[extractor/linkedin] worker out of date");
+            return NextResponse.json(
+              {
+                success: false,
+                pending: true,
+                queued: true,
+                retryable: true,
+                stage: "waiting_for_worker_update",
+                message: "The LinkedIn worker is updating. Your extraction request is queued and will retry automatically.",
+              },
+              { status: 202 }
+            );
           }
         } catch {
           workerUrl = undefined;

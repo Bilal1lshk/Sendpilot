@@ -63,8 +63,10 @@ async function patchPlaywrightCore(): Promise<void> {
   const originalLaunch = chromium.launch.bind(chromium);
 
   // Patch chromium.launch to inject low-memory flags and route interception
-  // @ts-expect-error monkey-patching launch
-  chromium.launch = async function renderOptimisedLaunch(
+  const patchedLaunch = chromium as typeof chromium & {
+    launch: typeof originalLaunch;
+  };
+  patchedLaunch.launch = async function renderOptimisedLaunch(
     opts: Parameters<typeof originalLaunch>[0] = {}
   ) {
     const mergedArgs = Array.from(new Set([...(opts?.args ?? []), ...RENDER_CHROMIUM_ARGS]));
@@ -72,8 +74,12 @@ async function patchPlaywrightCore(): Promise<void> {
 
     // Intercept newContext on the returned browser to automatically block heavy media
     const originalNewContext = browser.newContext.bind(browser);
-    // @ts-expect-error monkey-patching newContext
-    browser.newContext = async function renderNewContext(contextOpts: Parameters<typeof originalNewContext>[0]) {
+    const browserWithPatchedContext = browser as typeof browser & {
+      newContext: typeof originalNewContext;
+    };
+    browserWithPatchedContext.newContext = async function renderNewContext(
+      contextOpts: Parameters<typeof originalNewContext>[0]
+    ) {
       const context = await originalNewContext(contextOpts);
 
       // Block images, media, and fonts on non-essential domains to stay within 512 MB RAM

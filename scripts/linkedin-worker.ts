@@ -25,6 +25,7 @@ import { extractLinkedInSession, type ExtractedSessionResult } from "@/lib/linke
 import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
 import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
 import { extractSearchLeadsWithPlaywright } from "@/lib/playwright-linkedin-extractor";
+import { WORKER_CONTRACT_VERSION } from "@/lib/worker-contract";
 
 const PORT = parseInt(process.env.WORKER_PORT || process.env.PORT || "4000", 10);
 const HOST = process.env.WORKER_HOST || "0.0.0.0";
@@ -346,9 +347,11 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
-        status: "healthy",
+        status: "ok",
         service: "sendpilot-linkedin-worker",
         version: "1.0.0",
+        contractVersion: WORKER_CONTRACT_VERSION,
+        commit: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "local",
         uptimeSeconds: Math.floor(process.uptime()),
         tunnelUrl: activeTunnelUrl,
         tunnelProvider: tunnelProviderName,

@@ -5,6 +5,7 @@ import LinkedInConnection from "@/models/LinkedInConnection";
 import Lead from "@/models/Lead";
 import CampaignLead from "@/models/CampaignLead";
 import { decryptConnectionSecrets } from "@/lib/connection-crypto";
+import { getWorkerHealth } from "@/lib/worker-contract";
 import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
 
 export const runtime = "nodejs";
@@ -91,19 +92,29 @@ export async function POST(req: Request) {
     // Runner location and authentication are server-only configuration.
     let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
 
-    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
+    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs.
     if (workerUrl) {
       try {
-        const healthRes = await fetch(`${workerUrl}/health`, {
-          method: "GET",
-          headers: { "Bypass-Tunnel-Reminder": "true" },
-          signal: AbortSignal.timeout(2500),
-        });
-        if (!healthRes.ok) {
-          throw new Error(`Worker health check failed: HTTP ${healthRes.status}`);
+        const health = await getWorkerHealth(workerUrl);
+        if (!health.ok) {
+          console.warn("[send-message] Worker offline / unreachable, falling back to local runner:", health.error);
+          workerUrl = undefined;
+        } else if (health.outOfDate) {
+          console.warn("[send-message] worker out of date");
+          return NextResponse.json(
+            {
+              success: false,
+              pending: true,
+              queued: true,
+              retryable: true,
+              stage: "waiting_for_worker_update",
+              message: "The LinkedIn worker is updating. The task is queued and will retry automatically.",
+            },
+            { status: 202 }
+          );
         }
       } catch (healthErr) {
-        console.warn("[send-message] Worker offline / unreachable, falling back to local runner:", healthErr);
+        console.warn("[send-message] Worker health check failed:", healthErr);
         workerUrl = undefined;
       }
     }
