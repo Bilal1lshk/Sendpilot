@@ -797,28 +797,61 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
   await page.waitForTimeout(200);
   await page.mouse.move(180, 260).catch(() => {});
 
-  const emailInput = page
-    .locator('#username:visible, input[name="session_key"]:visible, input[type="email"]:visible')
-    .first();
+  const loginFormSelectors = [
+    '#username',
+    'input[name="session_key"]',
+    'input[type="email"]',
+    'input[name="login"]',
+  ].join(", ");
+
+  const passwordSelectors = [
+    '#password',
+    'input[name="session_password"]',
+    'input[type="password"]',
+  ].join(", ");
+
+  const emailInput = page.locator(loginFormSelectors).first();
+  const passInput = page.locator(passwordSelectors).first();
+
+  const bodyText = await page.locator("body").innerText().catch(() => "");
+  const url = page.url();
+  const isSecurityPage =
+    url.includes("/checkpoint/") ||
+    bodyText.toLowerCase().includes("verify your identity") ||
+    bodyText.toLowerCase().includes("security check") ||
+    bodyText.toLowerCase().includes("captcha") ||
+    bodyText.toLowerCase().includes("challenge");
+
   try {
-    await emailInput.waitFor({ state: "visible", timeout: 10000 });
+    await emailInput.waitFor({ state: "visible", timeout: 15000 });
   } catch (error) {
+    if (isSecurityPage) {
+      throw new Error(
+        "LinkedIn redirected to a security challenge page instead of the normal login form. Please use the 'Paste Cookies' tab or retry from a clean browser session."
+      );
+    }
     if (navigationTimedOut) {
       throw new Error("LinkedIn did not load the login form before the navigation timed out.");
     }
     throw error;
   }
+
   await emailInput.click().catch(() => {});
   await emailInput.fill(email);
 
   await page.waitForTimeout(100);
 
-  const passInput = page
-    .locator(
-      '#password:visible, input[name="session_password"]:visible, input[type="password"]:visible'
-    )
-    .first();
-  await passInput.waitFor({ state: "visible", timeout: 8000 });
+  try {
+    await passInput.waitFor({ state: "visible", timeout: 10000 });
+  } catch (error) {
+    if (isSecurityPage) {
+      throw new Error(
+        "LinkedIn is blocking the login page with a security challenge instead of displaying the password field."
+      );
+    }
+    throw error;
+  }
+
   await passInput.click().catch(() => {});
   await passInput.fill(password);
 

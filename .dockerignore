@@ -16,6 +16,10 @@ node_modules/
 .gitignore
 .agents/
 .vscode/
+
+# ── Docs / screenshots / generated artefacts ─────────────────────────────────
+docs/
+screenshots/
 *.md
 
 # ── Test files ────────────────────────────────────────────────────────────────

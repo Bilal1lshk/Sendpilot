@@ -9,6 +9,7 @@ import {
 } from "@/lib/linkedin-session-extractor";
 import { createConnectionId, disconnectOtherAccounts } from "@/lib/linkedin-connections";
 import { encryptConnectionSecrets, decryptConnectionSecrets } from "@/lib/connection-crypto";
+import { getWorkerHealth } from "@/lib/worker-contract";
 import LinkedInConnection from "@/models/LinkedInConnection";
 import { connectDB } from "@/lib/mongodb";
 
@@ -149,19 +150,30 @@ export async function POST(req: Request) {
     let result: ExtractedSessionResult;
     let workerUrl = process.env.LINKEDIN_WORKER_URL?.trim().replace(/\/+$/, "");
 
-    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs
+    // Fast pre-flight health check on worker URL to prevent 502 Bad Gateway and latency hangs.
+    // If the worker version is stale, queue the request and wait for the deployed worker to catch up.
     if (workerUrl) {
       try {
-        const healthRes = await fetch(`${workerUrl}/health`, {
-          method: "GET",
-          headers: { "Bypass-Tunnel-Reminder": "true" },
-          signal: AbortSignal.timeout(2500),
-        });
-        if (!healthRes.ok) {
-          throw new Error(`Worker health check failed: HTTP ${healthRes.status}`);
+        const health = await getWorkerHealth(workerUrl);
+        if (!health.ok) {
+          console.warn("[extract-session] Worker offline / unreachable, falling back to local runner:", health.error);
+          workerUrl = undefined;
+        } else if (health.outOfDate) {
+          console.warn("[extract-session] worker out of date");
+          return NextResponse.json(
+            {
+              success: false,
+              pending: true,
+              queued: true,
+              retryable: true,
+              stage: "waiting_for_worker_update",
+              message: "The LinkedIn worker is updating. Your request is queued and will retry automatically.",
+            },
+            { status: 202 }
+          );
         }
       } catch (healthErr) {
-        console.warn("[extract-session] Worker offline / unreachable, falling back to local runner:", healthErr);
+        console.warn("[extract-session] Worker health check failed:", healthErr);
         workerUrl = undefined;
       }
     }

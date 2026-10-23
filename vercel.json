@@ -1,0 +1,3 @@
+{
+  "ignoreCommand": "bash -lc 'CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git ls-tree -r --name-only --full-tree HEAD); if echo \"$CHANGED\" | grep -Eq \"^(worker/|Dockerfile|render.yaml|package.json|package-lock.json)\" && ! echo \"$CHANGED\" | grep -Eq \"^(app/|src/app/|public/|.*\\.md$)\"; then exit 0; fi; exit 1'"
+}

@@ -6,10 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "typecheck": "tsc --noEmit",
     "worker": "npx tsx scripts/linkedin-worker.ts --lt",
     "worker:headed": "npx tsx scripts/linkedin-worker.ts --headed --lt",
     "worker:local": "npx tsx scripts/linkedin-worker.ts --no-tunnel",
     "lint": "eslint",
+    "check:playwright": "node scripts/check-playwright-version.mjs",
     "test:security": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
