@@ -779,10 +779,18 @@ async function createPendingChallengeToken(
  * waiting so it resolves immediately once LinkedIn responds.
  */
 async function performCheckpointLogin(page: Page, email: string, password: string) {
-  await page.goto("https://www.linkedin.com/checkpoint/lg/login", {
-    waitUntil: "domcontentloaded",
-    timeout: 12000,
-  });
+  let navigationTimedOut = false;
+  try {
+    await page.goto("https://www.linkedin.com/checkpoint/lg/login", {
+      waitUntil: "commit",
+      timeout: 20000,
+    });
+  } catch (error) {
+    if (!(error instanceof Error) || error.name !== "TimeoutError") {
+      throw error;
+    }
+    navigationTimedOut = true;
+  }
 
   // Allow anti-bot scripts (merchantpool1.linkedin.com, li.protechts.net, recaptcha/enterprise)
   // to initialize before typing credentials so `apfc` telemetry is populated naturally
@@ -792,7 +800,14 @@ async function performCheckpointLogin(page: Page, email: string, password: strin
   const emailInput = page
     .locator('#username:visible, input[name="session_key"]:visible, input[type="email"]:visible')
     .first();
-  await emailInput.waitFor({ state: "visible", timeout: 8000 });
+  try {
+    await emailInput.waitFor({ state: "visible", timeout: 10000 });
+  } catch (error) {
+    if (navigationTimedOut) {
+      throw new Error("LinkedIn did not load the login form before the navigation timed out.");
+    }
+    throw error;
+  }
   await emailInput.click().catch(() => {});
   await emailInput.fill(email);
 

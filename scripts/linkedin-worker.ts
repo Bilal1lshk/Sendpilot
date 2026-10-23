@@ -24,6 +24,7 @@ if (fs.existsSync(".env")) {
 import { extractLinkedInSession, type ExtractedSessionResult } from "@/lib/linkedin-session-extractor";
 import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
 import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
+import { extractSearchLeadsWithPlaywright } from "@/lib/playwright-linkedin-extractor";
 
 const PORT = parseInt(process.env.WORKER_PORT || process.env.PORT || "4000", 10);
 const HOST = process.env.WORKER_HOST || "0.0.0.0";
@@ -608,16 +609,143 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 6. Lead Extraction Endpoint (Search URL via residential worker IP)
+  if (req.method === "POST" && url.pathname === "/api/extract-leads") {
+    let bodyText = "";
+    req.on("data", (chunk) => {
+      bodyText += chunk;
+      if (bodyText.length > 512 * 1024) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: false, error: "Payload too large" }));
+        req.destroy();
+      }
+    });
+
+    req.on("end", async () => {
+      try {
+        const body = JSON.parse(bodyText || "{}");
+        const { searchUrl, liAtCookie, jSessionId, maxLeads } = body;
+
+        if (!searchUrl || !liAtCookie) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              leads: [],
+              authwallDetected: false,
+              error: "Missing required 'searchUrl' or 'liAtCookie' parameter.",
+              pagesScraped: 0,
+            })
+          );
+          return;
+        }
+
+        log("INFO", `[worker] Extracting leads from search URL: ${searchUrl} (maxLeads: ${maxLeads || 10})`);
+        const result = await extractSearchLeadsWithPlaywright({
+          searchUrl,
+          liAtCookie,
+          jSessionId,
+          maxLeads: Number(maxLeads) || 10,
+        });
+
+        const statusCode = result.leads.length > 0 ? 200 : 422;
+        log(
+          "INFO",
+          `[worker] Lead extraction completed -> ${result.leads.length} leads (pages: ${result.pagesScraped})`
+        );
+
+        res.writeHead(statusCode, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        log("ERROR", `Unhandled exception during extract-leads: ${errMsg}`);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ leads: [], authwallDetected: false, error: errMsg, pagesScraped: 0 }));
+      }
+    });
+
+    return;
+  }
+
   // 404 for unknown endpoints
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Endpoint not found" }));
 });
+
+// Self-healing tunnel health monitor
+// Localtunnel can silently freeze (SSL renegotiation hangs) without its process exiting.
+// This monitor probes the public URL every 30s and force-restarts the tunnel when frozen.
+let tunnelHealthCheckTimer: NodeJS.Timeout | null = null;
+const TUNNEL_HEALTH_INTERVAL_MS = 30_000;
+const TUNNEL_HEALTH_TIMEOUT_MS = 6_000;
+let consecutiveTunnelFailures = 0;
+const MAX_TUNNEL_FAILURES_BEFORE_RESTART = 2;
+
+async function checkTunnelHealth(): Promise<boolean> {
+  if (!activeTunnelUrl || isShuttingDown || disableTunnel) return true;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TUNNEL_HEALTH_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${activeTunnelUrl}/health`, {
+        method: "GET",
+        headers: { "Bypass-Tunnel-Reminder": "true", "User-Agent": "SendPilot-TunnelHealthCheck/1.0" },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      return res.ok;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return false;
+  }
+}
+
+async function runTunnelHealthMonitor() {
+  if (isShuttingDown || disableTunnel) return;
+
+  const healthy = await checkTunnelHealth();
+
+  if (healthy) {
+    consecutiveTunnelFailures = 0;
+  } else {
+    consecutiveTunnelFailures++;
+    log(
+      "WARN",
+      `Tunnel health check failed (${consecutiveTunnelFailures}/${MAX_TUNNEL_FAILURES_BEFORE_RESTART}): ${activeTunnelUrl}`
+    );
+
+    if (consecutiveTunnelFailures >= MAX_TUNNEL_FAILURES_BEFORE_RESTART) {
+      consecutiveTunnelFailures = 0;
+      log("WARN", "Tunnel appears frozen. Force-killing tunnel process and restarting...");
+      if (tunnelProcess) {
+        try { tunnelProcess.kill("SIGKILL"); } catch {}
+        tunnelProcess = null;
+      }
+      activeTunnelUrl = null;
+      persistTunnelUrl(null);
+      // Small delay to let OS clean up the port binding
+      await new Promise((r) => setTimeout(r, 1500));
+      if (!isShuttingDown) {
+        await startTunnel(PORT);
+        log("INFO", `Tunnel restarted. New URL: ${activeTunnelUrl || "unknown"}`);
+      }
+    }
+  }
+
+  if (!isShuttingDown && !disableTunnel) {
+    tunnelHealthCheckTimer = setTimeout(runTunnelHealthMonitor, TUNNEL_HEALTH_INTERVAL_MS);
+  }
+}
 
 // Start the HTTP server
 server.listen(PORT, HOST, async () => {
   log("INFO", `Worker HTTP server listening on http://${HOST}:${PORT}`);
   if (!disableTunnel) {
     await startTunnel(PORT);
+    // Start tunnel health monitor 30s after initial startup
+    tunnelHealthCheckTimer = setTimeout(runTunnelHealthMonitor, TUNNEL_HEALTH_INTERVAL_MS);
+    log("INFO", `Tunnel self-healing monitor started (checks every ${TUNNEL_HEALTH_INTERVAL_MS / 1000}s).`);
   } else {
     printBanner(PORT, null, "Local Only");
   }
@@ -627,6 +755,7 @@ server.listen(PORT, HOST, async () => {
 function handleShutdown(signal: string) {
   isShuttingDown = true;
   if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (tunnelHealthCheckTimer) clearTimeout(tunnelHealthCheckTimer);
   persistTunnelUrl(null);
   log("INFO", `Received ${signal}. Shutting down worker...`);
   if (tunnelProcess) {

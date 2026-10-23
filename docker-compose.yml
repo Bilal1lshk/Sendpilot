@@ -1,0 +1,21 @@
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sendpilot-worker
+    restart: unless-stopped
+    ports:
+      - "10000:10000"
+    environment:
+      - PORT=10000
+      - NODE_ENV=production
+      - NODE_OPTIONS=--max-old-space-size=512
+      - HEADLESS=true
+      - AUTO_TUNNEL=false
+      - MAX_CONCURRENCY=1
+      - LINKEDIN_WORKER_SECRET=${LINKEDIN_WORKER_SECRET}
+      - DATABASE_URL=${DATABASE_URL}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    env_file:
+      - .env.worker

@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from "playwright-core";
+import type { BrowserContext, Page, Response } from "playwright-core";
 
 export interface LinkedInSessionCredentials {
   liAt: string;
@@ -7,9 +7,14 @@ export interface LinkedInSessionCredentials {
 
 export function cleanCookieValue(raw: string, cookieName: string): string {
   let val = raw.trim();
-  const prefixRegex = new RegExp(`^${cookieName}\\s*=\\s*`, "i");
-  val = val.replace(prefixRegex, "").replace(/;.*$/, "").trim();
-  return val;
+  const namedMatch = val.match(new RegExp(`(?:^|;\\s*)${cookieName}\\s*=\\s*([^;]+)`, "i"));
+  if (namedMatch?.[1]) {
+    val = namedMatch[1].trim();
+  } else {
+    const prefixRegex = new RegExp(`^${cookieName}\\s*=\\s*`, "i");
+    val = val.replace(prefixRegex, "").replace(/;.*$/, "").trim();
+  }
+  return val.replace(/^["']+|["']+$/g, "").trim();
 }
 
 /**
@@ -45,21 +50,21 @@ export function normalizeLinkedInProfileUrl(profileUrl: string): string {
 
 /**
  * Builds resilient LinkedIn cookies:
- * - Domain set to .linkedin.com and .www.linkedin.com
- * - SameSite explicitly set to "Lax" (browser default, avoids cross-site rejection)
+ * - Uses .www.linkedin.com for li_at and JSESSIONID to match LinkedIn's Set-Cookie domain
+ *   and prevent duplicate/stale .linkedin.com cookies from causing 302 redirect loops
+ * - SameSite explicitly set to "Lax"
  * - Auto-generates standard JSESSIONID / CSRF token if missing
- * - Adds edge routing and language cookies (bcookie, bscookie, lang, liap)
  */
 export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
+  const sanitizedLiAt = cleanCookieValue(cleanLiAt, "li_at");
   const cleanJSessionRaw = rawJSession
-    ? cleanCookieValue(rawJSession, "JSESSIONID").replace(/^"+|"+$/g, "")
+    ? cleanCookieValue(rawJSession, "JSESSIONID")
     : "";
 
   const csrfToken =
     cleanJSessionRaw ||
     `ajax:${Math.floor(1000000000000000 + Math.random() * 9000000000000000)}`;
 
-  const domains = [".linkedin.com"];
   const cookies: Array<{
     name: string;
     value: string;
@@ -68,36 +73,42 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
     httpOnly: boolean;
     secure: boolean;
     sameSite: "Lax";
-  }> = [];
-
-  for (const domain of domains) {
-    cookies.push(
-      {
-        name: "li_at",
-        value: cleanLiAt,
-        domain,
-        path: "/",
-        httpOnly: true,
-        secure: true,
-        sameSite: "Lax",
-      },
-      {
-        name: "JSESSIONID",
-        value: `"${csrfToken}"`,
-        domain,
-        path: "/",
-        httpOnly: false,
-        secure: true,
-        sameSite: "Lax",
-      }
-    );
-  }
+  }> = [
+    {
+      name: "li_at",
+      value: sanitizedLiAt,
+      domain: ".www.linkedin.com",
+      path: "/",
+      httpOnly: true,
+      secure: true,
+      sameSite: "Lax",
+    },
+    {
+      name: "JSESSIONID",
+      value: `"${csrfToken}"`,
+      domain: ".www.linkedin.com",
+      path: "/",
+      httpOnly: false,
+      secure: true,
+      sameSite: "Lax",
+    },
+    {
+      name: "lang",
+      value: "v=2&lang=en-us",
+      domain: ".linkedin.com",
+      path: "/",
+      httpOnly: false,
+      secure: true,
+      sameSite: "Lax",
+    },
+  ];
 
   return { cookies, csrfToken };
 }
 
 /**
- * Injects session cookies, browser headers, and anti-webdriver evasions.
+ * Injects session cookies and anti-webdriver evasions without clobbering
+ * the matching User-Agent / Client Hints configured by createStealthContext.
  */
 export async function setupLinkedInContext(
   context: BrowserContext,
@@ -109,20 +120,10 @@ export async function setupLinkedInContext(
 
   await context.addCookies(cookies);
 
-  // Note: Do NOT set "csrf-token" on top-level document GET navigation,
-  // as LinkedIn's reverse proxy rejects document requests bearing ajax csrf-token headers with HTTP 400.
-  await context.setExtraHTTPHeaders({
-    "accept-language": "en-US,en;q=0.9",
-    "sec-ch-ua":
-      '"Chromium";v="133", "Not;A=Brand";v="24", "Google Chrome";v="133"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"Windows"',
-  });
-
   await page.addInitScript(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    Object.defineProperty(navigator, "webdriver", { get: () => false });
     // @ts-expect-error chrome polyfill for stealth
-    window.chrome = { runtime: {} };
+    if (!window.chrome) window.chrome = { runtime: {} };
   });
 
   return csrfToken;
@@ -139,16 +140,21 @@ export async function warmupLinkedInSession(
 ): Promise<{ ok: boolean; error?: string; requiresReconnect?: boolean }> {
   let cookieRevoked = false;
 
-  const onResponse = (response: any) => {
+  const onResponse = async (response: Response) => {
     try {
       const headers = response.headers();
-      const status = response.status();
-      const setCookie = headers["set-cookie"] || "";
+      const clearSiteData = (headers["clear-site-data"] || "").toLowerCase();
+      const setCookieList = await response.headerValues("set-cookie").catch(() => [
+        headers["set-cookie"] || "",
+      ]);
+      const setCookieCombined = setCookieList.join("\n").toLowerCase();
+
       if (
-        status === 999 ||
-        setCookie.includes("li_at=delete me") ||
-        setCookie.includes("li_at=delete%20me") ||
-        setCookie.includes('li_at=""')
+        clearSiteData.includes("storage") ||
+        clearSiteData.includes("cookies") ||
+        setCookieCombined.includes("li_at=delete me") ||
+        setCookieCombined.includes("li_at=delete%20me") ||
+        setCookieCombined.includes('li_at=""')
       ) {
         cookieRevoked = true;
       }
@@ -166,12 +172,12 @@ export async function warmupLinkedInSession(
     page.off("response", onResponse);
 
     const status = res?.status() || 200;
-    if (status === 999 || status === 403 || status === 429 || cookieRevoked) {
+    if (status === 401 || cookieRevoked) {
       return {
         ok: false,
         requiresReconnect: true,
         error:
-          "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
+          "LinkedIn rejected the current account session (cookie was revoked or logged out). Please reconnect your LinkedIn account using Paste Cookies.",
       };
     }
 
@@ -187,7 +193,17 @@ export async function warmupLinkedInSession(
         ok: false,
         requiresReconnect: true,
         error:
-          "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
+          "LinkedIn redirected this session to an authentication or checkpoint page. Please reconnect your LinkedIn account.",
+      };
+    }
+
+    if (status === 999 || status === 403 || status === 429) {
+      return {
+        ok: false,
+        error:
+          status === 429
+            ? "LinkedIn is temporarily rate limiting the session check. Please wait and retry extraction."
+            : "LinkedIn temporarily blocked the session check. Please retry extraction; the account was not marked expired.",
       };
     }
 
@@ -208,20 +224,19 @@ export async function warmupLinkedInSession(
         ok: false,
         requiresReconnect: true,
         error:
-          "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
+          "Your LinkedIn session cookie was revoked by LinkedIn. Please reconnect your LinkedIn account using the Paste Cookies tab.",
       };
     }
 
-    if (msg.includes("ERR_TOO_MANY_REDIRECTS") || msg.includes("status 999")) {
+    if (msg.includes("status 999")) {
       return {
         ok: false,
-        requiresReconnect: true,
         error:
-          "LinkedIn rejected this session or entered a redirect loop. Please reconnect your LinkedIn account to refresh credentials.",
+          "LinkedIn temporarily blocked the session check (HTTP 999). Please retry extraction; the account was not marked expired.",
       };
     }
 
-    // For transient timeout or network glitches on feed warmup, proceed rather than disconnecting user
+    // If /feed/ hit a non-revoked redirect loop or transient timeout, proceed to the target URL rather than aborting early
     return { ok: true };
   }
 }

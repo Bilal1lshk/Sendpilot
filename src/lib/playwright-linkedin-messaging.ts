@@ -1,5 +1,5 @@
 import type { Browser } from "playwright-core";
-import { launchBrowser, safeCloseBrowser, type ProxyConfig } from "@/lib/browser-launcher";
+import { launchBrowser, safeCloseBrowser, createStealthContext, type ProxyConfig } from "@/lib/browser-launcher";
 import {
   cleanCookieValue,
   normalizeLinkedInProfileUrl,
@@ -62,12 +62,7 @@ export async function sendLinkedInMessageWithPlaywright({
 
   try {
     browser = await launchBrowser({ headless: true, proxy: proxyConfig });
-    const context = await browser.newContext({
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-      viewport: { width: 1440, height: 900 },
-      locale: "en-US",
-    });
+    const context = await createStealthContext(browser, { proxyConfig });
 
     const page = await context.newPage();
 

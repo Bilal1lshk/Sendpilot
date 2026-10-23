@@ -1,4 +1,4 @@
-import type { Browser } from "playwright-core";
+import type { Browser, Response } from "playwright-core";
 import { launchBrowser, safeCloseBrowser, createStealthContext } from "@/lib/browser-launcher";
 import {
   cleanCookieValue,
@@ -6,6 +6,12 @@ import {
   setupLinkedInContext,
   warmupLinkedInSession,
 } from "@/lib/playwright-linkedin-session";
+
+/** Structured logger matching the worker's [timestamp] [LEVEL] format */
+function wlog(level: "INFO" | "WARN" | "ERROR", message: string) {
+  const ts = new Date().toISOString();
+  console.log(`[${ts}] [${level}] ${message}`);
+}
 
 export interface SendConnectionOptions {
   profileUrl: string;
@@ -63,7 +69,7 @@ export async function sendLinkedInConnectionWithPlaywright({
     let inviteResponseOk = false;
     let inviteResponseErrorBody: string | null = null;
 
-    const onResponse = async (response: any) => {
+    const onResponse = async (response: Response) => {
       try {
         const url = response.url();
         const req = response.request();
@@ -110,7 +116,7 @@ export async function sendLinkedInConnectionWithPlaywright({
       jsessionId: jSessionId,
     });
 
-    console.log(`[send-connection] Target profile: ${targetUrl}`);
+    wlog("INFO", `[send-connection] Target profile: ${targetUrl}`);
 
     // 1. Warm up session on feed to lock in edge cookies (lidc, bcookie) and prevent redirect loops
     const warmup = await warmupLinkedInSession(page, 20000);
@@ -252,81 +258,177 @@ export async function sendLinkedInConnectionWithPlaywright({
       };
     }
 
-    // Find and click Connect button
-    // Scroll down slightly to ensure top card buttons are visible below fixed nav
-    await page.evaluate(() => window.scrollBy(0, 100)).catch(() => null);
-    await page.waitForTimeout(300);
-
+    // Find and click Connect button with multi-tag support and sticky-nav bypass
     let clickedConnect = false;
-    const topCardScope = page.locator("main section.artdeco-card, div.ph5, div.pv-top-card, main").first();
 
-    // Step A: Primary buttons on the profile header
-    const directConnectButton = topCardScope
-      .locator(
-        'button:has-text("Connect"), button[aria-label*="Invite "], button[aria-label*="Connect with "], button[aria-label="Connect"], button[aria-label*="connect"]'
-      )
-      .first();
+    // Strategy 1: Targeted in-page DOM inspection (supports both <a> anchor links and <button> elements)
+    const domConnectResult = await page.evaluate(() => {
+      const candidates = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          'a[href*="custom-invite"], a[aria-label*="Invite"], button[aria-label*="Invite"], a[aria-label*="Connect"], button[aria-label*="Connect"], a, button, div[role="button"]'
+        )
+      );
 
-    if (await directConnectButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await directConnectButton.scrollIntoViewIfNeeded().catch(() => null);
-      try {
-        await directConnectButton.click({ timeout: 3000 });
-        clickedConnect = true;
-        console.log("[send-connection] Clicked direct Connect button on profile header.");
-      } catch {
-        try {
-          await directConnectButton.dispatchEvent("click");
-          clickedConnect = true;
-          console.log("[send-connection] Dispatched click on direct Connect button.");
-        } catch {}
+      const matches = candidates.filter((el) => {
+        // Exclude sidebar cards ("People Also Viewed") and footer items
+        if (el.closest("aside, div.scaffold-layout__aside, section.aside, footer")) return false;
+
+        const text = (el.textContent || "").trim();
+        const aria = (el.getAttribute("aria-label") || "").trim();
+        const href = el.getAttribute("href") || "";
+        const comp = el.getAttribute("componentkey") || "";
+
+        const isConnectAction =
+          href.includes("custom-invite") ||
+          comp.includes("ConnectButton") ||
+          text === "Connect" ||
+          text.startsWith("Connect ") ||
+          aria.includes("Invite") ||
+          aria.startsWith("Connect");
+
+        return isConnectAction;
+      });
+
+      // Filter out elements trapped in the top sticky bar (y < 60)
+      const inPage = matches.filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.y > 60 && r.height > 15;
+      });
+
+      const target = inPage[0] || matches[0];
+      if (target) {
+        target.scrollIntoView({ block: "center", behavior: "instant" });
+        target.click();
+        target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        return {
+          clicked: true,
+          tag: target.tagName,
+          aria: target.getAttribute("aria-label"),
+          text: target.textContent?.trim(),
+        };
       }
+      return { clicked: false };
+    }).catch(() => ({ clicked: false }));
+
+    if (domConnectResult && "tag" in domConnectResult && domConnectResult.clicked) {
+      clickedConnect = true;
+      wlog(
+        "INFO",
+        `[send-connection] Clicked direct Connect element (${domConnectResult.tag}: "${domConnectResult.aria || domConnectResult.text}").`
+      );
+    } else if (domConnectResult?.clicked) {
+      clickedConnect = true;
     }
 
-    // Step B: If not visible directly, inspect "More" dropdown
+    // Strategy 2: Playwright Locator multi-tag fallback if DOM click didn't trigger
     if (!clickedConnect) {
-      const moreButton = topCardScope
-        .locator(
-          'button[aria-label="More actions"], button[aria-label="More"], button:has-text("More"), div.artdeco-dropdown button'
-        )
-        .first();
+      const directConnectLocators = [
+        'a[href*="custom-invite"]',
+        'a[aria-label*="Invite "]',
+        'button[aria-label*="Invite "]',
+        'a[aria-label*="Connect with "]',
+        'button[aria-label*="Connect with "]',
+        'main a:has-text("Connect")',
+        'main button:has-text("Connect")',
+        'a[componentkey*="ConnectButton"]',
+        'button[componentkey*="ConnectButton"]',
+      ];
 
-      if (await moreButton.isVisible({ timeout: 2500 }).catch(() => false)) {
-        await moreButton.scrollIntoViewIfNeeded().catch(() => null);
-        try {
-          await moreButton.click({ timeout: 2500 });
-        } catch {
-          await moreButton.dispatchEvent("click");
-        }
-        await page.waitForTimeout(600);
-
-        const menuConnectItem = page
-          .locator(
-            'div[role="menu"] [role="menuitem"]:has-text("Connect"), div[role="menu"] [role="button"]:has-text("Connect"), div[role="menu"] button:has-text("Connect"), div[role="menu"] div:has-text("Connect"), div[role="menu"] span:has-text("Connect"), div[role="menu"] [aria-label*="Invite"], div[role="menu"] [aria-label*="Connect"], div.artdeco-dropdown__content [aria-label*="Connect"], div.artdeco-dropdown__content div:has-text("Connect")'
-          )
-          .first();
-
-        if (await menuConnectItem.isVisible({ timeout: 2500 }).catch(() => false)) {
+      for (const sel of directConnectLocators) {
+        const loc = page.locator(sel).first();
+        if (await loc.isVisible({ timeout: 1200 }).catch(() => false)) {
+          await loc.scrollIntoViewIfNeeded().catch(() => null);
           try {
-            await menuConnectItem.click({ timeout: 2500 });
+            await loc.click({ timeout: 2500, force: true });
             clickedConnect = true;
-            console.log("[send-connection] Clicked Connect item in More dropdown menu.");
+            wlog("INFO", `[send-connection] Clicked Connect button via selector: ${sel}`);
+            break;
           } catch {
             try {
-              await menuConnectItem.dispatchEvent("click");
+              await loc.dispatchEvent("click");
               clickedConnect = true;
-              console.log("[send-connection] Dispatched click on Connect item in dropdown.");
+              wlog("INFO", `[send-connection] Dispatched click via selector: ${sel}`);
+              break;
             } catch {}
           }
         }
       }
     }
 
+    // Strategy 3: Inspect the "More" actions dropdown (Creator Mode / Follow-first profiles)
     if (!clickedConnect) {
+      wlog("INFO", "[send-connection] Direct Connect button not found on header; inspecting 'More' dropdown...");
+
+      const moreButtonLocators = [
+        'main button[aria-label="More actions"]',
+        'main button[aria-label="More"]',
+        'main div.pvs-profile-actions button[aria-label*="More"]',
+        'main div.artdeco-dropdown button',
+        'button[aria-label="More actions"]',
+        'button[aria-label="More"]',
+        'button:has-text("More")',
+      ];
+
+      for (const moreSel of moreButtonLocators) {
+        const moreBtn = page.locator(moreSel).first();
+        if (await moreBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+          await moreBtn.scrollIntoViewIfNeeded().catch(() => null);
+          try {
+            await moreBtn.click({ timeout: 2000, force: true });
+          } catch {
+            await moreBtn.dispatchEvent("click");
+          }
+          await page.waitForTimeout(600);
+
+          // Find Connect / Invite item in the opened dropdown (matching across a, button, div, span)
+          const dropdownConnect = page.locator([
+            'div[role="menu"] [role="menuitem"]:has-text("Connect")',
+            'div[role="menu"] [role="button"]:has-text("Connect")',
+            'div[role="menu"] a[href*="custom-invite"]',
+            'div[role="menu"] a:has-text("Connect")',
+            'div[role="menu"] button:has-text("Connect")',
+            'div[role="menu"] [aria-label*="Invite"]',
+            'div[role="menu"] [aria-label*="Connect"]',
+            'div.artdeco-dropdown__content [aria-label*="Connect"]',
+            'div.artdeco-dropdown__content div:has-text("Connect")',
+            'div.artdeco-dropdown__content a:has-text("Connect")',
+            'div.artdeco-dropdown__content span:has-text("Connect")',
+          ].join(", ")).first();
+
+          if (await dropdownConnect.isVisible({ timeout: 2500 }).catch(() => false)) {
+            try {
+              await dropdownConnect.click({ timeout: 2500, force: true });
+              clickedConnect = true;
+              wlog("INFO", "[send-connection] Clicked Connect item in More dropdown menu.");
+              break;
+            } catch {
+              try {
+                await dropdownConnect.dispatchEvent("click");
+                clickedConnect = true;
+                wlog("INFO", "[send-connection] Dispatched click on Connect item in dropdown.");
+                break;
+              } catch {}
+            }
+          }
+        }
+      }
+    }
+
+    if (!clickedConnect) {
+      // Check if profile strictly enforces Follow only or restricted messaging
+      const hasFollowOnly = await page.evaluate(() => {
+        const main = document.querySelector("main") || document.body;
+        const buttons = Array.from(main.querySelectorAll("button, a"));
+        return buttons.some((b) => (b.textContent || "").trim().toLowerCase() === "follow");
+      }).catch(() => false);
+
       return {
         success: false,
         status: "failed",
         message: profileName
-          ? `Could not locate the Connect button for ${profileName}. This profile may restrict invites or require Follow.`
+          ? hasFollowOnly
+            ? `${profileName}'s profile only allows 'Follow' and restricts direct connection invitations.`
+            : `Could not locate the Connect button for ${profileName}. This profile may restrict invites or require mutual connections.`
           : "Could not locate the Connect button on this profile.",
         recipientName: profileName,
       };
@@ -339,7 +441,7 @@ export async function sendLinkedInConnectionWithPlaywright({
     const isModalVisible = await modal.isVisible({ timeout: 3500 }).catch(() => false);
 
     if (isModalVisible) {
-      console.log("[send-connection] Connect modal detected.");
+      wlog("INFO", "[send-connection] Connect modal detected.");
 
       // Check if recipient requires email
       const emailInput = modal.locator('input[type="email"], input#email, input[name="email"], input[placeholder*="email"]').first();
@@ -384,7 +486,6 @@ export async function sendLinkedInConnectionWithPlaywright({
           )
           .first();
 
-        let noteAdded = false;
         if (await addNoteButton.isVisible({ timeout: 2500 }).catch(() => false)) {
           const isNoteDisabled = await addNoteButton.evaluate((btn: HTMLButtonElement) => {
             return (
@@ -409,11 +510,11 @@ export async function sendLinkedInConnectionWithPlaywright({
               // LinkedIn max note length is 300 characters
               await textarea.fill(cleanNote.slice(0, 300));
               await page.waitForTimeout(300);
-              noteAdded = true;
-              console.log("[send-connection] Added personalized invite note.");
+              wlog("INFO", "[send-connection] Added personalized invite note.");
             }
           } else {
-            console.warn(
+            wlog(
+              "WARN",
               "[send-connection] Note button disabled (account note limit reached). Falling back to sending without note."
             );
           }
@@ -441,7 +542,7 @@ export async function sendLinkedInConnectionWithPlaywright({
           } catch {
             await sendBtn.dispatchEvent("click");
           }
-          console.log("[send-connection] Clicked modal Send button.");
+          wlog("INFO", "[send-connection] Clicked modal Send button.");
         }
       } else {
         // Send without note
@@ -464,7 +565,7 @@ export async function sendLinkedInConnectionWithPlaywright({
           } catch {
             await sendWithoutNoteBtn.dispatchEvent("click");
           }
-          console.log("[send-connection] Clicked Send without note button.");
+          wlog("INFO", "[send-connection] Clicked Send without note button.");
         } else {
           const anySendBtn = modal
             .locator(
@@ -595,7 +696,7 @@ export async function sendLinkedInConnectionWithPlaywright({
     }
 
     if (explicitError) {
-      console.warn(`[send-connection] Explicit error: ${explicitError}`);
+      wlog("WARN", `[send-connection] Explicit error: ${explicitError}`);
       return {
         success: false,
         status: "failed",
@@ -619,7 +720,7 @@ export async function sendLinkedInConnectionWithPlaywright({
 
     if (!isConfirmed) {
       if (inviteRequestDispatched) {
-        console.warn("[send-connection] Invitation request was dispatched, but no confirmation received within deadline.");
+        wlog("WARN", "[send-connection] Invitation request was dispatched, but no confirmation received within deadline.");
       }
 
       return {
@@ -632,7 +733,7 @@ export async function sendLinkedInConnectionWithPlaywright({
       };
     }
 
-    console.log(`[send-connection] Success (${confirmationMethod}) for ${profileName || targetUrl}`);
+    wlog("INFO", `[send-connection] Success (${confirmationMethod}) for ${profileName || targetUrl}`);
 
     return {
       success: true,

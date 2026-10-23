@@ -1,6 +1,7 @@
 import type { Browser } from "playwright-core";
-import { launchBrowser, safeCloseBrowser } from "@/lib/browser-launcher";
+import { launchBrowser, safeCloseBrowser, createStealthContext } from "@/lib/browser-launcher";
 import {
+  cleanCookieValue,
   setupLinkedInContext,
   warmupLinkedInSession,
 } from "@/lib/playwright-linkedin-session";
@@ -39,14 +40,6 @@ export interface PlaywrightExtractResult {
 
 async function launchBrowserWithFallback(): Promise<Browser> {
   return await launchBrowser({ headless: true });
-}
-
-function cleanCookieValue(raw: string, cookieName: string): string {
-  let val = raw.trim();
-  // Strip accidental `li_at=` or `JSESSIONID=` prefix if user pasted full `name=value`
-  const prefixRegex = new RegExp(`^${cookieName}\\s*=\\s*`, "i");
-  val = val.replace(prefixRegex, "").replace(/;.*$/, "").trim();
-  return val;
 }
 
 function deriveCompanyAndEmail(name: string, headline: string) {
@@ -102,9 +95,6 @@ export async function extractSearchLeadsWithPlaywright({
   maxLeads = 20,
 }: PlaywrightExtractOptions): Promise<PlaywrightExtractResult> {
   const cleanLiAt = cleanCookieValue(liAtCookie, "li_at");
-  const cleanJSessionRaw = jSessionId
-    ? cleanCookieValue(jSessionId, "JSESSIONID").replace(/^"+|"+$/g, "")
-    : "";
 
   if (!cleanLiAt) {
     return {
@@ -119,17 +109,33 @@ export async function extractSearchLeadsWithPlaywright({
   let browser: Browser | null = null;
   const collectedByUrl = new Map<string, PlaywrightExtractedLead>();
   let pagesScraped = 0;
+  let currentPageUrl = "";
+  let authCookieRevoked = false;
 
   try {
     browser = await launchBrowserWithFallback();
-    const context = await browser.newContext({
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      viewport: { width: 1440, height: 900 },
-      locale: "en-US",
-    });
+    const context = await createStealthContext(browser);
 
     const page = await context.newPage();
+    page.on("response", async (response) => {
+      try {
+        const headers = response.headers();
+        const clearSiteData = (headers["clear-site-data"] || "").toLowerCase();
+        const setCookieList = await response.headerValues("set-cookie").catch(() => [
+          headers["set-cookie"] || "",
+        ]);
+        const setCookieCombined = setCookieList.join("\n").toLowerCase();
+        if (
+          clearSiteData.includes("storage") ||
+          clearSiteData.includes("cookies") ||
+          setCookieCombined.includes("li_at=delete me") ||
+          setCookieCombined.includes("li_at=delete%20me") ||
+          setCookieCombined.includes('li_at=""')
+        ) {
+          authCookieRevoked = true;
+        }
+      } catch {}
+    });
 
     // Setup resilient LinkedIn cookies & stealth headers
     await setupLinkedInContext(context, page, {
@@ -139,12 +145,14 @@ export async function extractSearchLeadsWithPlaywright({
 
     // Warm up session on feed first to avoid ERR_TOO_MANY_REDIRECTS
     const warmup = await warmupLinkedInSession(page, 20000);
+    currentPageUrl = page.url().toLowerCase();
     if (!warmup.ok) {
+      const requiresReconnect = warmup.requiresReconnect === true;
       return {
         leads: [],
-        authwallDetected: true,
-        requiresReconnect: true,
-        error: warmup.error || "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
+        authwallDetected: requiresReconnect,
+        requiresReconnect,
+        error: warmup.error || "LinkedIn session preflight failed. Please retry extraction.",
         pagesScraped: 0,
       };
     }
@@ -235,12 +243,53 @@ export async function extractSearchLeadsWithPlaywright({
       }
 
       try {
-        await page.goto(targetUrl.toString(), {
+        const response = await page.goto(targetUrl.toString(), {
           waitUntil: "domcontentloaded",
           timeout: 30000,
         });
+        currentPageUrl = page.url().toLowerCase();
+
+        if (response?.status() === 401 || authCookieRevoked) {
+          return {
+            leads: Array.from(collectedByUrl.values()),
+            authwallDetected: true,
+            requiresReconnect: true,
+            error:
+              "LinkedIn rejected the current account session. Please reconnect your LinkedIn account to refresh credentials.",
+            pagesScraped,
+          };
+        }
+
+        if ([403, 429, 999].includes(response?.status() || 0)) {
+          return {
+            leads: Array.from(collectedByUrl.values()),
+            authwallDetected: false,
+            error:
+              "LinkedIn temporarily blocked or rate limited this search. Please retry extraction; the account was not marked expired.",
+            pagesScraped,
+          };
+        }
       } catch (navErr: unknown) {
         const navMsg = navErr instanceof Error ? navErr.message : String(navErr);
+        currentPageUrl = page.url().toLowerCase();
+        const redirectedToAuth =
+          currentPageUrl.includes("/login") ||
+          currentPageUrl.includes("/authwall") ||
+          currentPageUrl.includes("/checkpoint") ||
+          currentPageUrl.includes("/uas/") ||
+          authCookieRevoked;
+
+        if (redirectedToAuth) {
+          return {
+            leads: Array.from(collectedByUrl.values()),
+            authwallDetected: true,
+            requiresReconnect: true,
+            error:
+              "LinkedIn redirected this session to an authentication or checkpoint page. Please reconnect your LinkedIn account.",
+            pagesScraped,
+          };
+        }
+
         if (
           navMsg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
           navMsg.includes("ERR_TOO_MANY_REDIRECTS") ||
@@ -250,10 +299,9 @@ export async function extractSearchLeadsWithPlaywright({
         ) {
           return {
             leads: Array.from(collectedByUrl.values()),
-            authwallDetected: true,
-            requiresReconnect: true,
+            authwallDetected: false,
             error:
-              "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue.",
+              "LinkedIn temporarily blocked or could not load this search page. Please retry extraction; the account was not marked expired.",
             pagesScraped,
           };
         }
@@ -261,6 +309,7 @@ export async function extractSearchLeadsWithPlaywright({
       }
 
       const currentUrl = page.url();
+      currentPageUrl = currentUrl.toLowerCase();
       if (
         currentUrl.includes("/login") ||
         currentUrl.includes("/authwall") ||
@@ -296,6 +345,12 @@ export async function extractSearchLeadsWithPlaywright({
 
       // Extract profile cards from live DOM
       const domLeads = await page.evaluate(() => {
+        // Polyfill __name in case bundler/transpiler injects esbuild name helpers
+        const _w = window as unknown as Record<string, unknown>;
+        if (typeof _w.__name === "undefined") {
+          _w.__name = (fn: unknown) => fn;
+        }
+
         const results: Array<{
           name: string;
           headline: string;
@@ -304,20 +359,33 @@ export async function extractSearchLeadsWithPlaywright({
           avatar: string;
         }> = [];
 
-        const cards = Array.from(
-          document.querySelectorAll(
-            'div[role="listitem"], li.reusable-search__result-container, div.entity-result'
-          )
+        const cardElements: Element[] = [];
+        const rawCards = document.querySelectorAll(
+          'div[role="listitem"], li.reusable-search__result-container, div.entity-result'
         );
+        if (rawCards.length > 0) {
+          rawCards.forEach((c) => cardElements.push(c));
+        } else {
+          const allLinks = document.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]');
+          allLinks.forEach((link) => {
+            const parent =
+              link.closest("li") ||
+              link.closest('div[role="listitem"]') ||
+              link.parentElement?.parentElement;
+            if (parent && !cardElements.includes(parent)) {
+              cardElements.push(parent);
+            }
+          });
+        }
 
-        const parseCard = (container: Element) => {
+        for (const container of cardElements) {
           const anchors = Array.from(
             container.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]')
           );
-          if (anchors.length === 0) return;
+          if (anchors.length === 0) continue;
 
           const rawHref = anchors[0].href.split("?")[0].replace(/\/+$/, "");
-          if (!rawHref.includes("linkedin.com/in/")) return;
+          if (!rawHref.includes("linkedin.com/in/")) continue;
 
           let name = "";
           for (const a of anchors) {
@@ -344,7 +412,7 @@ export async function extractSearchLeadsWithPlaywright({
               .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
               .join(" ");
           }
-          if (!name || name.toLowerCase() === "linkedin member") return;
+          if (!name || name.toLowerCase() === "linkedin member") continue;
 
           const primarySub = container.querySelector(
             ".entity-result__primary-subtitle, [data-view-name='search-entity-result-universal-template'] p"
@@ -382,22 +450,6 @@ export async function extractSearchLeadsWithPlaywright({
             linkedinUrl: rawHref,
             avatar,
           });
-        };
-
-        if (cards.length > 0) {
-          cards.forEach(parseCard);
-        } else {
-          // Fallback: scan all /in/ links on the page
-          const allLinks = Array.from(
-            document.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]')
-          );
-          for (const link of allLinks) {
-            const parentCard =
-              link.closest("li") ||
-              link.closest('div[role="listitem"]') ||
-              link.parentElement?.parentElement;
-            if (parentCard) parseCard(parentCard);
-          }
         }
 
         return results;
@@ -408,14 +460,15 @@ export async function extractSearchLeadsWithPlaywright({
         if (collectedByUrl.size >= maxLeads) break;
         if (collectedByUrl.has(item.linkedinUrl)) continue;
 
+        const sanitizedName = item.name.replace(/\s*[•·]\s*\d+(?:st|nd|rd).*$/i, "").trim() || item.name;
         const { firstName, lastName, company, email } = deriveCompanyAndEmail(
-          item.name,
+          sanitizedName,
           item.headline
         );
 
         collectedByUrl.set(item.linkedinUrl, {
           id: `pw_${Date.now()}_${collectedByUrl.size + 1}`,
-          name: item.name,
+          name: sanitizedName,
           firstName,
           lastName,
           title: item.headline.split("|")[0].trim(),
@@ -445,21 +498,18 @@ export async function extractSearchLeadsWithPlaywright({
   } catch (err: unknown) {
     const rawMsg = err instanceof Error ? err.message : "Playwright extraction failed";
     const isAuthErr =
-      rawMsg.includes("ERR_HTTP_RESPONSE_CODE_FAILURE") ||
-      rawMsg.includes("ERR_TOO_MANY_REDIRECTS") ||
-      rawMsg.includes("999") ||
-      rawMsg.includes("403") ||
-      rawMsg.includes("429") ||
-      rawMsg.includes("login") ||
-      rawMsg.includes("authwall") ||
-      rawMsg.includes("checkpoint");
+      authCookieRevoked ||
+      currentPageUrl.includes("/login") ||
+      currentPageUrl.includes("/authwall") ||
+      currentPageUrl.includes("/checkpoint") ||
+      currentPageUrl.includes("/uas/");
 
     const msg = isAuthErr
       ? "Your LinkedIn account authorization has expired or was blocked by LinkedIn. Please reconnect your LinkedIn account to continue."
       : rawMsg;
     return {
       leads: Array.from(collectedByUrl.values()).slice(0, maxLeads),
-      authwallDetected: true,
+      authwallDetected: isAuthErr,
       requiresReconnect: isAuthErr,
       error: msg,
       pagesScraped,
