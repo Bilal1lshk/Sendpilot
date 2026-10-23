@@ -14,10 +14,10 @@ const globalCache: MongooseCache = global.mongooseCache || { conn: null, promise
 global.mongooseCache = globalCache;
 
 export async function connectDB() {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGODB_URI || process.env.DATABASE_URL;
 
   if (!uri) {
-    throw new Error("Please define the MONGODB_URI environment variable inside .env.local");
+    throw new Error("Please define MONGODB_URI or DATABASE_URL in the server environment.");
   }
 
   if (globalCache.conn) {
