@@ -12,7 +12,7 @@
     "worker:local": "npx tsx scripts/linkedin-worker.ts --no-tunnel",
     "lint": "eslint",
     "check:playwright": "node scripts/check-playwright-version.mjs",
-    "test:security": "node --experimental-strip-types --test tests/*.test.mjs"
+    "test:security": "tsx --test tests/*.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
