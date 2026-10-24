@@ -110,32 +110,12 @@ export async function extractSearchLeadsWithPlaywright({
   const collectedByUrl = new Map<string, PlaywrightExtractedLead>();
   let pagesScraped = 0;
   let currentPageUrl = "";
-  let authCookieRevoked = false;
 
   try {
     browser = await launchBrowserWithFallback();
     const context = await createStealthContext(browser);
 
     const page = await context.newPage();
-    page.on("response", async (response) => {
-      try {
-        const headers = response.headers();
-        const clearSiteData = (headers["clear-site-data"] || "").toLowerCase();
-        const setCookieList = await response.headerValues("set-cookie").catch(() => [
-          headers["set-cookie"] || "",
-        ]);
-        const setCookieCombined = setCookieList.join("\n").toLowerCase();
-        if (
-          clearSiteData.includes("storage") ||
-          clearSiteData.includes("cookies") ||
-          setCookieCombined.includes("li_at=delete me") ||
-          setCookieCombined.includes("li_at=delete%20me") ||
-          setCookieCombined.includes('li_at=""')
-        ) {
-          authCookieRevoked = true;
-        }
-      } catch {}
-    });
 
     // Setup resilient LinkedIn cookies & stealth headers
     await setupLinkedInContext(context, page, {
@@ -247,9 +227,13 @@ export async function extractSearchLeadsWithPlaywright({
           waitUntil: "domcontentloaded",
           timeout: 30000,
         });
-        currentPageUrl = page.url().toLowerCase();
+        const redirectedToAuth =
+          currentPageUrl.includes("/login") ||
+          currentPageUrl.includes("/authwall") ||
+          currentPageUrl.includes("/checkpoint") ||
+          currentPageUrl.includes("/uas/");
 
-        if (response?.status() === 401 || authCookieRevoked) {
+        if (response?.status() === 401 || redirectedToAuth) {
           return {
             leads: Array.from(collectedByUrl.values()),
             authwallDetected: true,
@@ -276,8 +260,7 @@ export async function extractSearchLeadsWithPlaywright({
           currentPageUrl.includes("/login") ||
           currentPageUrl.includes("/authwall") ||
           currentPageUrl.includes("/checkpoint") ||
-          currentPageUrl.includes("/uas/") ||
-          authCookieRevoked;
+          currentPageUrl.includes("/uas/");
 
         if (redirectedToAuth) {
           return {
@@ -498,7 +481,6 @@ export async function extractSearchLeadsWithPlaywright({
   } catch (err: unknown) {
     const rawMsg = err instanceof Error ? err.message : "Playwright extraction failed";
     const isAuthErr =
-      authCookieRevoked ||
       currentPageUrl.includes("/login") ||
       currentPageUrl.includes("/authwall") ||
       currentPageUrl.includes("/checkpoint") ||

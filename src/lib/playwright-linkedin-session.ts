@@ -142,16 +142,25 @@ export async function warmupLinkedInSession(
 
   const onResponse = async (response: Response) => {
     try {
+      const url = response.url().toLowerCase();
+      // Only examine responses from core LinkedIn domains
+      if (
+        (!url.includes("linkedin.com") && !url.includes("www.linkedin.com")) ||
+        url.includes("px.ads.linkedin.com") ||
+        url.includes("licdn.com") ||
+        url.includes("doubleclick")
+      ) {
+        return;
+      }
+
       const headers = response.headers();
-      const clearSiteData = (headers["clear-site-data"] || "").toLowerCase();
       const setCookieList = await response.headerValues("set-cookie").catch(() => [
         headers["set-cookie"] || "",
       ]);
       const setCookieCombined = setCookieList.join("\n").toLowerCase();
 
+      // Only flag revocation if LinkedIn explicitly deletes the li_at session cookie
       if (
-        clearSiteData.includes("storage") ||
-        clearSiteData.includes("cookies") ||
         setCookieCombined.includes("li_at=delete me") ||
         setCookieCombined.includes("li_at=delete%20me") ||
         setCookieCombined.includes('li_at=""')
@@ -171,16 +180,6 @@ export async function warmupLinkedInSession(
 
     page.off("response", onResponse);
 
-    const status = res?.status() || 200;
-    if (status === 401 || cookieRevoked) {
-      return {
-        ok: false,
-        requiresReconnect: true,
-        error:
-          "LinkedIn rejected the current account session (cookie was revoked or logged out). Please reconnect your LinkedIn account using Paste Cookies.",
-      };
-    }
-
     const currentUrl = page.url().toLowerCase();
 
     if (
@@ -194,6 +193,26 @@ export async function warmupLinkedInSession(
         requiresReconnect: true,
         error:
           "LinkedIn redirected this session to an authentication or checkpoint page. Please reconnect your LinkedIn account.",
+      };
+    }
+
+    const status = res?.status() || 200;
+
+    // Verify whether the browser context still holds an active, valid li_at cookie
+    const cookies = await page.context().cookies(["https://www.linkedin.com"]).catch(() => []);
+    const activeLiAt = cookies.find((c) => c.name === "li_at");
+    const hasValidCookie = Boolean(
+      activeLiAt?.value &&
+      activeLiAt.value.length > 25 &&
+      !activeLiAt.value.toLowerCase().includes("delete me")
+    );
+
+    if (status === 401 || (cookieRevoked && !hasValidCookie)) {
+      return {
+        ok: false,
+        requiresReconnect: true,
+        error:
+          "LinkedIn rejected the current account session (cookie was revoked or logged out). Please reconnect your LinkedIn account using Paste Cookies.",
       };
     }
 
@@ -219,7 +238,7 @@ export async function warmupLinkedInSession(
       currentUrl.includes("/checkpoint") ||
       currentUrl.includes("/uas/login");
 
-    if (cookieRevoked || isLoginPage) {
+    if (isLoginPage) {
       return {
         ok: false,
         requiresReconnect: true,
