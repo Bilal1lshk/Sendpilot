@@ -482,14 +482,48 @@ export async function POST(req: Request) {
           signal: AbortSignal.timeout(50000),
         });
         const raw = (await workerRes.json().catch(() => null)) as PlaywrightSearchResult | null;
-        if (!workerRes.ok || !raw || !Array.isArray(raw.leads)) {
-          throw new Error(`Worker returned an invalid response (HTTP ${workerRes.status}).`);
+        if (!raw || !Array.isArray(raw.leads)) {
+          console.error(
+            `[extractor/linkedin] Worker returned an invalid extraction response (HTTP ${workerRes.status}).`
+          );
+          const error =
+            workerRes.status === 401 || workerRes.status === 403
+              ? "The Render worker rejected authentication. Check that LINKEDIN_WORKER_SECRET matches in Vercel and Render."
+              : `The Render worker returned an invalid response (HTTP ${workerRes.status}). Check the Render worker logs.`;
+          return NextResponse.json(
+            { success: false, error, retryable: workerRes.status >= 500 },
+            { status: workerRes.status === 401 || workerRes.status === 403 ? 503 : 502 }
+          );
+        }
+        if (!workerRes.ok && workerRes.status !== 422) {
+          console.error(
+            `[extractor/linkedin] Worker extraction request failed (HTTP ${workerRes.status}):`,
+            raw.error || "No error details returned."
+          );
+          const error =
+            workerRes.status === 401 || workerRes.status === 403
+              ? "The Render worker rejected authentication. Check that LINKEDIN_WORKER_SECRET matches in Vercel and Render."
+              : raw.error ||
+                `The Render worker returned HTTP ${workerRes.status}. Check the Render worker logs.`;
+          return NextResponse.json(
+            { success: false, error, retryable: workerRes.status >= 500 },
+            { status: workerRes.status === 401 || workerRes.status === 403 ? 503 : 502 }
+          );
         }
         pwResult = raw;
       } catch (workerError) {
-        console.error("[extractor/linkedin] Worker extraction failed:", workerError);
+        const message =
+          workerError instanceof Error ? workerError.message : String(workerError);
+        console.error("[extractor/linkedin] Worker extraction request failed:", message);
+        const isTimeout = /timeout|aborted/i.test(message);
         return NextResponse.json(
-          { success: false, error: "LinkedIn worker is unavailable. Please retry shortly.", retryable: true },
+          {
+            success: false,
+            error: isTimeout
+              ? "The Render worker did not respond in time. It may be starting up; please retry shortly."
+              : "Could not reach the Render worker. Check that LINKEDIN_WORKER_URL is correct and the Render service is running.",
+            retryable: true,
+          },
           { status: 503 }
         );
       }

@@ -94,6 +94,11 @@ export function ConnectLinkedInModal({
     e.preventDefault();
     setIsSubmitting(true);
     setFormError(null);
+    const submittedOtp =
+      activeTab === "auto" &&
+      step === "two_factor" &&
+      twoFactorMethod === "otp" &&
+      Boolean(verificationCode.trim());
 
     try {
       let payload: Record<string, unknown> = {};
@@ -181,22 +186,36 @@ export function ConnectLinkedInModal({
       }
 
       if (data?.requiresTwoFactor) {
-        if (data?.twoFactorMethod === "app" || data?.twoFactorMethod === "otp") {
-          setTwoFactorMethod(data.twoFactorMethod);
-        }
+        const responseMethod =
+          data.twoFactorMethod === "app" || data.twoFactorMethod === "otp"
+            ? data.twoFactorMethod
+            : undefined;
+        const resolvedMethod = responseMethod ?? twoFactorMethod;
+        const responseError =
+          typeof data.error === "string" && data.error.trim() ? data.error.trim() : undefined;
+
+        setTwoFactorMethod(resolvedMethod);
         setPendingChallengeToken(data?.pendingChallengeToken);
         setChallengeMessage(
-          data?.challengeMessage ||
-            (twoFactorMethod === "app"
+          (submittedOtp && responseError ? responseError : undefined) ||
+            data?.challengeMessage ||
+            responseError ||
+            (resolvedMethod === "app"
               ? "Approve the sign-in in the LinkedIn mobile app."
               : "LinkedIn sent a one-time code by SMS or email.")
         );
         setStep("two_factor");
-        toast.info(
-          twoFactorMethod === "app"
-            ? "Check your LinkedIn mobile app to approve the sign-in."
-            : "Enter the one-time verification code sent by LinkedIn."
-        );
+        if (submittedOtp && responseError) {
+          toast.error(responseError);
+        } else {
+          toast.info(
+            resolvedMethod === "app"
+              ? "Check your LinkedIn mobile app to approve the sign-in."
+              : twoFactorMethod === "app"
+                ? "LinkedIn now requires a one-time code to finish sign-in."
+                : "Enter the one-time verification code sent by LinkedIn."
+          );
+        }
         return;
       }
 
