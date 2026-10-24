@@ -52,7 +52,7 @@ export default function InboundAutomationPage() {
 
   const [disabledAutomationIds, setDisabledAutomationIds] = useState<string[]>(["a3"]);
   const [userFlows, setUserFlows] = useState<FlowItem[]>([]);
-  const [isLoadingFlows, setIsLoadingFlows] = useState(false);
+  const [isLoadingFlows, setIsLoadingFlows] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [previewFlow, setPreviewFlow] = useState<FlowItem | null>(null);
 
@@ -103,7 +103,19 @@ export default function InboundAutomationPage() {
 
   useEffect(() => {
     dispatch(fetchLeadsIfNeeded());
-    fetchUserFlows();
+    fetch("/api/flows")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.flows)) {
+          setUserFlows(data.flows);
+        }
+      })
+      .catch(() => {
+        toast.error("Failed to load custom flows");
+      })
+      .finally(() => {
+        setIsLoadingFlows(false);
+      });
   }, [dispatch]);
 
   // Handle Preset Switching

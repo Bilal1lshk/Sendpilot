@@ -31,11 +31,10 @@ export function AnimatedCounter({
 
     // Check prefers-reduced-motion
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setDisplayValue(value);
+      requestAnimationFrame(() => setDisplayValue(value));
       return;
     }
 
-    let start = 0;
     const startTime = performance.now();
 
     const updateNumber = (currentTime: number) => {

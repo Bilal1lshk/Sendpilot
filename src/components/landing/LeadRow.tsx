@@ -13,6 +13,7 @@ interface LeadRowProps {
 export function LeadRow({ lead, isFirst }: LeadRowProps) {
   const [isApproved, setIsApproved] = useState(lead.status === "Approved");
   const [status, setStatus] = useState(lead.status);
+  const [draftMessage, setDraftMessage] = useState(lead.draftMessage);
 
   const handleApprove = () => {
     setIsApproved(true);
@@ -22,7 +23,7 @@ export function LeadRow({ lead, isFirst }: LeadRowProps) {
   const handleEdit = () => {
     const nextMsg = prompt("Edit draft message:", lead.draftMessage);
     if (nextMsg !== null && nextMsg.trim()) {
-      lead.draftMessage = nextMsg;
+      setDraftMessage(nextMsg);
     }
   };
 
@@ -64,7 +65,7 @@ export function LeadRow({ lead, isFirst }: LeadRowProps) {
 
       {/* 3. Drafted opening message box */}
       <DraftBox
-        message={lead.draftMessage}
+        message={draftMessage}
         isFirst={isFirst}
         isApproved={isApproved}
         onApprove={handleApprove}

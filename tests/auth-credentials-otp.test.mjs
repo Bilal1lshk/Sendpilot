@@ -50,15 +50,21 @@ test("issueOtpCode creates verifiable code and rejects invalid code", async () =
   assert.equal(correctRes.valid, true);
 });
 
-test("HTTP dev server handles CSRF and credentials OTP signin", async () => {
-  // Issue a fresh OTP
-  const { code } = await issueOtpCode(TEST_EMAIL, "login_otp", 10);
-
-  // 1. Fetch CSRF token
-  const csrfRes = await fetch("http://localhost:3000/api/auth/csrf");
+test("HTTP dev server handles CSRF and credentials OTP signin", async (t) => {
+  // 1. Fetch CSRF token (skip if local dev server is not running)
+  let csrfRes;
+  try {
+    csrfRes = await fetch("http://localhost:3000/api/auth/csrf", { signal: AbortSignal.timeout(1500) });
+  } catch {
+    t.skip("Local Next.js dev server is not running on http://localhost:3000");
+    return;
+  }
   assert.equal(csrfRes.status, 200);
   const csrfData = await csrfRes.json();
   assert.ok(csrfData.csrfToken);
+
+  // Issue a fresh OTP
+  const { code } = await issueOtpCode(TEST_EMAIL, "login_otp", 10);
 
   const cookies = csrfRes.headers.get("set-cookie") || "";
   // Must NOT contain __Host- or Secure on localhost HTTP

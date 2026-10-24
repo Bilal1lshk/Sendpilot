@@ -34,6 +34,11 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchLeadsIfNeeded, RawLeadPayload } from "@/store/slices/databaseSlice";
 
 type ActiveTab = "personalizer" | "followup" | "classifier";
+type InviteTone = "conversational" | "peer" | "direct" | "curious";
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 interface GeneratedOption {
   angle: string;
@@ -104,14 +109,25 @@ export default function AIAssistantPage() {
   // ==========================================
   // TAB 1: AI CONNECTION PERSONALIZER STATE
   // ==========================================
-  const [selectedLeadId, setSelectedLeadId] = useState<string>("");
-  const [leadName, setLeadName] = useState("");
-  const [leadTitle, setLeadTitle] = useState("");
-  const [leadCompany, setLeadCompany] = useState("");
-  const [leadIndustry, setLeadIndustry] = useState("");
-  const [leadSkills, setLeadSkills] = useState("");
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const selectedLead =
+    realLeads.find((lead) => lead.id === selectedLeadId) ??
+    (selectedLeadId ? undefined : realLeads[0]);
+  const selectedLeadName = selectedLead
+    ? `${selectedLead.firstName || ""} ${selectedLead.lastName || ""}`.trim() || selectedLead.name || ""
+    : "";
+  const [leadNameOverride, setLeadNameOverride] = useState<string | null>(null);
+  const [leadTitleOverride, setLeadTitleOverride] = useState<string | null>(null);
+  const [leadCompanyOverride, setLeadCompanyOverride] = useState<string | null>(null);
+  const [leadIndustryOverride, setLeadIndustryOverride] = useState<string | null>(null);
+  const [leadSkillsOverride, setLeadSkillsOverride] = useState<string | null>(null);
+  const leadName = leadNameOverride ?? selectedLeadName;
+  const leadTitle = leadTitleOverride ?? selectedLead?.jobTitle ?? selectedLead?.title ?? "";
+  const leadCompany = leadCompanyOverride ?? selectedLead?.company ?? "";
+  const leadIndustry = leadIndustryOverride ?? selectedLead?.industry ?? selectedLead?.location ?? "";
+  const leadSkills = leadSkillsOverride ?? selectedLead?.tags?.join(", ") ?? "";
   const [recentPostSnippet, setRecentPostSnippet] = useState("");
-  const [inviteTone, setInviteTone] = useState<"conversational" | "peer" | "direct" | "curious">("conversational");
+  const [inviteTone, setInviteTone] = useState<InviteTone>("conversational");
   const [isGeneratingInvites, setIsGeneratingInvites] = useState(false);
   const [inviteResult, setInviteResult] = useState<PersonalizerResult | null>(null);
   const [approvedInviteIdx, setApprovedInviteIdx] = useState<number | null>(null);
@@ -119,8 +135,10 @@ export default function AIAssistantPage() {
   // ==========================================
   // TAB 2: AUTOMATED FOLLOW-UP SENDER STATE
   // ==========================================
-  const [followupProfileUrl, setFollowupProfileUrl] = useState("");
-  const [followupLeadName, setFollowupLeadName] = useState("");
+  const [followupProfileUrlOverride, setFollowupProfileUrlOverride] = useState<string | null>(null);
+  const [followupLeadNameOverride, setFollowupLeadNameOverride] = useState<string | null>(null);
+  const followupProfileUrl = followupProfileUrlOverride ?? selectedLead?.linkedinUrl ?? "";
+  const followupLeadName = followupLeadNameOverride ?? selectedLeadName;
   const [followupMessage, setFollowupMessage] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [sendLogs, setSendLogs] = useState<Array<{
@@ -146,29 +164,12 @@ export default function AIAssistantPage() {
     dispatch(fetchLeadsIfNeeded());
   }, [dispatch]);
 
-  // Sync selected lead into inputs
-  useEffect(() => {
-    if (realLeads.length > 0 && !selectedLeadId) {
-      setSelectedLeadId(realLeads[0].id || "");
-    }
-  }, [realLeads, selectedLeadId]);
-
-  useEffect(() => {
-    if (!selectedLeadId) return;
-    const lead = realLeads.find((l) => l.id === selectedLeadId);
-    if (lead) {
-      const name = `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || lead.name || "";
-      setLeadName(name);
-      setLeadTitle(lead.jobTitle || lead.title || "");
-      setLeadCompany(lead.company || "");
-      setLeadIndustry((lead as any).industry || lead.location || "");
-      setLeadSkills(lead.tags?.join(", ") || "");
-      if (lead.linkedinUrl) {
-        setFollowupProfileUrl(lead.linkedinUrl);
-        setFollowupLeadName(name);
-      }
-    }
-  }, [selectedLeadId, realLeads]);
+  const handleLeadSelection = (id: string) => {
+    setSelectedLeadId(id || null);
+    const lead = realLeads.find((item) => item.id === id);
+    setFollowupLeadNameOverride(lead ? `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || lead.name || "" : "");
+    setFollowupProfileUrlOverride(lead?.linkedinUrl || "");
+  };
 
   // ----------------------------------------------------
   // HANDLERS: TAB 1 (CONNECTION REQUEST PERSONALIZER)
@@ -211,8 +212,8 @@ export default function AIAssistantPage() {
       } else {
         toast.error(data.error || "Failed to generate connection notes.");
       }
-    } catch (err: any) {
-      toast.error(err.message || "An unexpected error occurred.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "An unexpected error occurred."));
     } finally {
       setIsGeneratingInvites(false);
     }
@@ -285,8 +286,8 @@ export default function AIAssistantPage() {
           ...prev,
         ]);
       }
-    } catch (err: any) {
-      toast.error(err.message || "Network request failed.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Network request failed."));
     } finally {
       setIsSendingMessage(false);
     }
@@ -327,8 +328,8 @@ export default function AIAssistantPage() {
       } else {
         toast.error(data.error || "Failed to classify reply.");
       }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to analyze message.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to analyze message."));
     } finally {
       setIsClassifying(false);
     }
@@ -481,8 +482,8 @@ export default function AIAssistantPage() {
                     Select Lead from Database
                   </label>
                   <select
-                    value={selectedLeadId}
-                    onChange={(e) => setSelectedLeadId(e.target.value)}
+                    value={selectedLead?.id || ""}
+                    onChange={(e) => handleLeadSelection(e.target.value)}
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 text-xs font-medium text-neutral-800 dark:text-neutral-200 focus:outline-none focus:border-palm-leaf-500 cursor-pointer"
                   >
                     {realLeads.map((l) => {
@@ -506,7 +507,7 @@ export default function AIAssistantPage() {
                   <input
                     type="text"
                     value={leadName}
-                    onChange={(e) => setLeadName(e.target.value)}
+                    onChange={(e) => setLeadNameOverride(e.target.value)}
                     placeholder="e.g. Sarah Chen"
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 text-xs font-medium focus:outline-none focus:border-palm-leaf-500"
                   />
@@ -518,7 +519,7 @@ export default function AIAssistantPage() {
                   <input
                     type="text"
                     value={leadTitle}
-                    onChange={(e) => setLeadTitle(e.target.value)}
+                    onChange={(e) => setLeadTitleOverride(e.target.value)}
                     placeholder="e.g. VP of Growth"
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 text-xs font-medium focus:outline-none focus:border-palm-leaf-500"
                   />
@@ -533,7 +534,7 @@ export default function AIAssistantPage() {
                   <input
                     type="text"
                     value={leadCompany}
-                    onChange={(e) => setLeadCompany(e.target.value)}
+                    onChange={(e) => setLeadCompanyOverride(e.target.value)}
                     placeholder="e.g. Linear"
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 text-xs font-medium focus:outline-none focus:border-palm-leaf-500"
                   />
@@ -545,7 +546,7 @@ export default function AIAssistantPage() {
                   <input
                     type="text"
                     value={leadIndustry}
-                    onChange={(e) => setLeadIndustry(e.target.value)}
+                    onChange={(e) => setLeadIndustryOverride(e.target.value)}
                     placeholder="e.g. B2B SaaS, DevTools"
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 text-xs font-medium focus:outline-none focus:border-palm-leaf-500"
                   />
@@ -559,7 +560,7 @@ export default function AIAssistantPage() {
                 <input
                   type="text"
                   value={leadSkills}
-                  onChange={(e) => setLeadSkills(e.target.value)}
+                  onChange={(e) => setLeadSkillsOverride(e.target.value)}
                   placeholder="e.g. Self-serve PLG, enterprise expansion, outbound"
                   className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 text-xs font-medium focus:outline-none focus:border-palm-leaf-500"
                 />
@@ -593,7 +594,7 @@ export default function AIAssistantPage() {
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => setInviteTone(t.id as any)}
+                      onClick={() => setInviteTone(t.id as InviteTone)}
                       className={`p-2 rounded-xl text-left border transition-all cursor-pointer ${
                         inviteTone === t.id
                           ? "border-palm-leaf-600 bg-palm-leaf-50/50 dark:bg-palm-leaf-950/40 text-palm-leaf-900 dark:text-palm-leaf-200"
@@ -637,7 +638,7 @@ export default function AIAssistantPage() {
                   Customized Notes (Under 300 Characters)
                 </h3>
                 <p className="text-[11px] text-neutral-500">
-                  Every note is strictly verified below LinkedIn's 300-char connection note limit.
+                  Every note is strictly verified below LinkedIn&apos;s 300-char connection note limit.
                 </p>
               </div>
               {inviteResult && (
@@ -816,15 +817,9 @@ export default function AIAssistantPage() {
                     Quick-Fill from Database Lead
                   </label>
                   <select
-                    value={selectedLeadId}
+                    value={selectedLead?.id || ""}
                     onChange={(e) => {
-                      const id = e.target.value;
-                      setSelectedLeadId(id);
-                      const target = realLeads.find((l) => l.id === id);
-                      if (target) {
-                        setFollowupLeadName(`${target.firstName || ""} ${target.lastName || ""}`.trim() || target.name || "");
-                        if (target.linkedinUrl) setFollowupProfileUrl(target.linkedinUrl);
-                      }
+                      handleLeadSelection(e.target.value);
                     }}
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 text-xs font-medium text-neutral-800 dark:text-neutral-200 focus:outline-none focus:border-palm-leaf-500 cursor-pointer"
                   >
@@ -846,7 +841,7 @@ export default function AIAssistantPage() {
                   <input
                     type="url"
                     value={followupProfileUrl}
-                    onChange={(e) => setFollowupProfileUrl(e.target.value)}
+                    onChange={(e) => setFollowupProfileUrlOverride(e.target.value)}
                     placeholder="https://www.linkedin.com/in/prospect-username/"
                     className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 pr-10 text-xs font-medium focus:outline-none focus:border-palm-leaf-500 font-mono"
                   />
@@ -870,7 +865,7 @@ export default function AIAssistantPage() {
                 <input
                   type="text"
                   value={followupLeadName}
-                  onChange={(e) => setFollowupLeadName(e.target.value)}
+                  onChange={(e) => setFollowupLeadNameOverride(e.target.value)}
                   placeholder="e.g. Sarah Chen"
                   className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 p-2.5 text-xs font-medium focus:outline-none focus:border-palm-leaf-500"
                 />

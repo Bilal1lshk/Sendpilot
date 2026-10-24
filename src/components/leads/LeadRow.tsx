@@ -1,17 +1,14 @@
 "use client";
 
 import { ExternalLink, Tag } from "lucide-react";
-import { RawLeadPayload } from "@/store/slices/databaseSlice";
+import { LeadListItem } from "@/store/slices/databaseSlice";
 
 interface LeadRowProps {
-  lead: RawLeadPayload & {
-    pipeline?: string;
-    campaigns?: Array<{ campaignId: string; state: string }>;
-  };
+  lead: LeadListItem;
   isSelected: boolean;
   onToggleSelect: (leadId: string) => void;
-  onClickRow: (lead: any) => void;
-  onAssignGroupClick?: (lead: any, e: React.MouseEvent) => void;
+  onClickRow: (lead: LeadListItem) => void;
+  onAssignGroupClick?: (lead: LeadListItem, e: React.MouseEvent) => void;
 }
 
 export function LeadRow({

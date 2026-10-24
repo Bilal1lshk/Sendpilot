@@ -1,12 +1,12 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
-import { ICampaignStep, STEP_TYPES, StepType } from "./Campaign";
+import { ICampaignStep, STEP_TYPES } from "./Campaign";
 
 export interface IAutomationFlow extends Document {
   userId: string;
   name: string;
   description: string;
   steps: ICampaignStep[];
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   isTemplate: boolean;
   createdAt: Date;
   updatedAt: Date;

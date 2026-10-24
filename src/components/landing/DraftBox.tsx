@@ -27,9 +27,11 @@ export function DraftBox({
 
     // Check reduced motion
     if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setDisplayedText(message);
-      setIsTyping(false);
-      return;
+      const animationFrame = requestAnimationFrame(() => {
+        setDisplayedText(message);
+        setIsTyping(false);
+      });
+      return () => cancelAnimationFrame(animationFrame);
     }
 
     let i = 0;

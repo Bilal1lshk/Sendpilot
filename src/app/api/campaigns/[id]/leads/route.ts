@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Campaign from "@/models/Campaign";
-import CampaignLead, { ENROLLMENT_STATES } from "@/models/CampaignLead";
+import CampaignLead, { ENROLLMENT_STATES, type ICampaignLead } from "@/models/CampaignLead";
 import Lead from "@/models/Lead";
 import { requireUser, apiError, isValidObjectId, nextActionable, renderTemplate, serializeLead } from "@/lib/crm";
 
@@ -31,8 +31,15 @@ export async function GET(req: Request, { params }: Ctx) {
     const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit")) || 50));
     const now = new Date();
 
-    const filter: Record<string, any> = { userId: ctx.userId, campaignId: campaign._id };
-    if (state && (ENROLLMENT_STATES as readonly string[]).includes(state)) filter.state = state;
+    const filter: {
+      userId: string;
+      campaignId: ICampaignLead["campaignId"];
+      state?: ICampaignLead["state"] | { $in: ICampaignLead["state"][] };
+      nextActionAt?: { $lte: Date };
+    } = { userId: ctx.userId, campaignId: campaign._id };
+    if (state && (ENROLLMENT_STATES as readonly string[]).includes(state)) {
+      filter.state = state as ICampaignLead["state"];
+    }
     if (dueOnly) {
       // "queued" = ready for first touch, "accepted" = ready for follow-ups. "invited" waits for acceptance.
       filter.state = { $in: ["queued", "accepted"] };
@@ -60,7 +67,10 @@ export async function GET(req: Request, { params }: Ctx) {
         const isFailed = r.state === "failed" && !!step;
         const active = (["queued", "invited", "accepted"].includes(r.state) || isFailed) && !!step;
         const waitingForAcceptance = active && r.state === "invited" && step?.type === "message";
-        const lastError = (r as any).lastError || r.history?.slice().reverse().find((h: any) => h.event === "failed")?.note || null;
+        const lastError =
+          r.lastError ||
+          r.history?.slice().reverse().find((event) => event.event === "failed")?.note ||
+          null;
 
         return {
           enrollmentId: String(r._id),
@@ -150,9 +160,11 @@ export async function POST(req: Request, { params }: Ctx) {
           { ordered: false }
         );
         enrolled = docs.length;
-      } catch (err: any) {
-        if (err?.code !== 11000 && !err?.writeErrors) throw err;
-        enrolled = (err.insertedDocs || []).length;
+      } catch (err: unknown) {
+        const details =
+          typeof err === "object" && err !== null ? (err as Record<string, unknown>) : {};
+        if (details.code !== 11000 && !details.writeErrors) throw err;
+        enrolled = Array.isArray(details.insertedDocs) ? details.insertedDocs.length : 0;
       }
     }
 

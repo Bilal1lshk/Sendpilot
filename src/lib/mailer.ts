@@ -225,8 +225,9 @@ export async function sendOtpEmail(
       deliveryMode: "smtp",
       messageId: info.messageId,
     };
-  } catch (error: any) {
-    const errorMsg = error?.message || "Failed to deliver email via SMTP";
+  } catch (error: unknown) {
+    const errorMsg =
+      error instanceof Error ? error.message : "Failed to deliver email via SMTP";
     return {
       sent: false,
       deliveryMode: "smtp",

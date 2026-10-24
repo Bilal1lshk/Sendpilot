@@ -139,7 +139,7 @@ export default function LeadExtractorPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.success && Array.isArray(data.groups)) {
-          setAvailableGroups(data.groups.map((g: any) => g.name));
+          setAvailableGroups(data.groups.map((g: { name: string }) => g.name));
         }
       })
       .catch(() => {});

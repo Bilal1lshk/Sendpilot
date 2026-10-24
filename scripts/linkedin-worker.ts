@@ -25,6 +25,7 @@ import { extractLinkedInSession, type ExtractedSessionResult } from "@/lib/linke
 import { sendLinkedInMessageWithPlaywright } from "@/lib/playwright-linkedin-messaging";
 import { sendLinkedInConnectionWithPlaywright } from "@/lib/playwright-linkedin-connect";
 import { extractSearchLeadsWithPlaywright } from "@/lib/playwright-linkedin-extractor";
+import { shouldReuseCachedLinkedInSession } from "@/lib/linkedin-worker-cache";
 import { WORKER_CONTRACT_VERSION } from "@/lib/worker-contract";
 
 const PORT = parseInt(process.env.WORKER_PORT || process.env.PORT || "4000", 10);
@@ -46,7 +47,7 @@ let tunnelProcess: ChildProcess | null = null;
 let isShuttingDown = false;
 let reconnectTimer: NodeJS.Timeout | null = null;
 
-// In-memory cache for successfully extracted sessions (10-minute TTL)
+// In-memory cache for extraction results (10-minute TTL)
 const sessionCache = new Map<string, { result: ExtractedSessionResult; timestamp: number }>();
 // In-flight extraction promises to deduplicate overlapping requests during tunnel retries
 const inFlightExtractions = new Map<string, Promise<ExtractedSessionResult>>();
@@ -414,7 +415,14 @@ const server = http.createServer(async (req, res) => {
 
         // Check if session was already extracted recently (e.g. from previous attempt)
         const cached = sessionCache.get(normalizedEmail);
-        if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000 && !verificationCode) {
+        if (
+          cached &&
+          shouldReuseCachedLinkedInSession({
+            cachedAt: cached.timestamp,
+            verificationCode,
+            pendingChallengeToken,
+          })
+        ) {
           log("INFO", `[${maskedEmail}] Reusing freshly extracted active session from memory cache (instant response)`);
           const statusCode = cached.result.requiresTwoFactor ? 202 : cached.result.success ? 200 : 400;
           res.writeHead(statusCode, { "Content-Type": "application/json" });
@@ -424,7 +432,7 @@ const server = http.createServer(async (req, res) => {
 
         // If an extraction is already running in the background for this account, join that in-flight promise
         const inFlight = inFlightExtractions.get(normalizedEmail);
-        if (inFlight && !verificationCode) {
+        if (inFlight && !verificationCode && !pendingChallengeToken) {
           log("INFO", `[${maskedEmail}] Joining already in-flight browser session extraction (deduplicated)...`);
           try {
             const inFlightResult = await inFlight;
@@ -481,12 +489,15 @@ const server = http.createServer(async (req, res) => {
         }
 
         const statusCode = result.requiresTwoFactor ? 202 : result.success ? 200 : 400;
+        const authState = result.success
+          ? "authenticated"
+          : result.requiresTwoFactor
+            ? `challenge:${result.twoFactorMethod || "unknown"}`
+            : "failed";
 
         log(
           "INFO",
-          `Completed extraction for ${maskedEmail} -> HTTP ${statusCode} (success: ${result.success}, 2FA: ${Boolean(
-            result.requiresTwoFactor
-          )})`
+          `Completed extraction for ${maskedEmail} -> HTTP ${statusCode} (state: ${authState})`
         );
 
         res.writeHead(statusCode, { "Content-Type": "application/json" });

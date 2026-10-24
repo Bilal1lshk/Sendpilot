@@ -2,23 +2,18 @@
 
 import { Loader2, Users, FileSpreadsheet } from "lucide-react";
 import Link from "next/link";
-import { RawLeadPayload } from "@/store/slices/databaseSlice";
+import { LeadListItem } from "@/store/slices/databaseSlice";
 import { LeadRow } from "./LeadRow";
 
 interface LeadTableProps {
-  leads: Array<
-    RawLeadPayload & {
-      pipeline?: string;
-      campaigns?: Array<{ campaignId: string; state: string }>;
-    }
-  >;
+  leads: LeadListItem[];
   selectedIds: string[];
   isLoading: boolean;
   searchQuery: string;
   onToggleSelect: (leadId: string) => void;
   onSelectAll: () => void;
-  onClickRow: (lead: any) => void;
-  onAssignGroupClick?: (lead: any, e: React.MouseEvent) => void;
+  onClickRow: (lead: LeadListItem) => void;
+  onAssignGroupClick?: (lead: LeadListItem, e: React.MouseEvent) => void;
   onOpenImportCsv?: () => void;
 }
 

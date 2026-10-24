@@ -58,10 +58,13 @@ export async function POST(req: Request) {
       senderEmail: process.env.SMTP_USER || "contact@mbstack.net",
       deliveryMode: "smtp",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Forgot password OTP error:", error);
     return NextResponse.json(
-      { success: false, error: error?.message || "Failed to send password reset code." },
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to send password reset code.",
+      },
       { status: 500 }
     );
   }
