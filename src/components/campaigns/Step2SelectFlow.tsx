@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useId } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -221,7 +221,7 @@ export function Step2SelectFlow({
   const [activeSubTab, setActiveSubTab] = useState<"inbound" | "library" | "editor" | "ai">("inbound");
   const [flows, setFlows] = useState<FlowItem[]>([]);
   const [templates, setTemplates] = useState<FlowItem[]>([]);
-  const [isLoadingFlows, setIsLoadingFlows] = useState(false);
+  const stepIdPrefix = useId();
   const [activeStepId, setActiveStepId] = useState<string>(steps[0]?.id || "step-1");
   const [previewSampleLead, setPreviewSampleLead] = useState(false);
 
@@ -230,25 +230,18 @@ export function Step2SelectFlow({
   const [customToneInput, setCustomToneInput] = useState<string>("");
   const [appliedCustomTone, setAppliedCustomTone] = useState<string>("");
 
-  // Fetch flows from API
-  const fetchFlowsList = async () => {
-    setIsLoadingFlows(true);
-    try {
-      const res = await fetch("/api/flows");
-      const data = await res.json();
-      if (data.success) {
-        setFlows(Array.isArray(data.flows) ? data.flows : []);
-        setTemplates(Array.isArray(data.templates) ? data.templates : []);
-      }
-    } catch {
-      toast.error("Failed to load automation flows");
-    } finally {
-      setIsLoadingFlows(false);
-    }
-  };
-
   useEffect(() => {
-    fetchFlowsList();
+    fetch("/api/flows")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          setFlows(Array.isArray(data.flows) ? data.flows : []);
+          setTemplates(Array.isArray(data.templates) ? data.templates : []);
+        }
+      })
+      .catch(() => {
+        toast.error("Failed to load automation flows");
+      });
   }, []);
 
   // Insert variable into active step
@@ -356,26 +349,27 @@ export function Step2SelectFlow({
   const handleApplyTone = (toneId: string, customText?: string) => {
     setSelectedTone(toneId);
     const audience = targetAudience || "B2B leaders";
+    const stepId = (index: number) => `step-${stepIdPrefix}-${index}`;
     let newSteps: SequenceStepItem[] = [];
 
     if (toneId === "direct") {
       newSteps = [
         {
-          id: `step-${Date.now()}-1`,
+          id: stepId(1),
           type: "connect",
           delayDays: 0,
           template: `Hi {{firstName}}, we built a lightweight pipeline tool for ${audience} at {{company}} to scale qualified outbound conversations without spam. Open to connecting?`,
         },
-        { id: `step-${Date.now()}-2`, type: "wait", delayDays: 2, template: "" },
+        { id: stepId(2), type: "wait", delayDays: 2, template: "" },
         {
-          id: `step-${Date.now()}-3`,
+          id: stepId(3),
           type: "message",
           delayDays: 0,
           template: `Hey {{firstName}}, would adding 10-15 qualified meetings this month make a noticeable impact for {{company}}?`,
         },
-        { id: `step-${Date.now()}-4`, type: "wait", delayDays: 3, template: "" },
+        { id: stepId(4), type: "wait", delayDays: 3, template: "" },
         {
-          id: `step-${Date.now()}-5`,
+          id: stepId(5),
           type: "message",
           delayDays: 0,
           template: `{{firstName}}, happy to drop a 2-minute video walkthrough showing how similar teams double pipeline if you're curious.`,
@@ -384,14 +378,14 @@ export function Step2SelectFlow({
     } else if (toneId === "consultative") {
       newSteps = [
         {
-          id: `step-${Date.now()}-1`,
+          id: stepId(1),
           type: "connect",
           delayDays: 0,
           template: `Hi {{firstName}}, we've been tracking outbound conversion shifts across ${audience}. Noticed your work at {{company}} and would love to exchange perspectives!`,
         },
-        { id: `step-${Date.now()}-2`, type: "wait", delayDays: 2, template: "" },
+        { id: stepId(2), type: "wait", delayDays: 2, template: "" },
         {
-          id: `step-${Date.now()}-3`,
+          id: stepId(3),
           type: "message",
           delayDays: 0,
           template: `Thanks for connecting, {{firstName}}. What's the bigger priority for {{company}} right now: increasing lead volume or improving meeting show-up rates?`,
@@ -400,14 +394,14 @@ export function Step2SelectFlow({
     } else if (toneId === "challenger") {
       newSteps = [
         {
-          id: `step-${Date.now()}-1`,
+          id: stepId(1),
           type: "connect",
           delayDays: 0,
           template: `Most outreach in ${audience} gets ignored instantly. We helped teams at {{company}}'s stage 3x reply rates with AI personalization. Would love to connect!`,
         },
-        { id: `step-${Date.now()}-2`, type: "wait", delayDays: 2, template: "" },
+        { id: stepId(2), type: "wait", delayDays: 2, template: "" },
         {
-          id: `step-${Date.now()}-3`,
+          id: stepId(3),
           type: "message",
           delayDays: 0,
           template: `{{firstName}}, are you confident {{company}}'s outbound messaging is standing out against the dozens of messages your prospects receive daily?`,
@@ -416,14 +410,14 @@ export function Step2SelectFlow({
     } else if (toneId === "custom" && customText) {
       newSteps = [
         {
-          id: `step-${Date.now()}-1`,
+          id: stepId(1),
           type: "connect",
           delayDays: 0,
           template: `Hey {{firstName}}, noticed {{company}} navigating ${audience}. Reaching out with a ${customText.toLowerCase()} approach — love what you're building!`,
         },
-        { id: `step-${Date.now()}-2`, type: "wait", delayDays: 2, template: "" },
+        { id: stepId(2), type: "wait", delayDays: 2, template: "" },
         {
-          id: `step-${Date.now()}-3`,
+          id: stepId(3),
           type: "message",
           delayDays: 0,
           template: `Appreciate the connection, {{firstName}}. Following up on our recent chat — how is {{company}} approaching pipeline this quarter?`,
@@ -433,14 +427,14 @@ export function Step2SelectFlow({
       // Friendly default
       newSteps = [
         {
-          id: `step-${Date.now()}-1`,
+          id: stepId(1),
           type: "connect",
           delayDays: 0,
           template: `Hey {{firstName}}, noticed your work with {{company}} in ${audience}. Really impressed by the momentum — would love to connect and follow along!`,
         },
-        { id: `step-${Date.now()}-2`, type: "wait", delayDays: 2, template: "" },
+        { id: stepId(2), type: "wait", delayDays: 2, template: "" },
         {
-          id: `step-${Date.now()}-3`,
+          id: stepId(3),
           type: "message",
           delayDays: 0,
           template: `Thanks for connecting, {{firstName}}! Curious how your team is thinking about outbound pipeline this quarter as you continue scaling?`,
@@ -855,13 +849,7 @@ export function Step2SelectFlow({
               <span>Recommended High-Converting Templates</span>
             </h3>
 
-            {isLoadingFlows ? (
-              <div className="py-10 text-center text-xs text-neutral-400 flex items-center justify-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-palm-leaf-600" />
-                <span>Loading flow templates...</span>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {templates.map((tpl) => {
                   const isSelected = selectedFlowName === tpl.name;
                   const messageTouches = tpl.steps.filter((s) => s.type !== "wait").length;
@@ -926,8 +914,7 @@ export function Step2SelectFlow({
                     </div>
                   );
                 })}
-              </div>
-            )}
+            </div>
           </div>
 
           {/* Quick jump to editor */}

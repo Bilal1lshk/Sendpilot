@@ -15,7 +15,7 @@ export interface ScrapedProfile {
   headline?: string;
   company: string;
   location: string;
-  about: string;
+  about?: string;
   experience?: string[];
   education?: string;
   skills?: string[];
@@ -27,6 +27,18 @@ export interface ScrapedProfile {
   source: string;
   authwall_detected?: boolean;
 }
+
+type WorkspaceLead = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  jobTitle: string;
+  company: string;
+  email: string;
+  linkedinUrl: string;
+  icpScore: number;
+  status?: string;
+};
 
 function parseSlugComponents(rawInput: string) {
   let clean = rawInput.trim();
@@ -245,7 +257,7 @@ interface ScraperResponse {
   profile: ScrapedProfile | null;
   isSearchUrl?: boolean;
   keywords?: string;
-  leads?: any[];
+  leads?: ScrapedProfile[];
   total?: number;
   authwallDetected: boolean;
 }
@@ -270,7 +282,7 @@ function runPythonProfileScraper(profileUrl: string): Promise<ScraperResponse> {
         if (isSearchUrl) {
           const fallbackLeads = generateRoleAwareFallbackLeads(detectedKw, detectedLoc, 10);
           return resolve({
-            profile: fallbackLeads[0] as any,
+            profile: fallbackLeads[0] as ScrapedProfile,
             isSearchUrl: true,
             keywords: detectedKw,
             leads: fallbackLeads,
@@ -312,7 +324,7 @@ function runPythonProfileScraper(profileUrl: string): Promise<ScraperResponse> {
       if (isSearchUrl) {
         const fallbackLeads = generateRoleAwareFallbackLeads(detectedKw, detectedLoc, 10);
         return resolve({
-          profile: fallbackLeads[0] as any,
+          profile: fallbackLeads[0] as ScrapedProfile,
           isSearchUrl: true,
           keywords: detectedKw,
           leads: fallbackLeads,
@@ -375,11 +387,11 @@ export async function POST(req: Request) {
             workspace.step3.data = { leads: [], readyCount: 0, importType: "linkedin_search" };
           }
 
-          const existingLeads = workspace.step3.data.leads || [];
-          const existingUrls = new Set(existingLeads.map((l: any) => l.linkedinUrl));
+          const existingLeads = (workspace.step3.data.leads || []) as WorkspaceLead[];
+          const existingUrls = new Set(existingLeads.map((l) => l.linkedinUrl));
           const newLeads = scrapeResult.leads.filter((l) => !existingUrls.has(l.linkedinUrl));
 
-          const formatted = newLeads.map((l) => ({
+          const formatted: WorkspaceLead[] = newLeads.map((l) => ({
             id: l.id,
             firstName: l.firstName,
             lastName: l.lastName,
@@ -387,11 +399,11 @@ export async function POST(req: Request) {
             company: l.company,
             email: l.email,
             linkedinUrl: l.linkedinUrl,
+            icpScore: l.icpScore || 90,
             status: "ready",
-            source: "LinkedIn Search URL",
           }));
 
-          const mergedLeads: any[] = [...existingLeads, ...formatted];
+          const mergedLeads: WorkspaceLead[] = [...existingLeads, ...formatted];
           workspace.step3.data.leads = mergedLeads;
           workspace.step3.data.readyCount = mergedLeads.length;
           workspace.markModified("step3");
@@ -438,10 +450,10 @@ export async function POST(req: Request) {
           workspace.step3.data = { leads: [], readyCount: 0, importType: "profile_url" };
         }
 
-        const existingLeads = workspace.step3.data.leads || [];
-        const leadIndex = existingLeads.findIndex((l: any) => l.linkedinUrl === profile.linkedinUrl);
+        const existingLeads = (workspace.step3.data.leads || []) as WorkspaceLead[];
+        const leadIndex = existingLeads.findIndex((l) => l.linkedinUrl === profile.linkedinUrl);
 
-        const formattedLead = {
+        const formattedLead: WorkspaceLead = {
           id: profile.id,
           firstName: profile.firstName,
           lastName: profile.lastName,
@@ -478,10 +490,11 @@ export async function POST(req: Request) {
       authwallDetected,
       savedToWorkspace: saved,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to scrape profile";
     console.error("Error in /api/extractor/profile:", error);
     return NextResponse.json(
-      { error: "Failed to scrape profile", message: error.message },
+      { error: "Failed to scrape profile", message },
       { status: 500 }
     );
   }

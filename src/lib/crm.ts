@@ -3,7 +3,7 @@ import { Types } from "mongoose";
 import { auth } from "@/auth";
 import connectDB from "@/lib/mongodb";
 import Lead, { ILead, LeadSource, LEAD_SOURCES } from "@/models/Lead";
-import Campaign, { ICampaignStep, STEP_TYPES } from "@/models/Campaign";
+import Campaign, { ICampaign, ICampaignStep, STEP_TYPES } from "@/models/Campaign";
 import CampaignLead, { EnrollmentState, FUNNEL_ORDER } from "@/models/CampaignLead";
 import Workspace from "@/models/Workspace";
 import { migrateLegacyLinkedInConnections } from "@/lib/linkedin-connections";
@@ -191,10 +191,14 @@ export async function importLeads(userId: string, raws: RawLeadInput[], source: 
   if (fresh.length > 0) {
     try {
       inserted = (await Lead.insertMany(fresh, { ordered: false })) as unknown as ILead[];
-    } catch (err: any) {
+    } catch (err: unknown) {
       // E11000 duplicates from concurrent imports — keep the ones that did insert
-      if (err?.code === 11000 || err?.writeErrors) {
-        inserted = (err.insertedDocs || []) as ILead[];
+      const details =
+        typeof err === "object" && err !== null
+          ? (err as { code?: unknown; writeErrors?: unknown; insertedDocs?: ILead[] })
+          : {};
+      if (details.code === 11000 || details.writeErrors) {
+        inserted = Array.isArray(details.insertedDocs) ? details.insertedDocs : [];
         duplicates += fresh.length - inserted.length;
       } else {
         throw err;
@@ -205,7 +209,28 @@ export async function importLeads(userId: string, raws: RawLeadInput[], source: 
   return { imported: inserted.length, duplicates, invalid, leads: inserted };
 }
 
-export function serializeLead(l: any) {
+export function serializeLead(
+  l: Pick<
+    ILead,
+    | "_id"
+    | "firstName"
+    | "lastName"
+    | "title"
+    | "company"
+    | "location"
+    | "email"
+    | "linkedinUrl"
+    | "icpScore"
+    | "source"
+    | "tags"
+    | "group"
+    | "status"
+    | "notes"
+    | "isSample"
+    | "createdAt"
+    | "updatedAt"
+  >
+) {
   return {
     id: String(l._id),
     firstName: l.firstName || "",
@@ -353,7 +378,25 @@ export async function getCampaignStats(userId: string, campaignIds: Types.Object
   return result;
 }
 
-export function serializeCampaign(c: any, stats?: CampaignStats) {
+export function serializeCampaign(
+  c: Pick<
+    ICampaign,
+    | "_id"
+    | "name"
+    | "description"
+    | "status"
+    | "senderAccountId"
+    | "senderName"
+    | "steps"
+    | "dailyCap"
+    | "timezone"
+    | "workingHours"
+    | "launchedAt"
+    | "createdAt"
+    | "updatedAt"
+  >,
+  stats?: CampaignStats
+) {
   return {
     id: String(c._id),
     name: c.name,
@@ -361,7 +404,7 @@ export function serializeCampaign(c: any, stats?: CampaignStats) {
     status: c.status,
     senderAccountId: c.senderAccountId || "",
     senderName: c.senderName || "",
-    steps: (c.steps || []).map((s: any) => ({ type: s.type, delayDays: s.delayDays || 0, template: s.template || "" })),
+    steps: (c.steps || []).map((s) => ({ type: s.type, delayDays: s.delayDays || 0, template: s.template || "" })),
     dailyCap: c.dailyCap,
     timezone: c.timezone,
     workingHours: c.workingHours,
@@ -390,7 +433,7 @@ const migratedUsers = new Set<string>();
  */
 export async function migrateWorkspaceIfNeeded(userId: string) {
   if (migratedUsers.has(userId)) return;
-  const ws: any = await Workspace.findOne({ userId });
+  const ws = await Workspace.findOne({ userId });
   if (!ws || ws.crmMigratedAt) {
     migratedUsers.add(userId);
     return;

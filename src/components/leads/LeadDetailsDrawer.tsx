@@ -6,13 +6,14 @@ import { X, ExternalLink, Mail, MapPin, Tag, UserPlus, Check, Loader2 } from "lu
 import { toast } from "sonner";
 import { drawerVariants } from "@/lib/motion";
 import { PIPELINE_STAGES } from "@/types/pipeline";
+import { LeadListItem } from "@/store/slices/databaseSlice";
 
 interface LeadDetailsDrawerProps {
-  lead: any | null;
+  lead: LeadListItem | null;
   onClose: () => void;
   availableGroups: string[];
   onLeadUpdated: () => void;
-  onSendConnection: (lead: any) => void;
+  onSendConnection: (lead: LeadListItem) => void;
 }
 
 export function LeadDetailsDrawer({

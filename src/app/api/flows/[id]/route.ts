@@ -26,7 +26,7 @@ export async function GET(_req: Request, { params }: Ctx) {
         name: flow.name,
         description: flow.description,
         steps: flow.steps,
-        config: (flow as any).config || {},
+        config: flow.config || {},
         isTemplate: flow.isTemplate,
         createdAt: flow.createdAt,
         updatedAt: flow.updatedAt,
@@ -48,7 +48,7 @@ export async function PUT(req: Request, { params }: Ctx) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const update: Record<string, any> = {};
+    const update: Record<string, unknown> = {};
 
     if (body.name !== undefined) {
       const name = String(body.name).trim();
@@ -89,7 +89,7 @@ export async function PUT(req: Request, { params }: Ctx) {
         name: flow.name,
         description: flow.description,
         steps: flow.steps,
-        config: (flow as any).config || {},
+        config: flow.config || {},
         updatedAt: flow.updatedAt,
       },
     });

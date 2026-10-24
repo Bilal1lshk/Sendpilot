@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Send,
@@ -42,8 +42,9 @@ import { microcopy } from "@/lib/microcopy";
 import { Step1SelectLeads } from "@/components/campaigns/Step1SelectLeads";
 import { Step2SelectFlow } from "@/components/campaigns/Step2SelectFlow";
 import { Step3ReviewLaunch } from "@/components/campaigns/Step3ReviewLaunch";
-import { SequenceStepItem, FlowItem, EnrollmentMode } from "@/components/campaigns/types";
+import { SequenceStepItem, FlowItem, EnrollmentMode, LeadItem } from "@/components/campaigns/types";
 import { SendConnectionModal, SendConnectionTarget } from "@/components/dashboard/SendConnectionModal";
+import type { EnrollmentState, IEnrollmentEvent } from "@/models/CampaignLead";
 
 export interface SequenceDraft {
   id: string;
@@ -334,8 +335,28 @@ export interface CampaignDetail {
   sentToday: number;
   remainingToday: number;
   failedCount?: number;
-  steps?: { type: string; delayDays: number; template: string }[];
+  steps?: { type: SequenceStepItem["type"]; delayDays: number; template: string }[];
   funnel: { stage: string; count: number }[];
+}
+
+interface EnrolledLead {
+  enrollmentId: string;
+  state: EnrollmentState;
+  currentStep: number;
+  totalSteps: number;
+  nextActionAt?: string | Date | null;
+  lastError?: string | null;
+  history: IEnrollmentEvent[];
+  lead: LeadItem;
+  failedStep?: { stepIndex: number; type: string; message: string; error: string } | null;
+  nextAction?: {
+    stepIndex: number;
+    type: string;
+    message: string;
+    due: boolean;
+    waitingForAcceptance: boolean;
+    isFailed: boolean;
+  } | null;
 }
 
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -348,8 +369,19 @@ import {
 } from "@/store/slices/databaseSlice";
 
 export default function CampaignsPage() {
+  return (
+    <Suspense fallback={null}>
+      <CampaignsPageContent />
+    </Suspense>
+  );
+}
+
+function CampaignsPageContent() {
   const dispatch = useAppDispatch();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const createFromInbound = searchParams.get("create") === "true";
+  const inboundFlowName = searchParams.get("flowName");
   const {
     items: storeCampaigns,
     availableLeadsCount,
@@ -360,7 +392,9 @@ export default function CampaignsPage() {
   } = useAppSelector((state) => state.database.campaigns);
   const { items: databaseLeads } = useAppSelector((state) => state.database.leads);
 
-  const [activeTab, setActiveTab] = useState<"list" | "wizard" | "detail">("list");
+  const [activeTab, setActiveTab] = useState<"list" | "wizard" | "detail">(
+    createFromInbound ? "wizard" : "list"
+  );
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
   const [isLaunching, setIsLaunching] = useState(false);
   const [campaignDetail, setCampaignDetail] = useState<CampaignDetail | null>(null);
@@ -371,11 +405,17 @@ export default function CampaignsPage() {
 
   // 3-Step Campaign Creation Wizard state
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
-  const [campaignName, setCampaignName] = useState("Targeted Outreach Sequence #1");
+  const [campaignName, setCampaignName] = useState(
+    inboundFlowName ? `${inboundFlowName} Campaign` : "Targeted Outreach Sequence #1"
+  );
   const [targetAudience, setTargetAudience] = useState("B2B SaaS Decision Makers");
   const [dailyCap, setDailyCap] = useState(20);
   const [enrollmentMode, setEnrollmentMode] = useState<EnrollmentMode>("specific");
   const [selectedWizardLeadIds, setSelectedWizardLeadIds] = useState<string[]>([]);
+  const [hasCustomizedWizardLeadSelection, setHasCustomizedWizardLeadSelection] = useState(false);
+  const wizardLeadIds = hasCustomizedWizardLeadSelection
+    ? selectedWizardLeadIds
+    : databaseLeads.slice(0, 10).map((lead) => lead.id);
   const [selectedFlow, setSelectedFlow] = useState<FlowItem | null>(null);
   const [wizardSteps, setWizardSteps] = useState<SequenceStepItem[]>([
     {
@@ -414,7 +454,7 @@ export default function CampaignsPage() {
   ]);
 
   // Campaign Detail Enrolled Leads state
-  const [enrolledLeads, setEnrolledLeads] = useState<any[]>([]);
+  const [enrolledLeads, setEnrolledLeads] = useState<EnrolledLead[]>([]);
   const [isLoadingEnrolledLeads, setIsLoadingEnrolledLeads] = useState<boolean>(false);
   const [enrolledFilterTab, setEnrolledFilterTab] = useState<string>("all");
   const [showAddLeadsModal, setShowAddLeadsModal] = useState<boolean>(false);
@@ -425,7 +465,7 @@ export default function CampaignsPage() {
   const [campaignError, setCampaignError] = useState<string | null>(null);
   const [leadErrors, setLeadErrors] = useState<Record<string, string>>({});
   const [detailSubTab, setDetailSubTab] = useState<"prospects" | "monitor">("prospects");
-  const [monitoringLead, setMonitoringLead] = useState<any | null>(null);
+  const [monitoringLead, setMonitoringLead] = useState<EnrolledLead | null>(null);
   const [isRetryingAll, setIsRetryingAll] = useState<boolean>(false);
 
   // Individual & Batch Send Connection state
@@ -460,37 +500,21 @@ export default function CampaignsPage() {
     return enrolledLeads.filter((item) => item.state === "failed" || !!leadErrors[item.enrollmentId]);
   }, [enrolledLeads, leadErrors]);
 
-  const selectedCampaignSteps = useMemo(() => {
-    if (campaignDetail?.steps && campaignDetail.steps.length > 0) {
-      return campaignDetail.steps;
-    }
-    return [
-      { type: "connect", delayDays: 0, template: "Hi {{firstName}}, would love to connect and follow along!" },
-      { type: "wait", delayDays: 2, template: "" },
-      { type: "message", delayDays: 0, template: "Thanks for connecting, {{firstName}}!" },
-    ];
-  }, [campaignDetail?.steps]);
-
-  useEffect(() => {
-    if (databaseLeads.length > 0 && selectedWizardLeadIds.length === 0) {
-      setSelectedWizardLeadIds(databaseLeads.slice(0, 10).map((l) => l.id));
-    }
-  }, [databaseLeads, selectedWizardLeadIds.length]);
+  const selectedCampaignSteps =
+    campaignDetail?.steps && campaignDetail.steps.length > 0
+      ? campaignDetail.steps
+      : [
+          { type: "connect" as const, delayDays: 0, template: "Hi {{firstName}}, would love to connect and follow along!" },
+          { type: "wait" as const, delayDays: 2, template: "" },
+          { type: "message" as const, delayDays: 0, template: "Thanks for connecting, {{firstName}}!" },
+        ];
 
   // Support 1-click transition from Inbound automations page
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("create") === "true") {
-        setActiveTab("wizard");
-        const paramFlowName = params.get("flowName");
-        if (paramFlowName) {
-          setCampaignName(`${paramFlowName} Campaign`);
-          toast.info(`Campaign initialized for "${paramFlowName}"`);
-        }
-      }
+    if (createFromInbound && inboundFlowName) {
+      toast.info(`Campaign initialized for "${inboundFlowName}"`);
     }
-  }, []);
+  }, [createFromInbound, inboundFlowName]);
 
   const handleLaunchCampaign = async (launchNow: boolean) => {
     setIsLaunching(true);
@@ -505,7 +529,7 @@ export default function CampaignsPage() {
         ? []
         : enrollmentMode === "all"
         ? databaseLeads.map((l) => l.id)
-        : selectedWizardLeadIds;
+        : wizardLeadIds;
 
     try {
       const res = await fetch("/api/campaigns", {
@@ -663,7 +687,7 @@ export default function CampaignsPage() {
     }
   };
 
-  const handleSendQueuedLeadStep = async (leadRow: any) => {
+  const handleSendQueuedLeadStep = async (leadRow: EnrolledLead) => {
     const enrollmentId = leadRow.enrollmentId;
     setIsSendingStep(enrollmentId);
     setCampaignError(null);
@@ -710,7 +734,7 @@ export default function CampaignsPage() {
           body: JSON.stringify({
             profileUrl: profileUrl.trim(),
             note,
-            leadId: leadRow.lead?.id || leadRow.lead?._id,
+            leadId: leadRow.lead.id,
           }),
         });
 
@@ -744,7 +768,7 @@ export default function CampaignsPage() {
           body: JSON.stringify({
             profileUrl: profileUrl.trim(),
             message: note || "Hey, thanks for connecting!",
-            leadId: leadRow.lead?.id || leadRow.lead?._id,
+            leadId: leadRow.lead.id,
             campaignId: selectedCampaignId,
           }),
         });
@@ -846,8 +870,8 @@ export default function CampaignsPage() {
     }
   };
 
-  const getRenderedConnectNote = (lead: any) => {
-    const connectStep = selectedCampaignSteps.find((s: any) => s.type === "connect");
+  const getRenderedConnectNote = (lead: LeadItem) => {
+    const connectStep = selectedCampaignSteps.find((s) => s.type === "connect");
     const rawTemplate =
       connectStep?.template ||
       "Hi {{firstName}}, noticed your work at {{company}}. Would love to connect and follow along!";
@@ -863,7 +887,7 @@ export default function CampaignsPage() {
       .replace(/\{\{\s*title\s*\}\}/gi, title);
   };
 
-  const handleOpenSendConnection = (item: any) => {
+  const handleOpenSendConnection = (item: EnrolledLead) => {
     const lead = item.lead || {};
     if (!lead.linkedinUrl) {
       toast.error(`Cannot send connection: ${lead.name || "Prospect"} does not have a LinkedIn profile URL.`);
@@ -873,7 +897,7 @@ export default function CampaignsPage() {
     const note = item.nextAction?.message || getRenderedConnectNote(lead);
     setConnectInitialNote(note);
     setConnectTarget({
-      id: lead.id || lead._id || item.enrollmentId,
+      id: lead.id || item.enrollmentId,
       name: lead.name || `${lead.firstName || ""} ${lead.lastName || ""}`.trim() || "Prospect",
       firstName: lead.firstName,
       lastName: lead.lastName,
@@ -914,7 +938,7 @@ export default function CampaignsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             profileUrl: lead.linkedinUrl,
-            leadId: lead.id || lead._id,
+            leadId: lead.id,
             enrollmentId: item.enrollmentId,
             campaignId: selectedCampaignId,
             note: typeof note === "string" ? note.trim() : undefined,
@@ -2071,7 +2095,7 @@ export default function CampaignsPage() {
                       {(!monitoringLead.history || monitoringLead.history.length === 0) ? (
                         <p className="text-neutral-400 italic">No events recorded yet.</p>
                       ) : (
-                        monitoringLead.history.map((ev: any, i: number) => {
+                        monitoringLead.history.map((ev, i) => {
                           const isFail = ev.event === "failed";
                           const isSent = ev.event === "step_sent";
                           return (
@@ -2375,9 +2399,12 @@ export default function CampaignsPage() {
           {/* Step 1: Select Leads */}
           {wizardStep === 1 && (
             <Step1SelectLeads
-              databaseLeads={databaseLeads as any}
-              selectedLeadIds={selectedWizardLeadIds}
-              onSelectionChange={setSelectedWizardLeadIds}
+              databaseLeads={databaseLeads}
+              selectedLeadIds={wizardLeadIds}
+              onSelectionChange={(ids) => {
+                setHasCustomizedWizardLeadSelection(true);
+                setSelectedWizardLeadIds(ids);
+              }}
               enrollmentMode={enrollmentMode}
               onEnrollmentModeChange={setEnrollmentMode}
               onProceed={() => setWizardStep(2)}
@@ -2410,7 +2437,7 @@ export default function CampaignsPage() {
               selectedLeadIds={selectedWizardLeadIds}
               enrollmentMode={enrollmentMode}
               totalDatabaseLeads={databaseLeads.length}
-              databaseLeads={databaseLeads as any}
+              databaseLeads={databaseLeads}
               steps={wizardSteps}
               flowName={selectedFlow?.name || "Custom Flow"}
               availableAccountsCount={availableAccountsCount}

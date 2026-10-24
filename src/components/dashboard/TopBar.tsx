@@ -83,6 +83,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
   const newRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
@@ -99,6 +100,7 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
+        setSelectedIndex(0);
         setSearchModalOpen((prev) => !prev);
       } else if (e.key === "Escape") {
         setSearchModalOpen(false);
@@ -135,7 +137,6 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
 
   const [allRead, setAllRead] = useState(false);
   const [readIds, setReadIds] = useState<string[]>([]);
-  const [selectedIndex, setSelectedIndex] = useState(0);
 
   // Fetch real database records on mount
   useEffect(() => {
@@ -212,10 +213,6 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
         i.hint.toLowerCase().includes(q)
     );
   }, [searchableItems, searchQuery]);
-
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [searchQuery, searchModalOpen]);
 
   // Real notifications generated from active accounts, campaigns, and imported leads
   const notifications = useMemo(() => {
@@ -367,7 +364,10 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
           {/* Global Search Button */}
           <button
             type="button"
-            onClick={() => setSearchModalOpen(true)}
+            onClick={() => {
+              setSelectedIndex(0);
+              setSearchModalOpen(true);
+            }}
             className="group flex items-center gap-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/60 px-3 py-1.5 text-xs text-neutral-500 hover:border-neutral-400 dark:hover:border-neutral-700 hover:bg-white dark:hover:bg-neutral-900 transition-colors shadow-2xs"
           >
             <Search className="h-3.5 w-3.5 text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200" />
@@ -635,7 +635,10 @@ export function TopBar({ onMenuClick, user }: TopBarProps) {
                 type="text"
                 autoFocus
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSelectedIndex(0);
+                  setSearchQuery(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown") {
                     e.preventDefault();

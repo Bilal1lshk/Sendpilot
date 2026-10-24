@@ -1,9 +1,53 @@
 import { NextResponse } from "next/server";
-import Lead, { LEAD_STATUSES, LEAD_SOURCES } from "@/models/Lead";
+import Lead, { LEAD_STATUSES, LEAD_SOURCES, type ILead } from "@/models/Lead";
 import LeadGroup from "@/models/LeadGroup";
 import CampaignLead from "@/models/CampaignLead";
-import { requireUser, importLeads, serializeLead, toLeadSource, apiError, isValidObjectId } from "@/lib/crm";
+import {
+  requireUser,
+  importLeads,
+  serializeLead,
+  toLeadSource,
+  apiError,
+  isValidObjectId,
+  type RawLeadInput,
+} from "@/lib/crm";
 import { getDbCache, setDbCache, invalidateDbCache } from "@/lib/db-cache";
+
+function toRawLeadInput(value: unknown): RawLeadInput {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const input = value as Record<string, unknown>;
+  const stringValue = (key: string) =>
+    typeof input[key] === "string" ? (input[key] as string) : undefined;
+  const tags = input.tags;
+
+  return {
+    id: stringValue("id"),
+    name: stringValue("name"),
+    firstName: stringValue("firstName"),
+    lastName: stringValue("lastName"),
+    title: stringValue("title"),
+    jobTitle: stringValue("jobTitle"),
+    headline: stringValue("headline"),
+    company: stringValue("company"),
+    location: stringValue("location"),
+    email: stringValue("email"),
+    linkedinUrl: stringValue("linkedinUrl"),
+    icpScore:
+      typeof input.icpScore === "number" || typeof input.icpScore === "string"
+        ? input.icpScore
+        : undefined,
+    tags:
+      typeof tags === "string"
+        ? tags
+        : Array.isArray(tags)
+          ? tags.filter((tag): tag is string => typeof tag === "string")
+          : undefined,
+    group: stringValue("group"),
+    notes: stringValue("notes"),
+    isSample: typeof input.isSample === "boolean" ? input.isSample : undefined,
+    source: stringValue("source"),
+  };
+}
 
 function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -33,17 +77,32 @@ export async function GET(req: Request) {
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(200, Math.max(1, Number(searchParams.get("limit")) || 25));
 
-    const filter: Record<string, any> = { userId: ctx.userId };
-    if (status && (LEAD_STATUSES as readonly string[]).includes(status)) filter.status = status;
-    if (source && (LEAD_SOURCES as readonly string[]).includes(source)) filter.source = source;
-    if (tag) filter.tags = tag;
-    if (group) filter.group = group === "none" ? { $in: ["", null] } : group;
-    if (sample === "exclude") filter.isSample = { $ne: true };
-    if (sample === "only") filter.isSample = true;
-    if (q) {
-      const rx = new RegExp(escapeRegex(q), "i");
-      filter.$or = [{ firstName: rx }, { lastName: rx }, { company: rx }, { title: rx }, { email: rx }, { location: rx }];
-    }
+    const rx = q ? new RegExp(escapeRegex(q), "i") : undefined;
+    const filter = {
+      userId: ctx.userId,
+      ...(status && (LEAD_STATUSES as readonly string[]).includes(status)
+        ? { status: status as ILead["status"] }
+        : {}),
+      ...(source && (LEAD_SOURCES as readonly string[]).includes(source)
+        ? { source: source as ILead["source"] }
+        : {}),
+      ...(tag ? { tags: tag } : {}),
+      ...(group ? { group: group === "none" ? { $in: ["", null] } : group } : {}),
+      ...(sample === "exclude" ? { isSample: { $ne: true } } : {}),
+      ...(sample === "only" ? { isSample: true } : {}),
+      ...(rx
+        ? {
+            $or: [
+              { firstName: rx },
+              { lastName: rx },
+              { company: rx },
+              { title: rx },
+              { email: rx },
+              { location: rx },
+            ],
+          }
+        : {}),
+    };
 
     const [items, total, statusCounts, tags, groups] = await Promise.all([
       Lead.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
@@ -96,8 +155,13 @@ export async function POST(req: Request) {
   if (ctx instanceof NextResponse) return ctx;
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const leads = Array.isArray(body.leads) ? body.leads : body.lead ? [body.lead] : [];
+    const body: Record<string, unknown> = await req.json().catch(() => ({}));
+    const rawLeads = Array.isArray(body.leads)
+      ? body.leads
+      : body.lead
+        ? [body.lead]
+        : [];
+    const leads = rawLeads.map(toRawLeadInput);
     if (leads.length === 0) {
       return NextResponse.json({ success: false, error: "No leads provided" }, { status: 400 });
     }
@@ -107,7 +171,7 @@ export async function POST(req: Request) {
 
     const group = String(body.group || "").trim();
     const leadsWithGroup = group
-      ? leads.map((l: any) => ({ ...l, group: l.group || group }))
+      ? leads.map((lead) => ({ ...lead, group: lead.group || group }))
       : leads;
 
     const result = await importLeads(ctx.userId, leadsWithGroup, toLeadSource(body.importType || body.source));
@@ -147,18 +211,24 @@ export async function DELETE(req: Request) {
 
   try {
     const { searchParams } = new URL(req.url);
-    const body = await req.json().catch(() => ({}));
-    let ids: string[] = Array.isArray(body.ids) ? body.ids : [];
+    const body: Record<string, unknown> = await req.json().catch(() => ({}));
+    let ids: string[] = Array.isArray(body.ids)
+      ? body.ids.filter((id): id is string => typeof id === "string")
+      : [];
     const single = searchParams.get("id");
     if (single) ids.push(single);
     ids = ids.filter(isValidObjectId);
 
     const deleteAll = searchParams.get("all") === "true" || (!single && ids.length === 0 && !Array.isArray(body.ids));
 
-    const filter: Record<string, any> = { userId: ctx.userId };
+    const filter = deleteAll
+      ? { userId: ctx.userId }
+      : {
+          userId: ctx.userId,
+          _id: { $in: ids },
+        };
     if (!deleteAll) {
       if (ids.length === 0) return NextResponse.json({ success: false, error: "No valid lead ids" }, { status: 400 });
-      filter._id = { $in: ids };
     }
 
     const targetIds = deleteAll ? undefined : ids;

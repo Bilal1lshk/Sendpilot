@@ -44,11 +44,14 @@ export async function POST(req: Request) {
       message: `Verification code sent to ${email}.`,
       deliveryMode: "smtp",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
       {
         success: false,
-        error: error?.message || "Failed to send verification code. Please try again.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to send verification code. Please try again.",
       },
       { status: 500 }
     );

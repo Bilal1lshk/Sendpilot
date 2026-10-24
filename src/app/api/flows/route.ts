@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import AutomationFlow, { IAutomationFlow } from "@/models/AutomationFlow";
-import { ICampaignStep } from "@/models/Campaign";
+import AutomationFlow from "@/models/AutomationFlow";
 import { requireUser, apiError, sanitizeSteps } from "@/lib/crm";
 
 const DEFAULT_AUTOMATION_TEMPLATES = [
@@ -121,7 +120,7 @@ export async function GET() {
       name: f.name,
       description: f.description || "",
       steps: f.steps,
-      config: (f as any).config || {},
+      config: f.config || {},
       isTemplate: false,
       createdAt: f.createdAt,
       updatedAt: f.updatedAt,

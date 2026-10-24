@@ -20,6 +20,7 @@ import { LeadDetailsDrawer } from "@/components/leads/LeadDetailsDrawer";
 import { Send, CheckCircle2, Loader2, Plus, Check, X } from "lucide-react";
 import Link from "next/link";
 import { PIPELINE_STAGES } from "@/types/pipeline";
+import { LeadListItem } from "@/store/slices/databaseSlice";
 
 export default function LeadDatabasePage() {
   const dispatch = useAppDispatch();
@@ -36,7 +37,7 @@ export default function LeadDatabasePage() {
 
   // Selection & UI modals
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [activeLead, setActiveLead] = useState<any | null>(null);
+  const [activeLead, setActiveLead] = useState<LeadListItem | null>(null);
   const [connectTarget, setConnectTarget] = useState<SendConnectionTarget | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
@@ -61,8 +62,17 @@ export default function LeadDatabasePage() {
   useEffect(() => {
     dispatch(fetchLeadsIfNeeded());
     dispatch(fetchCampaignsIfNeeded());
-    fetchGroups();
-  }, [dispatch, fetchGroups]);
+    fetch("/api/leads/groups")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.groups)) {
+          setGroups(data.groups);
+        }
+      })
+      .catch(() => {
+        // Group loading remains optional; lead data still loads independently.
+      });
+  }, [dispatch]);
 
   // Derived filtered leads
   const filteredLeads = useMemo(() => {

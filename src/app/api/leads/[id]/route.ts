@@ -51,7 +51,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const update: Record<string, any> = {};
+    const update: Record<string, unknown> = {};
 
     for (const key of EDITABLE) {
       if (typeof body[key] === "string") update[key] = body[key].trim();
@@ -72,8 +72,13 @@ export async function PATCH(req: Request, { params }: Ctx) {
     if (!lead) return NextResponse.json({ success: false, error: "Lead not found" }, { status: 404 });
 
     return NextResponse.json({ success: true, lead: serializeLead(lead) });
-  } catch (error: any) {
-    if (error?.code === 11000) {
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === 11000
+    ) {
       return NextResponse.json({ success: false, error: "Another lead already has that email or LinkedIn URL" }, { status: 409 });
     }
     return apiError(error, "Failed to update lead");

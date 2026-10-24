@@ -95,6 +95,11 @@ export interface RawLeadPayload {
   notes?: string;
 }
 
+export interface LeadListItem extends RawLeadPayload {
+  pipeline?: string;
+  campaigns?: Array<{ campaignId: string; state: string }>;
+}
+
 export interface CampaignPayload {
   id: string;
   name: string;
@@ -116,7 +121,7 @@ export interface CampaignDetailPayload {
   sentToday: number;
   remainingToday: number;
   failedCount?: number;
-  steps?: { type: string; delayDays: number; template: string }[];
+  steps?: { type: "connect" | "wait" | "message"; delayDays: number; template: string }[];
   funnel: { stage: string; count: number }[];
 }
 
