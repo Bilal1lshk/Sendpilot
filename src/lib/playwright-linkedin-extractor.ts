@@ -1,5 +1,5 @@
 import type { Browser } from "playwright-core";
-import { launchBrowser, safeCloseBrowser, createStealthContext } from "@/lib/browser-launcher";
+import { launchBrowser, safeCloseBrowser, createStealthContext, resolveAccountProxy } from "@/lib/browser-launcher";
 import {
   cleanCookieValue,
   setupLinkedInContext,
@@ -39,7 +39,8 @@ export interface PlaywrightExtractResult {
 }
 
 async function launchBrowserWithFallback(): Promise<Browser> {
-  return await launchBrowser({ headless: true });
+  const proxy = resolveAccountProxy();
+  return await launchBrowser({ headless: true, proxy });
 }
 
 function deriveCompanyAndEmail(name: string, headline: string) {
@@ -113,7 +114,8 @@ export async function extractSearchLeadsWithPlaywright({
 
   try {
     browser = await launchBrowserWithFallback();
-    const context = await createStealthContext(browser);
+    const proxy = resolveAccountProxy();
+    const context = await createStealthContext(browser, { proxyConfig: proxy });
 
     const page = await context.newPage();
 
@@ -227,6 +229,7 @@ export async function extractSearchLeadsWithPlaywright({
           waitUntil: "domcontentloaded",
           timeout: 30000,
         });
+        currentPageUrl = page.url().toLowerCase();
         const redirectedToAuth =
           currentPageUrl.includes("/login") ||
           currentPageUrl.includes("/authwall") ||
@@ -234,12 +237,14 @@ export async function extractSearchLeadsWithPlaywright({
           currentPageUrl.includes("/uas/");
 
         if (response?.status() === 401 || redirectedToAuth) {
+          const isExplicitLogin = currentPageUrl.includes("/login") || response?.status() === 401;
           return {
             leads: Array.from(collectedByUrl.values()),
             authwallDetected: true,
-            requiresReconnect: true,
-            error:
-              "LinkedIn rejected the current account session. Please reconnect your LinkedIn account to refresh credentials.",
+            requiresReconnect: isExplicitLogin,
+            error: isExplicitLogin
+              ? "LinkedIn rejected the current account session. Please reconnect your LinkedIn account to refresh credentials."
+              : "LinkedIn presented an authwall or checkpoint for this search. Your session remains saved; please retry shortly.",
             pagesScraped,
           };
         }
@@ -263,12 +268,14 @@ export async function extractSearchLeadsWithPlaywright({
           currentPageUrl.includes("/uas/");
 
         if (redirectedToAuth) {
+          const isExplicitLogin = currentPageUrl.includes("/login");
           return {
             leads: Array.from(collectedByUrl.values()),
             authwallDetected: true,
-            requiresReconnect: true,
-            error:
-              "LinkedIn redirected this session to an authentication or checkpoint page. Please reconnect your LinkedIn account.",
+            requiresReconnect: isExplicitLogin,
+            error: isExplicitLogin
+              ? "LinkedIn redirected this session to a login page. Please reconnect your LinkedIn account."
+              : "LinkedIn redirected to a checkpoint or security challenge. Your account connection was preserved; please retry shortly.",
             pagesScraped,
           };
         }
@@ -298,12 +305,14 @@ export async function extractSearchLeadsWithPlaywright({
         currentUrl.includes("/authwall") ||
         currentUrl.includes("/checkpoint")
       ) {
+        const isExplicitLogin = currentUrl.includes("/login");
         return {
           leads: Array.from(collectedByUrl.values()),
           authwallDetected: true,
-          requiresReconnect: true,
-          error:
-            "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue.",
+          requiresReconnect: isExplicitLogin,
+          error: isExplicitLogin
+            ? "Your LinkedIn account authorization has expired. Please reconnect your LinkedIn account to continue."
+            : "LinkedIn presented an authwall or security checkpoint for this search. Your session remains active; please retry shortly.",
           pagesScraped,
         };
       }

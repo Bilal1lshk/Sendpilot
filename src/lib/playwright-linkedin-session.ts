@@ -65,6 +65,8 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
     cleanJSessionRaw ||
     `ajax:${Math.floor(1000000000000000 + Math.random() * 9000000000000000)}`;
 
+  const bcookieVal = `v=2&${Date.now()}`;
+
   const cookies: Array<{
     name: string;
     value: string;
@@ -77,7 +79,7 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
     {
       name: "li_at",
       value: sanitizedLiAt,
-      domain: ".www.linkedin.com",
+      domain: ".linkedin.com",
       path: "/",
       httpOnly: true,
       secure: true,
@@ -86,7 +88,7 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
     {
       name: "JSESSIONID",
       value: `"${csrfToken}"`,
-      domain: ".www.linkedin.com",
+      domain: ".linkedin.com",
       path: "/",
       httpOnly: false,
       secure: true,
@@ -95,6 +97,24 @@ export function buildLinkedInCookies(cleanLiAt: string, rawJSession?: string) {
     {
       name: "lang",
       value: "v=2&lang=en-us",
+      domain: ".linkedin.com",
+      path: "/",
+      httpOnly: false,
+      secure: true,
+      sameSite: "Lax",
+    },
+    {
+      name: "liap",
+      value: "true",
+      domain: ".linkedin.com",
+      path: "/",
+      httpOnly: false,
+      secure: true,
+      sameSite: "Lax",
+    },
+    {
+      name: "bcookie",
+      value: bcookieVal,
       domain: ".linkedin.com",
       path: "/",
       httpOnly: false,
@@ -182,12 +202,28 @@ export async function warmupLinkedInSession(
 
     const currentUrl = page.url().toLowerCase();
 
-    if (
+    // Verify whether the browser context still holds an active, valid li_at cookie
+    const cookies = await page.context().cookies().catch(() => []);
+    const activeLiAt = cookies.find((c) => c.name === "li_at");
+    const hasValidCookie = Boolean(
+      activeLiAt?.value &&
+      activeLiAt.value.length > 25 &&
+      !activeLiAt.value.toLowerCase().includes("delete me")
+    );
+
+    const isLoginPage =
       currentUrl.includes("/login") ||
       currentUrl.includes("/authwall") ||
       currentUrl.includes("/checkpoint") ||
-      currentUrl.includes("/uas/")
-    ) {
+      currentUrl.includes("/uas/");
+
+    if (isLoginPage) {
+      // If feed encountered an authwall or checkpoint, but the li_at session cookie is still valid and not explicitly /login,
+      // allow the process to continue to the target URL rather than terminating early
+      if (hasValidCookie && !currentUrl.includes("/login")) {
+        return { ok: true };
+      }
+
       return {
         ok: false,
         requiresReconnect: true,
@@ -197,15 +233,6 @@ export async function warmupLinkedInSession(
     }
 
     const status = res?.status() || 200;
-
-    // Verify whether the browser context still holds an active, valid li_at cookie
-    const cookies = await page.context().cookies(["https://www.linkedin.com"]).catch(() => []);
-    const activeLiAt = cookies.find((c) => c.name === "li_at");
-    const hasValidCookie = Boolean(
-      activeLiAt?.value &&
-      activeLiAt.value.length > 25 &&
-      !activeLiAt.value.toLowerCase().includes("delete me")
-    );
 
     if (status === 401 || (cookieRevoked && !hasValidCookie)) {
       return {
